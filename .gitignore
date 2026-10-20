@@ -3,3 +3,10 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 run/
+build/
+dist/
+demo-data/
+*.sqlite*
+*.lock
+*.jsonl
+config/private/

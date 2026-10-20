@@ -1,13 +1,24 @@
-# CraneLock — normal crane-agent milestone
+# CraneLock
 
-The repository originally contained only this README heading. There was no agent,
-schema, dependency/build configuration, test suite, logging, or teammate code to
-reuse. This milestone adds only the normal-operation agent and its shared contract.
+This repository contains the normal-operation crane agent (`cranelock`) and the
+trusted access gate (`cranelock_gate`). Their APIs are separate; end-to-end integration
+is still pending. The sections below document each component.
+
+Install both components and test dependencies with `python -m pip install -e ".[dev]"`
+(or `python -m pip install -r requirements.txt`), then run `python -m pytest -q`.
+Run `python scripts/generate_proto.py` to regenerate bindings for both protocols.
+
+Both demos default to port 50051. Run them separately or configure distinct ports
+when running them together.
+
+## CraneLock — normal crane-agent milestone
+
+The crane agent provides normal-operation token coordination and its shared contract.
 
 Python 3.12+ is intended; validation here used CPython 3.14 on Windows. No existing
 formatter, linter, or type checker was configured. Dependencies use pip and a venv.
 
-## Setup (PowerShell, repository root)
+### Setup (PowerShell, repository root)
 
 ```powershell
 python -m venv .venv
@@ -26,7 +37,7 @@ Generated modules are checked in; regenerate them after changing the proto. Do n
 edit generated code. The schema uses package `cranelock.v1` and stable numbered
 fields; add future recovery/gate/controller services without replacing this API.
 
-## Two-process demo
+### Two-process demo
 
 Use a **fresh demo directory** for each new simulated cluster. All agents must agree
 on initial epoch, holder and complete membership. Only one configured initial
@@ -67,7 +78,7 @@ integration hook whose caller must supply authoritative epoch/holder information
 Do not delete state files to rejoin an existing cluster. For a separate fresh demo,
 stop both agents and use a new path such as `run/demo2/a.json` and `run/demo2/b.json`.
 
-## Files and behavior
+### Files and behavior
 
 | File | Purpose |
 | --- | --- |
@@ -106,13 +117,13 @@ hook; callbacks run synchronously and must be fast and nonthrowing. Failure even
 include last-seen time and observed detection latency. Monotonic clocks measure
 durations on one host; do not subtract monotonic timestamps from different hosts.
 
-## Limits and team integration decisions
+### Limits and team integration decisions
 
 - **Moe (Recovery):** confirm authoritative reconciliation API, persistent vote
   format, higher-epoch handling, and consumption of TOKEN_HOLDER_SUSPECTED. No
   replacement token, certificate, majority vote or signing is implemented.
 - **Max (Gate):** confirm holder/epoch/request correlation and the future gate
-  client boundary. No lane-entry API or occupancy/fencing decision is implemented.
+  client boundary. The separate gate service provides lane-entry and occupancy/fencing APIs; agent integration remains pending.
 - **Darius (Evaluation):** confirm JSON event fields, operation IDs, clock alignment
   and detection-latency definition. Current heartbeat fanout is O(N²) per round.
 - **Kirby (Controller):** confirm CENTRAL command semantics and who authorizes
@@ -129,9 +140,81 @@ solves partitions, crash recovery or gate safety. Initial bootstrap configuratio
 must be consistent; it is not a consensus algorithm.
 
 Tests cover the eleven requested behaviors across scenario tests, plus uncertain
-transfer retry, duplicate reception and restart blocking. No pre-existing tests
-were present. No Git commit/push/history changes are part of this milestone.
+transfer retry, duplicate reception and restart blocking.
 
 Recommended next milestone: agree with Recovery and Controller on authoritative
 epoch/rejoin integration, then test restart and interrupted-handoff scenarios
 against that contract. Do not add quorum or gate algorithms inside this agent.
+
+## CraneLock: Member 3 trusted access gate
+
+Standalone Python service for a **single simulated lane**, with signed gRPC requests,
+strict-majority recovery certificates, fencing, durable SQLite state and fail-closed
+occupancy handling. The crane algorithm, quorum producer, controller and yard simulator
+are represented by development clients; their real implementations are not included.
+
+### Run on Windows / PowerShell
+
+From this directory:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m cranelock_gate.demo setup --directory demo-data
+.\.venv\Scripts\python.exe -m cranelock_gate.demo run --directory demo-data
+```
+
+Skip `setup` when `demo-data` already exists. It refuses to overwrite identities
+or a database. The demo can be repeated with the same directory: each run starts a new
+authority epoch and demonstrates unknown-lane blocking, valid admission, stale-holder
+rejection, recovery during occupancy and explicit clearance.
+
+On Linux/macOS, replace `.\.venv\Scripts\python.exe` with `.venv/bin/python`.
+
+### Run as a persistent service
+
+```powershell
+.\.venv\Scripts\python.exe -m cranelock_gate.server serve --config demo-data/config.json --database demo-data/gate.sqlite
+```
+
+In another terminal:
+
+```powershell
+.\.venv\Scripts\python.exe -m cranelock_gate.demo run --directory demo-data --target 127.0.0.1:50051
+```
+
+The gRPC port is `50051`; Prometheus metrics are at `http://127.0.0.1:9090/metrics`.
+The server prints a listening message. Press Ctrl+C to stop it; Windows Ctrl+Break is
+also supported. Shutdown prints `Stopping gate...` and `Gate stopped.`.
+The development demo uses plaintext loopback. Network listeners require mutual TLS
+unless explicitly enabled for an isolated simulation.
+
+### Team handoff
+
+- [Contract and signing format](docs/CONTRACT.md): Member 1's proposed shared proto,
+  Member 2's certificate format, and Member 4/5 integration rules.
+- [Deployment and failure testing](docs/DEPLOYMENT.md): Docker, Kubernetes, persistence,
+  health checks, TLS and Member 6 handoff.
+- [Report draft](docs/GATE_REPORT.md): gate Design and Implementation sections,
+  with tested outcomes separated from outstanding integration claims.
+- [Protobuf service](proto/cranelock_gate/v1/gate.proto): seven RPC methods.
+
+Bindings are checked in. After changing the proto, regenerate them:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/generate_proto.py
+```
+
+### Safety boundary
+
+Run exactly **one active gate with one persistent database**. A quorum certificate
+changes digital authority; it never proves that the physical lane is empty. Only the
+trusted simulator may accept entry, and only fresh simulator evidence or a trusted
+operator may establish clearance. Every physical entry must pass this gate. Clients
+must stop on transport failure, denial, or replay acknowledgements.
+
+This is a coursework simulator, not an industrial crane safety controller. End-to-end
+CraneLock safety and performance remain unverified until the real member components
+are integrated. The Docker image and restart behaviour were validated locally;
+Kubernetes execution remains unverified. See [validation results](docs/VALIDATION.md).
