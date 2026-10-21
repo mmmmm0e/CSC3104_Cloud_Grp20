@@ -1,4 +1,4 @@
-"""Async normal-operation protocol. No recovery or gate authority lives here."""
+# async token and recovery protocol
 import asyncio
 from collections import deque
 from dataclasses import dataclass, field
@@ -12,6 +12,7 @@ import uuid
 import grpc
 from . import protocol_pb2 as pb
 from . import protocol_pb2_grpc as rpc
+from . import recovery
 
 
 class Mode(IntEnum):
@@ -33,9 +34,9 @@ class AgentState:
 class Agent(rpc.CraneAgentServicer):
     def __init__(self, agent_id, peers, holder, *, epoch=1, mode=Mode.LOCAL,
                  interval=0.5, timeout=2.0, state_file=None, clock=time.monotonic,
-                 event_sink=None):
-        if not agent_id or epoch < 1 or interval <= 0 or timeout <= interval:
-            raise ValueError("Require ID, positive epoch and 0 < interval < timeout")
+                 event_sink=None, recovery_config=None, recovery_private_key=None):
+        if not agent_id or epoch < 0 or interval <= 0 or timeout <= interval:
+            raise ValueError("Require ID, nonnegative epoch and 0 < interval < timeout")
         if agent_id in peers or not holder or holder not in {agent_id, *peers}:
             raise ValueError("Holder must be a member; peers must exclude self")
         self.peers = dict(peers)
@@ -48,6 +49,16 @@ class Agent(rpc.CraneAgentServicer):
         self.last_handoff = ""
         self.received = set()
         self.vote_state = {}  # Opaque reserved storage; Recovery owns vote policy.
+        self.recovery_config = recovery_config
+        self.recovery_private_key = recovery_private_key
+        if (recovery_config is None) != (recovery_private_key is None):
+            raise ValueError("Recovery config and private key must be supplied together")
+        if recovery_config is not None:
+            if self.path is None:
+                raise ValueError("Recovery voting requires a durable state file")
+            if set(recovery_config.members) != {agent_id, *peers}:
+                raise ValueError("Recovery membership must exactly match agent peers")
+            recovery.validate_identity(recovery_config, agent_id, recovery_private_key)
         if self.path and self.path.exists():
             saved = json.loads(self.path.read_text())
             if saved["agent_id"] != agent_id:
@@ -166,6 +177,80 @@ class Agent(rpc.CraneAgentServicer):
             self.emit("TOKEN_TRANSFER_RECEIVED", request.sender_id, transfer_id=request.transfer_id)
             self.emit("TOKEN_HOLDER_CHANGED", holder=self.state.agent_id)
             return self.reply(True)
+
+    # builds a recovery vote response
+    def recovery_reply(self, accepted, reason="", signature=b""):
+        return pb.RecoveryVote(accepted=accepted, reason=reason,
+            epoch=max(0, self.state.current_epoch), voter_id=self.state.agent_id,
+            signature=signature)
+
+    # validates and records a recovery vote
+    def _vote_recovery(self, raw, proposer_id, proposer_signature):
+        if self.recovery_config is None:
+            raise recovery.RecoveryError("RECOVERY_DISABLED")
+        payload = recovery.parse_proposal(raw, self.recovery_config)
+        if not recovery.verify_member(self.recovery_config, proposer_id,
+                                      proposer_signature, payload):
+            raise recovery.RecoveryError("INVALID_SIGNATURE")
+        if self.state.mode == Mode.REJOINING:
+            raise recovery.RecoveryError("REJOINING")
+        if payload["expected_epoch"] != self.state.current_epoch:
+            raise recovery.RecoveryError("STALE_EPOCH")
+        if self.state.token_holder not in self.suspected:
+            raise recovery.RecoveryError("HOLDER_NOT_SUSPECTED")
+        recovery.record_vote(self.vote_state, payload)
+        self.persist()
+        return payload, recovery.sign(self.recovery_private_key, payload)
+
+    # handles a peer recovery proposal
+    async def VoteRecovery(self, request, context):
+        async with self.lock:
+            try:
+                payload, signature = self._vote_recovery(
+                    request.proposal_json, request.proposer_id, request.proposer_signature)
+            except recovery.RecoveryError as error:
+                return self.recovery_reply(False, str(error))
+            self.emit("RECOVERY_VOTE_CAST", request.proposer_id,
+                      target_epoch=payload["epoch"], holder=payload["holder"])
+            return self.recovery_reply(True, signature=signature)
+
+    # gathers a strict-majority certificate
+    async def propose_recovery(self, gate_state, holder=None):
+        if self.recovery_config is None:
+            raise recovery.RecoveryError("RECOVERY_DISABLED")
+        holder = holder or self.state.agent_id
+        payload = recovery.proposal(self.recovery_config, gate_state, holder)
+        raw = recovery.canonical(payload)
+        proposer_signature = recovery.sign(self.recovery_private_key, payload)
+        request = pb.RecoveryProposal(proposer_id=self.state.agent_id,
+            proposal_json=raw, proposer_signature=proposer_signature)
+        async with self.lock:
+            try:
+                _, own_signature = self._vote_recovery(
+                    raw, self.state.agent_id, proposer_signature)
+            except recovery.RecoveryError as error:
+                self.emit("RECOVERY_REJECTED", reason=str(error), target_epoch=payload["epoch"])
+                return None
+        signatures = {self.state.agent_id: own_signature}
+
+        async def ask(peer):
+            try:
+                vote = await self.stubs[peer].VoteRecovery(request, timeout=self.timeout)
+            except grpc.aio.AioRpcError:
+                return
+            if (vote.accepted and vote.voter_id == peer
+                    and recovery.verify_member(self.recovery_config, peer,
+                                               vote.signature, payload)):
+                signatures[peer] = vote.signature
+
+        await asyncio.gather(*(ask(peer) for peer in self.peers))
+        if len(signatures) < self.recovery_config.majority:
+            self.emit("RECOVERY_NO_QUORUM", target_epoch=payload["epoch"],
+                      votes=len(signatures), required=self.recovery_config.majority)
+            return None
+        self.emit("RECOVERY_CERTIFICATE_FORMED", target_epoch=payload["epoch"],
+                  votes=len(signatures), holder=holder)
+        return recovery.certificate(payload, signatures)
 
     async def GetAgentState(self, request, context):
         async with self.lock:

@@ -108,8 +108,10 @@ Only receipt of a valid TokenTransfer grants local ownership.
 
 Persistence uses flushed JSON plus atomic file replacement for epoch/holder/token
 and reserved opaque vote storage. Restart always blocks ownership. Queue, transfer
-retry and deduplication history are in-memory for this milestone. There is no vote
-algorithm or public voting API. Use one process and one state file per agent.
+retry and deduplication history are in-memory for this milestone. Recovery votes are
+durable and exposed through `VoteRecovery`; a member will reproduce an identical vote
+but will not sign a conflicting proposal for the same target epoch. Use one process
+and one state file per agent.
 
 Events are JSON lines with Unix and monotonic timestamps, agent/peer IDs, epoch,
 and operation IDs where relevant. `Agent(event_sink=...)` is the recovery/evaluation
@@ -119,9 +121,11 @@ durations on one host; do not subtract monotonic timestamps from different hosts
 
 ### Limits and team integration decisions
 
-- **Moe (Recovery):** confirm authoritative reconciliation API, persistent vote
-  format, higher-epoch handling, and consumption of TOKEN_HOLDER_SUSPECTED. No
-  replacement token, certificate, majority vote or signing is implemented.
+- **Moe (Recovery):** implemented by the optional recovery configuration on each
+  agent. `TOKEN_HOLDER_SUSPECTED` enables voting; `propose_recovery` gathers a
+  strict majority of durable Ed25519 votes into the gate's certificate format.
+  The certificate must still be installed at the trusted gate before agents call
+  the authoritative `reconcile` hook.
 - **Max (Gate):** confirm holder/epoch/request correlation and the future gate
   client boundary. The separate gate service provides lane-entry and occupancy/fencing APIs; agent integration remains pending.
 - **Darius (Evaluation):** confirm JSON event fields, operation IDs, clock alignment
@@ -142,16 +146,16 @@ must be consistent; it is not a consensus algorithm.
 Tests cover the eleven requested behaviors across scenario tests, plus uncertain
 transfer retry, duplicate reception and restart blocking.
 
-Recommended next milestone: agree with Recovery and Controller on authoritative
-epoch/rejoin integration, then test restart and interrupted-handoff scenarios
-against that contract. Do not add quorum or gate algorithms inside this agent.
+Recommended next milestone: integrate the returned recovery certificate with the
+controller/gate client and reconcile every rejoining agent from the accepted gate
+state. Never reconcile from a heartbeat or an uninstalled proposal.
 
 ## CraneLock: Member 3 trusted access gate
 
 Standalone Python service for a **single simulated lane**, with signed gRPC requests,
 strict-majority recovery certificates, fencing, durable SQLite state and fail-closed
-occupancy handling. The crane algorithm, quorum producer, controller and yard simulator
-are represented by development clients; their real implementations are not included.
+occupancy handling. The agent package now produces quorum certificates; controller and
+yard-simulator integration are still represented by development clients.
 
 ### Run on Windows / PowerShell
 

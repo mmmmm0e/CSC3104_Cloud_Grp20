@@ -34,6 +34,19 @@ message Reply {
   string reason = 2;
   uint64 epoch = 3;
 }
+// carries a signed recovery proposal
+message RecoveryProposal {
+  string proposer_id = 1;
+  bytes proposal_json = 2;
+  bytes proposer_signature = 3;
+}
+message RecoveryVote {
+  bool accepted = 1;
+  string reason = 2;
+  uint64 epoch = 3;
+  string voter_id = 4;
+  bytes signature = 5;
+}
 message PeerState {
   string agent_id = 1;
   double last_seen_monotonic = 2;
@@ -53,5 +66,6 @@ service CraneAgent {
   rpc Heartbeat(HeartbeatMessage) returns (Reply);
   rpc TokenRequest(TokenRequestMessage) returns (Reply);
   rpc TokenTransfer(TokenTransferMessage) returns (Reply);
+  rpc VoteRecovery(RecoveryProposal) returns (RecoveryVote);
   rpc GetAgentState(Empty) returns (AgentState);
 }
