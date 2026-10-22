@@ -1,8 +1,11 @@
 # CraneLock
 
 This repository contains the normal-operation crane agent (`cranelock`) and the
-trusted access gate (`cranelock_gate`). Their APIs are separate; end-to-end integration
-is still pending. The sections below document each component.
+trusted access gate (`cranelock_gate`). Normal gate-authorized token handoff and
+gate-based restart reconciliation are now available in opt-in gate mode.
+See [agent/gate integration and exact local demo](docs/AGENT_GATE.md) for setup,
+authority rules, failure behavior, validation and team integration decisions.
+The separate protobuf services and original standalone baseline are preserved.
 
 Install both components and test dependencies with `python -m pip install -e ".[dev]"`
 (or `python -m pip install -r requirements.txt`), then run `python -m pytest -q`.
@@ -37,7 +40,7 @@ Generated modules are checked in; regenerate them after changing the proto. Do n
 edit generated code. The schema uses package `cranelock.v1` and stable numbered
 fields; add future recovery/gate/controller services without replacing this API.
 
-### Two-process demo
+### Standalone baseline two-process demo (without the gate)
 
 Use a **fresh demo directory** for each new simulated cluster. All agents must agree
 on initial epoch, holder and complete membership. Only one configured initial
@@ -72,7 +75,7 @@ received heartbeat, A emits `PEER_SUSPECTED` and `TOKEN_HOLDER_SUSPECTED`. State
 `SUSPECTED_UNAVAILABLE`; A never regenerates the token. Change timing with
 `--interval 0.5 --timeout 2`. Repeat `--peer ID=HOST:PORT` for arbitrary membership.
 
-Restarting with an existing state file intentionally enters REJOINING with
+In standalone mode, restarting with an existing state file intentionally enters REJOINING with
 `has_token=false`. There is no CLI bypass. `Agent.reconcile()` is a trusted Python
 integration hook whose caller must supply authoritative epoch/holder information.
 Do not delete state files to rejoin an existing cluster. For a separate fresh demo,
@@ -122,8 +125,8 @@ durations on one host; do not subtract monotonic timestamps from different hosts
 - **Moe (Recovery):** confirm authoritative reconciliation API, persistent vote
   format, higher-epoch handling, and consumption of TOKEN_HOLDER_SUSPECTED. No
   replacement token, certificate, majority vote or signing is implemented.
-- **Max (Gate):** confirm holder/epoch/request correlation and the future gate
-  client boundary. The separate gate service provides lane-entry and occupancy/fencing APIs; agent integration remains pending.
+- **Max (Gate):** normal handoff and restart integration are documented in
+  [the gate integration guide](docs/AGENT_GATE.md). Grant/entry integration remains deferred.
 - **Darius (Evaluation):** confirm JSON event fields, operation IDs, clock alignment
   and detection-latency definition. Current heartbeat fanout is O(N²) per round.
 - **Kirby (Controller):** confirm CENTRAL command semantics and who authorizes
@@ -142,9 +145,9 @@ must be consistent; it is not a consensus algorithm.
 Tests cover the eleven requested behaviors across scenario tests, plus uncertain
 transfer retry, duplicate reception and restart blocking.
 
-Recommended next milestone: agree with Recovery and Controller on authoritative
-epoch/rejoin integration, then test restart and interrupted-handoff scenarios
-against that contract. Do not add quorum or gate algorithms inside this agent.
+The next milestone after the standalone baseline is now implemented in opt-in gate
+mode; see [the integration guide](docs/AGENT_GATE.md) for its remaining boundaries.
+Do not add quorum or gate algorithms inside this agent.
 
 ## CraneLock: Member 3 trusted access gate
 

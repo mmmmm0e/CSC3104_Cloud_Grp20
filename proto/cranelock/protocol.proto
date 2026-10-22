@@ -16,11 +16,13 @@ message HeartbeatMessage {
   double sent_unix_seconds = 5;
   bool has_token = 6;
   string outgoing_transfer_id = 7;
+  uint64 revision = 8;
 }
 message TokenRequestMessage {
   string agent_id = 1;
   uint64 epoch = 2;
   string request_id = 3;
+  uint64 revision = 4;
 }
 message TokenTransferMessage {
   string sender_id = 1;
@@ -28,11 +30,14 @@ message TokenTransferMessage {
   uint64 epoch = 3;
   string transfer_id = 4;
   repeated string request_queue = 5;
+  uint64 revision = 6;
+  string holder = 7;
 }
 message Reply {
   bool accepted = 1;
   string reason = 2;
   uint64 epoch = 3;
+  uint64 revision = 4;
 }
 message PeerState {
   string agent_id = 1;
@@ -48,6 +53,7 @@ message AgentState {
   repeated string request_queue = 6;
   repeated PeerState peers = 7;
   string pending_transfer_id = 8;
+  uint64 revision = 9;
 }
 service CraneAgent {
   rpc Heartbeat(HeartbeatMessage) returns (Reply);
