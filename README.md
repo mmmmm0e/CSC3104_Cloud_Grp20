@@ -1,8 +1,9 @@
 # CraneLock
 
-This repository contains the normal-operation crane agent (`cranelock`) and the
-trusted access gate (`cranelock_gate`). Their APIs are separate; end-to-end integration
-is still pending. The sections below document each component.
+This repository contains the crane agent and recovery quorum component (`cranelock`)
+and the trusted access gate (`cranelock_gate`). Tests exercise recovery votes through
+the agent's gRPC service and install the resulting certificate at the gate. Automatic
+failure-to-recovery orchestration and deployment integration are still pending.
 
 Install both components and test dependencies with `python -m pip install -e ".[dev]"`
 (or `python -m pip install -r requirements.txt`), then run `python -m pytest -q`.
@@ -149,6 +150,66 @@ transfer retry, duplicate reception and restart blocking.
 Recommended next milestone: integrate the returned recovery certificate with the
 controller/gate client and reconcile every rejoining agent from the accepted gate
 state. Never reconcile from a heartbeat or an uninstalled proposal.
+
+## CraneLock: Member 2 recovery and quorum
+
+Recovery creates a proposal for epoch `e+1` using the gate's current epoch and
+authority revision. Members sign the same canonical payload using Ed25519 from the
+`cryptography` library. A certificate requires `floor(N/2)+1` distinct member votes;
+a minority partition cannot form one.
+
+Each voter validates the proposer signature, checks its current epoch and holder
+suspicion, and persists its vote before returning a signature. A member cannot sign
+a conflicting proposal for the same target epoch, including after restart. The gate
+independently verifies the certificate and fences the previous holder when it installs
+the new authority. Recovery does not establish physical lane clearance.
+
+| File | Purpose |
+| --- | --- |
+| `cranelock/recovery.py` | Proposal validation, Ed25519 signatures, vote policy and certificate assembly |
+| `cranelock/agent.py` | `VoteRecovery` RPC and `propose_recovery` vote collection |
+| `proto/cranelock/protocol.proto` | Recovery proposal and vote messages |
+| `tests/test_recovery.py` | Majority/minority partition, old-holder fencing and restart vote tests |
+| [docs/RECOVERY_SAFETY.md](docs/RECOVERY_SAFETY.md) | Safety argument and assumptions |
+
+### Test recovery (PowerShell, repository root)
+
+Use a fresh temporary directory and disable the pytest cache if Windows denies access
+to its default temporary or cache directories:
+
+```powershell
+$testTemp = Join-Path (Get-Location) ("pytest-temp-" + [guid]::NewGuid())
+.\.venv\Scripts\python.exe -m pytest tests\test_recovery.py -v -p no:cacheprovider --basetemp="$testTemp"
+```
+
+Expected result: **3 passed**. These tests exercise a two-of-three majority over gRPC,
+install its certificate at the gate, reject an old holder with `STALE_EPOCH`, deny a
+one-of-three minority a certificate, and reject a conflicting vote after restart.
+
+Run the complete suite with a new temporary directory:
+
+```powershell
+$testTemp = Join-Path (Get-Location) ("pytest-temp-" + [guid]::NewGuid())
+.\.venv\Scripts\python.exe -m pytest -v -p no:cacheprovider --basetemp="$testTemp"
+```
+
+The current suite has **67 tests**. Directories matching `pytest-temp-*/` are ignored
+by Git. The TLS rejection test may print a handshake error while still passing.
+
+### Integration API
+
+Construct each recovery-enabled `Agent` with `recovery_config` (the gate's `Config`),
+its own `recovery_private_key`, and a durable `state_file`. The configured membership
+must match the agent and its peers exactly; each process should hold only its own
+private key. Agents without these options retain normal-operation behavior.
+
+After holder suspicion, call `await agent.propose_recovery(gate_state, holder)`.
+It returns a gate-compatible certificate or `None` when the attempt cannot gather
+a majority or its local vote is rejected. It does not install authority or change
+token ownership. The integration caller submits the certificate through
+`InstallAuthority`, using its signed `expected_epoch` and `expected_revision`, then
+reconciles agents from the gate's accepted state. A certificate alone never authorizes
+entry. The existing agent CLI does not automatically start this workflow.
 
 ## CraneLock: Member 3 trusted access gate
 
