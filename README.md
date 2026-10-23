@@ -9,6 +9,31 @@ Install both components and test dependencies with `python -m pip install -e ".[
 (or `python -m pip install -r requirements.txt`), then run `python -m pytest -q`.
 Run `python scripts/generate_proto.py` to regenerate bindings for both protocols.
 
+Member 4's first evaluation milestone is available with
+`python -m cranelock_sim --cranes 3 --duration 60 --seed 20`.
+It runs seeded normal traffic through the signed gate core and exports physical
+traces, request CSV and summary metrics. See [evaluation instructions and scope](docs/EVALUATION.md).
+Its logical FIFO scheduler does not yet measure the distributed CraneLock protocol.
+Run `python -m cranelock_sim --mode agents` for the three-agent normal-handoff
+integration: real loopback gRPC token requests/transfers, gate entry checks and
+physical lane movements, with two rounds of A/B/C crossings.
+Run `python -m cranelock_sim --mode recovery` for holder failure before entry and
+during occupancy. It prints live `[PASS]` checks and measures actual heartbeat
+detection, quorum recovery, old-permission fencing and safe replacement entry.
+Run `python -m cranelock_sim --mode partition` to keep all agents alive while
+blocking peer RPCs across a majority/minority split or three isolated agents.
+The live checks verify majority recovery, stale-holder fencing, occupancy blocking
+and refusal to install replacement authority without a quorum.
+Run `python -m cranelock_sim --mode restart` to restart the failed holder from
+its old state after recovery, verify REJOINING blocks participation, then reconcile
+from accepted gate authority and complete a new token-authorized crossing.
+Run `python -m cranelock_sim --mode compare` for paired normal/holder-failure
+comparisons of a central reference scheduler, basic-token agents and CraneLock.
+Install `.[evaluation]` for PNG/SVG graphs. See [baseline comparison scope and metrics](docs/EVALUATION.md#run-the-comparisons).
+View saved experiments with `python -m cranelock_sim.dashboard`, then open
+`http://127.0.0.1:8765`. The local dashboard includes model charts, run filters,
+recorded lane playback and evidence downloads. See [dashboard instructions](docs/EVALUATION.md#open-the-dashboard).
+
 Both demos default to port 50051. Run them separately or configure distinct ports
 when running them together.
 
@@ -178,7 +203,7 @@ Use a fresh temporary directory and disable the pytest cache if Windows denies a
 to its default temporary or cache directories:
 
 ```powershell
-$testTemp = Join-Path (Get-Location) ("pytest-temp-" + [guid]::NewGuid())
+$testTemp = Join-Path ([IO.Path]::GetTempPath()) ("cranelock-tests-" + [guid]::NewGuid())
 .\.venv\Scripts\python.exe -m pytest tests\test_recovery.py -v -p no:cacheprovider --basetemp="$testTemp"
 ```
 
@@ -189,12 +214,12 @@ one-of-three minority a certificate, and reject a conflicting vote after restart
 Run the complete suite with a new temporary directory:
 
 ```powershell
-$testTemp = Join-Path (Get-Location) ("pytest-temp-" + [guid]::NewGuid())
+$testTemp = Join-Path ([IO.Path]::GetTempPath()) ("cranelock-tests-" + [guid]::NewGuid())
 .\.venv\Scripts\python.exe -m pytest -v -p no:cacheprovider --basetemp="$testTemp"
 ```
 
-The current suite has **67 tests**. Directories matching `pytest-temp-*/` are ignored
-by Git. The TLS rejection test may print a handshake error while still passing.
+Temporary test files stay in the Windows temporary directory. The TLS rejection
+test may print a handshake error while still passing.
 
 ### Integration API
 
@@ -256,6 +281,12 @@ The development demo uses plaintext loopback. Network listeners require mutual T
 unless explicitly enabled for an isolated simulation.
 
 ### Team handoff
+
+For the evaluation role, [benefits and costs](docs/EVALUATION.md#read-the-measurements) compares actual
+reference-controller outage, lost-token recovery and healthy-operation overhead.
+Run `python -m cranelock_sim --mode benefits --output run/evaluation/benefits-completion-validated`,
+then `python -m cranelock_sim.dashboard`. The dashboard explains paired gains and
+costs; the teammate controller remains an outstanding integration boundary.
 
 - [Contract and signing format](docs/CONTRACT.md): Member 1's proposed shared proto,
   Member 2's certificate format, and Member 4/5 integration rules.
