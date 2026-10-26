@@ -138,6 +138,32 @@ def test_event_reader_reports_malformed_and_truncated_data(saved_results):
     assert data["truncated"] and data["malformed"] == 1
 
 
+@pytest.mark.parametrize("disconnect", [ConnectionAbortedError, ConnectionResetError, BrokenPipeError])
+@pytest.mark.parametrize("write_number", [1, 2], ids=["headers", "body"])
+@pytest.mark.parametrize("path,status", [("/api/catalog", 200), ("/api/run", 400), ("/missing", 404)])
+def test_client_disconnect_does_not_retry_response(saved_results, disconnect, write_number, path, status):
+    from unittest.mock import Mock
+
+    with make_server(saved_results, 0) as server:
+        # Use the real route/response code with a writer that loses its client
+        # during headers or body, including while sending an error response.
+        handler = server.RequestHandlerClass.__new__(server.RequestHandlerClass)
+        handler.path = path
+        handler.request_version = "HTTP/1.1"
+        handler.requestline = f"GET {path} HTTP/1.1"
+        handler.command = "GET"
+        handler.close_connection = False
+        handler.wfile = Mock()
+        handler.wfile.write.side_effect = [None] * (write_number - 1) + [disconnect("Client disconnected")]
+        handler.send_response = Mock(wraps=handler.send_response)
+
+        handler.do_GET()
+
+        assert handler.close_connection is True
+        handler.send_response.assert_called_once_with(status)
+        assert handler.wfile.write.call_count == write_number
+
+
 def test_http_serves_ui_json_and_downloads(dashboard_server):
     url, _ = dashboard_server
     with urlopen(url) as response:
