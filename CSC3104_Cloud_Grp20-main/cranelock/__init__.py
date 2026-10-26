@@ -1,1 +1,0 @@
-"""CraneLock normal-operation agent."""
