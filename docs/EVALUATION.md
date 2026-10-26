@@ -3,6 +3,24 @@
 This guide covers running the simulator, reading the dashboard and interpreting
 the comparisons. Commands below run from the repository root in PowerShell.
 
+## Combined project progress demo
+
+```powershell
+.\.venv\Scripts\python.exe -m cranelock_sim.progress_demo
+```
+
+This runs normal traffic, both holder-failure scenarios, three partition scenarios
+and both restart scenarios. It combines Members 1 to 4 without duplicating the
+existing experiment runners. A new directory under `run/evaluation` holds a timestamped
+`demo.log`, `summary.json`, `scenarios.csv` and all original per-scenario evidence.
+Physical entry traces are checked against accepted gate decisions before the demo
+reports success. A no-majority scenario passes by refusing recovery safely.
+
+Use the printed dashboard command to restrict the viewer to this new result set.
+The dashboard shows saved playback, not live control. The experiment setup remains
+single-host loopback with adapter-controlled failure handling and reconciliation;
+the teammate controller and Kubernetes are outside this demo.
+
 ## Open the dashboard
 
 ```powershell
@@ -96,6 +114,13 @@ the same request sequence, count, workload hash and measurement policy. Do not
 compare batch waiting directly with steady-stream waiting or mix old and new
 healthy measurements. RPC counts, where recorded, count instrumented attempts;
 they are not network packet or byte totals. Holder-failure RPC cost is unmeasured.
+
+The local agent adapter retries transient `UNAVAILABLE` and `DEADLINE_EXCEEDED`
+token transfers at most three times using the same pending transfer ID. It never
+restores the sender's ownership on a timeout. Retries count as actual RPC attempts;
+explicit rejections and other errors still fail the experiment. Agent events record
+`TOKEN_TRANSFER_RPC_FAILED` or `TOKEN_TRANSFER_REJECTED`, and adapter events record
+`token_transfer_retry`, so a failed run retains the underlying error details.
 
 The recommended saved collection contains 18 new healthy batch runs and 36 failure
 runs copied unchanged from `benefits-validated`. Its root summary records that

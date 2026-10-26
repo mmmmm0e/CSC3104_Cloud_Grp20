@@ -1,4 +1,4 @@
-"""Read-only, loopback results viewer. No simulation jobs or writes are exposed."""
+"""Read-only results viewer, bound to loopback by default."""
 import argparse
 import csv
 import json
@@ -204,7 +204,8 @@ class Results:
         return dict(events=events, total=total, truncated=total > len(events), malformed=malformed)
 
 
-def make_server(root, port=8765):
+# creates the read-only results server
+def make_server(root, port=8765, host="127.0.0.1"):
     results = Results(root)
     assets = files("cranelock_sim").joinpath("web")
 
@@ -262,17 +263,19 @@ def make_server(root, port=8765):
         def log_message(self, format, *args):
             pass
 
-    return ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    return ThreadingHTTPServer((host, port), Handler)
 
 
 def main():
     parser = argparse.ArgumentParser(description="View saved CraneLock results locally")
     parser.add_argument("--root", default="run/evaluation")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--bind", choices=["127.0.0.1", "0.0.0.0"], default="127.0.0.1",
+                        help="Listener address; use 0.0.0.0 inside a container")
     args = parser.parse_args()
     if not 0 <= args.port <= 65535:
         parser.error("port must be between 0 and 65535")
-    with make_server(args.root, args.port) as server:
+    with make_server(args.root, args.port, args.bind) as server:
         print(f"CraneLock results: http://127.0.0.1:{server.server_port}", flush=True)
         print(f"Reading saved experiments from {Path(args.root).resolve()}", flush=True)
         print("Press Ctrl+C to stop.", flush=True)

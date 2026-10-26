@@ -116,6 +116,7 @@ class AgentCluster:
             for identity, state in states.items()})
         return owner, states
 
+    # retries transient failures with the same pending transfer
     async def handoff(self, client, lane, expected):
         owner, _ = await self.snapshot("before_handoff")
         if owner == expected:
@@ -125,8 +126,22 @@ class AgentCluster:
         old = await asyncio.to_thread(client.state)
         if owner is None or old["holder"] != owner:
             raise SafetyViolation("Agent and gate disagree before handoff")
-        if not await self.agents[owner].transfer_next():
-            raise RuntimeError("Agent could not complete queued gRPC token transfer")
+        sender = self.agents[owner]
+        transfer_id = None
+        for attempt in range(3):
+            if await sender.transfer_next():
+                break
+            failure = sender.last_transfer_failure or dict(code="NOT_READY", reason="no pending transfer")
+            pending = sender.pending
+            if (pending is None or (transfer_id is not None and pending.transfer_id != transfer_id)
+                    or failure["code"] not in {"UNAVAILABLE", "DEADLINE_EXCEEDED"}
+                    or attempt == 2):
+                raise RuntimeError("Agent could not complete queued gRPC token transfer: "
+                                   f"{failure['code']}: {failure['reason']}")
+            transfer_id = pending.transfer_id
+            self.emit("token_transfer_retry", sender=owner, receiver=expected,
+                      transfer_id=transfer_id, attempt=attempt + 2, **failure)
+            await asyncio.sleep(0.05)
         new_owner, _ = await self.snapshot("after_token_transfer")
         if new_owner != expected:
             raise SafetyViolation(f"Expected queued holder {expected}, got {new_owner}")

@@ -1,5 +1,78 @@
 # Deployment, persistence and testing handoff
 
+## Container-packaged progress demo (Members 1 to 4 and platform)
+
+`Dockerfile.progress` packages the combined demo, simulator, agents, gate and original
+evaluation dashboard. `deploy/compose.progress.json` is a Compose file written in JSON
+and uses its own `cranelock-progress` project and named results volume. It is separate
+from the existing standalone crane/gate deployments.
+
+Start Docker Desktop with Linux containers enabled. From the repository root:
+
+```powershell
+docker version
+docker compose -f deploy/compose.progress.json build dashboard
+docker compose -f deploy/compose.progress.json run --rm demo
+docker compose -f deploy/compose.progress.json up -d dashboard
+docker compose -f deploy/compose.progress.json ps
+```
+
+Open **http://127.0.0.1:8765**. Stop any locally running dashboard on that port first,
+or change the host port in the Compose file. The dashboard uses the original HTML,
+CSS, JavaScript and evaluation calculations. Its optional `--bind 0.0.0.0` is used
+inside the container; the published host port is restricted to loopback. The normal
+Python dashboard command still binds to loopback by default.
+
+The `demo` tool runs eight connected scenarios and saves timestamped progress logs,
+summary/CSV results, agent state and gate databases below `/data/run/evaluation`.
+Each invocation uses a fresh directory. The named volume retains these artifacts
+after the tool container exits. The separate dashboard mounts that volume read-only;
+its health check fetches `/api/catalog`. All containers run as UID 10001, with a
+read-only root filesystem and a writable temporary directory.
+
+To populate the original evaluation comparison pages, run the benefits tool as well:
+
+```powershell
+docker compose -f deploy/compose.progress.json run --rm evaluation
+```
+
+The image includes plotting dependencies. A smaller comparison can be run with:
+
+```powershell
+docker compose -f deploy/compose.progress.json run --rm evaluation -m cranelock_sim --mode benefits --seed 20 --loads 6 --scenario controller-outage --duration 5 --no-plots
+```
+
+Use **Refresh results** in the dashboard after a tool finishes. An eight-scenario demo
+produces safety/recovery evidence; the separate benefits experiment produces the
+baseline comparison results. Their measurement rules are unchanged.
+
+To export evidence to a new host directory:
+
+```powershell
+docker compose -f deploy/compose.progress.json cp dashboard:/data/run/evaluation run/container-evidence
+```
+
+The export includes internal databases/state as well as presentation logs. Share
+only the selected log, CSV and summary artifacts. To stop the dashboard while keeping
+the results volume:
+
+```powershell
+docker compose -f deploy/compose.progress.json down
+```
+
+Do not add `--volumes` if you want to keep the recorded results. The original agent
+volumes and gate database are not used by this separate presentation setup.
+
+Scope: the demo runner, agents and gate still communicate over loopback within one
+tool container. The dashboard is a separate container. Stops, partitions and restarts
+are controlled by the simulator's existing service/RPC fault model. This is Docker
+packaging of the integrated demo, not one crane per container, OS-level network chaos,
+Kubernetes validation or a Prometheus/Grafana deployment. Those remain platform work.
+
+Validation on this workstation: Docker is not installed, so image build and Compose
+runtime checks are pending. The local demo, wheel package contents and HTTP listener
+are checked independently; a skipped Docker test does not establish container success.
+
 ## Local standalone validation
 
 Install from the project root and run the README commands. The tests use temporary

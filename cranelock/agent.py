@@ -47,6 +47,7 @@ class Agent(rpc.CraneAgentServicer):
         self.events = event_sink or (lambda e: print(json.dumps(e), flush=True))
         self.state = AgentState(agent_id, epoch, holder, mode, holder == agent_id)
         self.pending = None
+        self.last_transfer_failure = None
         self.last_handoff = ""
         self.received = set()
         self.observed_handoffs = set()
@@ -290,6 +291,7 @@ class Agent(rpc.CraneAgentServicer):
         return await self.stubs[holder].TokenRequest(message, timeout=self.timeout)
 
     async def transfer_next(self):
+        self.last_transfer_failure = None
         async with self.lock:
             if self.state.mode == Mode.REJOINING:
                 return False
@@ -311,11 +313,19 @@ class Agent(rpc.CraneAgentServicer):
             message = self.pending
         try:
             result = await self.stubs[message.receiver_id].TokenTransfer(message, timeout=self.timeout)
-        except grpc.aio.AioRpcError:
+        except grpc.aio.AioRpcError as error:
+            self.last_transfer_failure = dict(code=error.code().name, reason=error.details())
+            self.emit("TOKEN_TRANSFER_RPC_FAILED", message.receiver_id,
+                      transfer_id=message.transfer_id, reason=error.code().name,
+                      detail=error.details())
             return False
         async with self.lock:
             if result.accepted and self.pending is message:
                 self.pending = None
+            if not result.accepted:
+                self.last_transfer_failure = dict(code="REJECTED", reason=result.reason)
+                self.emit("TOKEN_TRANSFER_REJECTED", message.receiver_id,
+                          transfer_id=message.transfer_id, reason=result.reason)
             return result.accepted
 
     async def detect(self):

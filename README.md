@@ -1,9 +1,10 @@
 # CraneLock
 
 This repository contains the crane agent and recovery quorum component (`cranelock`)
-and the trusted access gate (`cranelock_gate`). Tests exercise recovery votes through
-the agent's gRPC service and install the resulting certificate at the gate. Automatic
-failure-to-recovery orchestration and deployment integration are still pending.
+and the trusted access gate (`cranelock_gate`), plus Member 4's simulator and evaluation
+tools (`cranelock_sim`). Local demo runners connect agent gRPC, recovery certificates,
+gate validation and the simulator's physical lane. Deployment integration and the
+teammate controller remain pending; the normal agent CLI does not orchestrate recovery.
 
 Install both components and test dependencies with `python -m pip install -e ".[dev]"`
 (or `python -m pip install -r requirements.txt`), then run `python -m pytest -q`.
@@ -36,6 +37,58 @@ recorded lane playback and evidence downloads. See [dashboard instructions](docs
 
 Both demos default to port 50051. Run them separately or configure distinct ports
 when running them together.
+
+## Members 1 to 4 combined progress demo
+
+For the container-packaged version using the platform's Docker approach, see
+[Docker progress demo](docs/DEPLOYMENT.md#container-packaged-progress-demo-members-1-to-4-and-platform).
+It adds a demo/evaluation image, persistent results volume and dashboard container.
+The existing standalone agent/gate deployments remain available separately.
+
+Run the complete local presentation sequence with one command:
+
+```powershell
+.\.venv\Scripts\python.exe -m cranelock_sim.progress_demo
+```
+
+This reuses Member 4's actual simulator, physical lane safety checks and scenario
+runners with Members 1 to 3's agents, quorum recovery and trusted gate. It runs eight
+independent scenarios, each with fresh state:
+
+| Stage | What to show |
+| --- | --- |
+| Normal operation | Six physical crossings over two token-handoff rounds |
+| Holder failure, before entry and during occupancy | Heartbeat detection, signed majority recovery, stale-permission rejection and clearance blocking |
+| Majority partition, before entry and during occupancy | Agents remain alive while cross-partition peer RPCs are blocked; only the majority recovers |
+| No majority | All peers are isolated; the gate refuses replacement authority and no physical entry occurs |
+| Restart, before entry and during occupancy | The old holder reloads stale state, stays REJOINING, reconciles and crosses only after a fresh token handoff |
+
+Every scenario compares recorded physical entries with accepted gate entry decisions.
+No-quorum success means safely refusing recovery, not restoring progress or clearing
+the lane. Logs use UTC timestamps, while scenario timing uses host monotonic seconds.
+
+The command prints a new evidence directory under `run/evaluation/progress-...`.
+It contains `demo.log`, a combined `summary.json`, `scenarios.csv`, and separate
+scenario directories with physical/agent events, gate audit logs and request CSVs.
+A failed scenario exits with an error and retains a failed root summary and logs.
+Existing output directories are refused.
+
+To choose a new evidence directory and view it in Member 4's dashboard:
+
+```powershell
+.\.venv\Scripts\python.exe -m cranelock_sim.progress_demo --output run/evaluation/group-progress
+.\.venv\Scripts\python.exe -m cranelock_sim.dashboard --root run/evaluation/group-progress
+```
+
+Open `http://127.0.0.1:8765`. The dashboard reads saved evidence; it does not run live
+crane controls. Select the saved normal, recovery, partition or restart experiments
+under **Test settings and saved experiments** to inspect the recorded state and events.
+The demo does not generate baseline-comparison charts; those use the separate
+evaluation commands documented in [docs/EVALUATION.md](docs/EVALUATION.md).
+
+Presentation scope: a connected Members 1 to 4 prototype on one host using real gRPC,
+an independent simulated physical lane and runner-controlled failures/reconciliation.
+It does not claim Kubernetes deployment or Member 5's controller integration.
 
 ## Members 1 to 3 progress demo
 
