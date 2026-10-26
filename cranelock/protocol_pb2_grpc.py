@@ -49,6 +49,11 @@ class CraneAgentStub:
                 request_serializer=cranelock_dot_protocol__pb2.TokenTransferMessage.SerializeToString,
                 response_deserializer=cranelock_dot_protocol__pb2.Reply.FromString,
                 _registered_method=True)
+        self.VoteRecovery = channel.unary_unary(
+                '/cranelock.v1.CraneAgent/VoteRecovery',
+                request_serializer=cranelock_dot_protocol__pb2.RecoveryProposal.SerializeToString,
+                response_deserializer=cranelock_dot_protocol__pb2.RecoveryVote.FromString,
+                _registered_method=True)
         self.GetAgentState = channel.unary_unary(
                 '/cranelock.v1.CraneAgent/GetAgentState',
                 request_serializer=cranelock_dot_protocol__pb2.Empty.SerializeToString,
@@ -77,6 +82,12 @@ class CraneAgentServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def VoteRecovery(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def GetAgentState(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -100,6 +111,11 @@ def add_CraneAgentServicer_to_server(servicer, server):
                     servicer.TokenTransfer,
                     request_deserializer=cranelock_dot_protocol__pb2.TokenTransferMessage.FromString,
                     response_serializer=cranelock_dot_protocol__pb2.Reply.SerializeToString,
+            ),
+            'VoteRecovery': grpc.unary_unary_rpc_method_handler(
+                    servicer.VoteRecovery,
+                    request_deserializer=cranelock_dot_protocol__pb2.RecoveryProposal.FromString,
+                    response_serializer=cranelock_dot_protocol__pb2.RecoveryVote.SerializeToString,
             ),
             'GetAgentState': grpc.unary_unary_rpc_method_handler(
                     servicer.GetAgentState,
@@ -188,6 +204,33 @@ class CraneAgent:
             '/cranelock.v1.CraneAgent/TokenTransfer',
             cranelock_dot_protocol__pb2.TokenTransferMessage.SerializeToString,
             cranelock_dot_protocol__pb2.Reply.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def VoteRecovery(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/cranelock.v1.CraneAgent/VoteRecovery',
+            cranelock_dot_protocol__pb2.RecoveryProposal.SerializeToString,
+            cranelock_dot_protocol__pb2.RecoveryVote.FromString,
             options,
             channel_credentials,
             insecure,

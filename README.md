@@ -111,8 +111,10 @@ Only receipt of a valid TokenTransfer grants local ownership.
 
 Persistence uses flushed JSON plus atomic file replacement for epoch/holder/token
 and reserved opaque vote storage. Restart always blocks ownership. Queue, transfer
-retry and deduplication history are in-memory for this milestone. There is no vote
-algorithm or public voting API. Use one process and one state file per agent.
+retry and deduplication history are in-memory for this milestone. Recovery votes are
+durable and exposed through `VoteRecovery`; a member will reproduce an identical vote
+but will not sign a conflicting proposal for the same target epoch. Use one process
+and one state file per agent.
 
 Events are JSON lines with Unix and monotonic timestamps, agent/peer IDs, epoch,
 and operation IDs where relevant. `Agent(event_sink=...)` is the recovery/evaluation
@@ -153,8 +155,8 @@ Do not add quorum or gate algorithms inside this agent.
 
 Standalone Python service for a **single simulated lane**, with signed gRPC requests,
 strict-majority recovery certificates, fencing, durable SQLite state and fail-closed
-occupancy handling. The crane algorithm, quorum producer, controller and yard simulator
-are represented by development clients; their real implementations are not included.
+occupancy handling. The agent package now produces quorum certificates; controller and
+yard-simulator integration are still represented by development clients.
 
 ### Run on Windows / PowerShell
 

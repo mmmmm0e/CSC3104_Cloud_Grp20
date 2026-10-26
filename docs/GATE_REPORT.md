@@ -32,9 +32,9 @@ trades availability for safety when physical clearance cannot be confirmed.
 
 The model assumes one active gate, fixed membership, protocol-following authenticated
 agents and accurate trusted simulator/operator observations. It excludes malicious
-cranes, replicated-gate consensus and industrial safety certification. Upstream persistent
-voting discipline remains the recovery component's responsibility; certificate
-verification alone does not implement consensus.
+cranes, replicated-gate consensus and industrial safety certification. The recovery
+component durably prevents a member from signing conflicting proposals for one target
+epoch; the gate independently verifies the resulting certificate and current snapshot.
 
 ```mermaid
 stateDiagram-v2
@@ -106,7 +106,8 @@ the previous physical occupant across digital recovery and gate restart.
 
 The demonstration admits a valid holder, rejects its stale authority after recovery
 and blocks the replacement holder until the previous occupancy is explicitly cleared.
-These are component-level checks. The full proposal additionally requires integration
-with real crane agents, quorum generation, the yard simulator, controller and platform
-failure injector. Safety-checker traces, baseline comparisons, latency, fairness,
+These are component-level checks. The recovery suite additionally verifies majority
+and minority partitions, durable non-equivocation, and old-holder fencing. The full
+proposal still requires yard-simulator, controller and platform-failure integration.
+Safety-checker traces, baseline comparisons, latency, fairness,
 throughput and scalability measurements remain the integrated evaluation's responsibility.
