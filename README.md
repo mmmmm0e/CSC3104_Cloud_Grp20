@@ -12,6 +12,50 @@ Run `python scripts/generate_proto.py` to regenerate bindings for both protocols
 Both demos default to port 50051. Run them separately or configure distinct ports
 when running them together.
 
+## Members 1 to 3 progress demo
+
+Run the connected local demo from the repository root:
+
+```powershell
+.\.venv\Scripts\python.exe -m cranelock.progress_demo
+```
+
+The command starts three real gRPC agents and a real gRPC gate on temporary local
+ports, then checks token queueing and handoff, accepted entry, heartbeat failure
+detection, minority rejection, majority recovery, agent reconciliation, old-holder
+fencing, and occupancy blocking until explicit simulated clearance. Every step prints
+`PASS`; a failed check exits with an error. No external services are needed.
+
+Each invocation creates a new `run/progress-<timestamp>-<id>/` directory and prints
+its absolute path. Evidence includes:
+
+| File | Contents |
+| --- | --- |
+| `demo.log` | Timestamped, readable demo steps and results |
+| `agents.jsonl` | Actual agent heartbeat, token, suspicion and recovery events |
+| `gate.jsonl` | Actual durable gate audit events, including rejected requests |
+| `summary.json` | Overall result, individual checks and demo scope |
+
+To select a new output directory:
+
+```powershell
+.\.venv\Scripts\python.exe -m cranelock.progress_demo --output run/presentation-demo
+Get-Content run/presentation-demo/demo.log
+Get-Content run/presentation-demo/summary.json
+```
+
+The selected directory must not already exist, so earlier evidence is preserved.
+`run/` is ignored by Git and includes development identities and databases; share
+only the evidence files above. Timestamps inside logs use UTC.
+
+For the presentation, explain that this runner supplies the orchestration and uses
+signed development controller, simulator and operator commands. It stops agents to
+model unavailable members, restarts one from its persistent state, and explicitly
+reconciles it from the gate. It also sends an old signed request to model a delayed
+holder command. These are local component integration checks, not Kubernetes failure
+injection or a complete controller/yard-simulator implementation. The normal agent
+CLI still requires team integration for automatic recovery.
+
 ## CraneLock — normal crane-agent milestone
 
 The crane agent provides normal-operation token coordination and its shared contract.
@@ -193,7 +237,7 @@ $testTemp = Join-Path (Get-Location) ("pytest-temp-" + [guid]::NewGuid())
 .\.venv\Scripts\python.exe -m pytest -v -p no:cacheprovider --basetemp="$testTemp"
 ```
 
-The current suite has **67 tests**. Directories matching `pytest-temp-*/` are ignored
+The current suite has **68 tests**. Directories matching `pytest-temp-*/` are ignored
 by Git. The TLS rejection test may print a handshake error while still passing.
 
 ### Integration API
