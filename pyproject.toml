@@ -14,13 +14,18 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["grpcio-tools==1.84.0", "pytest==9.1.1"]
+evaluation = ["matplotlib>=3.9,<4"]
+ui-test = ["playwright>=1.50,<2"]
 
 [project.scripts]
 cranelock-gate = "cranelock_gate.server:main"
 cranelock-demo = "cranelock_gate.demo:main"
 
 [tool.setuptools.packages.find]
-include = ["cranelock", "cranelock_gate*"]
+include = ["cranelock", "cranelock_gate*", "cranelock_sim*"]
+
+[tool.setuptools.package-data]
+cranelock_sim = ["web/*.html", "web/*.css", "web/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
