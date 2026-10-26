@@ -1,12 +1,15 @@
 import asyncio
 
 import grpc
+import pytest
 
 from cranelock.agent import Agent
+from cranelock.gate_client import GateClient
 from cranelock import recovery
 from cranelock import protocol_pb2_grpc as rpc
 from cranelock_gate.client import command
 from cranelock_gate.crypto import CERTIFICATE_DOMAIN, COMMAND_DOMAIN, canonical
+from cranelock_gate.server import RunningServer
 
 
 async def connect(agents):
@@ -20,15 +23,21 @@ async def connect(agents):
             agent.stubs[peer] = rpc.CraneAgentStub(agent.channels[peer])
 
 
-def test_majority_partition_recovers_and_fences_old_holder(h, tmp_path):
+@pytest.mark.parametrize("with_gate", [False, True])
+def test_majority_partition_recovers_and_fences_old_holder(h, tmp_path, with_gate):
     async def scenario():
         assert h.install("crane-1")["allowed"]
         agents = {}
+        events = []
+        server = RunningServer(h.gate, "127.0.0.1:0") if with_gate else None
         addresses = {identity: "localhost:1" for identity in h.config.members}
         for identity in h.config.members:
             peers = {peer: address for peer, address in addresses.items() if peer != identity}
             agents[identity] = Agent(identity, peers, "crane-1", epoch=0,
-                state_file=tmp_path / f"{identity}.json", event_sink=lambda event: None,
+                state_file=tmp_path / f"{identity}.json", event_sink=events.append,
+                gate=GateClient(grpc.insecure_channel(f"127.0.0.1:{server.port}"),
+                    h.config, h.keys, identity) if with_gate else None,
+                revision=h.state["revision"],
                 recovery_config=h.config, recovery_private_key=h.keys[identity],
                 interval=0.05, timeout=0.1)
         try:
@@ -55,8 +64,21 @@ def test_majority_partition_recovers_and_fences_old_holder(h, tmp_path):
             denied = h.gate.execute("RequestGrant", canonical(old),
                 h.keys["crane-1"].sign(COMMAND_DOMAIN + canonical(old)))
             assert denied["reason"] == "STALE_EPOCH"
+            assert any(event["event"] == "RECOVERY_VOTE_CAST" for event in events)
+            formed = next(event for event in events
+                          if event["event"] == "RECOVERY_CERTIFICATE_FORMED")
+            assert formed["holder"] == "crane-2" and formed["votes"] == h.config.majority
+            if with_gate:
+                for identity in ("crane-2", "crane-3"):
+                    agent = agents[identity]
+                    assert await agent.reconcile_from_gate()
+                    assert (agent.state.current_epoch, agent.state.revision) == (1, 2)
+                    assert agent.state.has_token == (identity == "crane-2")
+                    assert agent.vote_state
         finally:
             await asyncio.gather(*(agent.close() for agent in agents.values()))
+            if server:
+                server.close()
     asyncio.run(scenario())
 
 

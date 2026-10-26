@@ -35,7 +35,8 @@ class AgentState:
 class Agent(rpc.CraneAgentServicer):
     def __init__(self, agent_id, peers, holder, *, epoch=1, mode=Mode.LOCAL,
                  interval=0.5, timeout=2.0, state_file=None, clock=time.monotonic,
-                 event_sink=None, gate=None, revision=0):
+                 event_sink=None, gate=None, revision=0,
+                 recovery_config=None, recovery_private_key=None):
         if not agent_id or epoch < 0 or revision < 0 or interval <= 0 or timeout <= interval:
             raise ValueError("Require ID, nonnegative epoch/revision and 0 < interval < timeout")
         if agent_id in peers or not holder or holder not in {agent_id, *peers}:
@@ -94,7 +95,7 @@ class Agent(rpc.CraneAgentServicer):
         self.events(dict(event=event, timestamp=time.time(),
                          monotonic=self.clock(), agent_id=self.state.agent_id,
                          peer_id=peer_id, epoch=self.state.current_epoch,
-                         revision=self.state.revision, holder=self.state.token_holder, **fields))
+                         revision=self.state.revision, holder=self.state.token_holder) | fields)
 
     def persist(self):
         if self.path:
