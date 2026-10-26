@@ -34,7 +34,8 @@ class AgentState:
 class Agent(rpc.CraneAgentServicer):
     def __init__(self, agent_id, peers, holder, *, epoch=1, mode=Mode.LOCAL,
                  interval=0.5, timeout=2.0, state_file=None, clock=time.monotonic,
-                 event_sink=None, recovery_config=None, recovery_private_key=None):
+                 event_sink=None, recovery_config=None, recovery_private_key=None,
+                 controller_probe=None):
         if not agent_id or epoch < 0 or interval <= 0 or timeout <= interval:
             raise ValueError("Require ID, nonnegative epoch and 0 < interval < timeout")
         if agent_id in peers or not holder or holder not in {agent_id, *peers}:
@@ -48,6 +49,7 @@ class Agent(rpc.CraneAgentServicer):
         self.pending = None
         self.last_handoff = ""
         self.received = set()
+        self.observed_handoffs = set()
         self.vote_state = {}  # Opaque reserved storage; Recovery owns vote policy.
         self.recovery_config = recovery_config
         self.recovery_private_key = recovery_private_key
@@ -75,6 +77,9 @@ class Agent(rpc.CraneAgentServicer):
         self.stubs = {p: rpc.CraneAgentStub(c) for p, c in self.channels.items()}
         self.tasks = []
         self.server = None
+        self.controller_probe = controller_probe
+        self.controller_suspected = False
+        self.last_controller_seen = clock()
         self.persist()
 
     def emit(self, event, peer_id=None, **fields):
@@ -118,6 +123,7 @@ class Agent(rpc.CraneAgentServicer):
             self.pending = None
             self.last_handoff = ""
             self.received.clear()
+            self.observed_handoffs.clear()
             self.persist()
             self.emit("MODE_CHANGED", mode=mode.name)
 
@@ -128,15 +134,21 @@ class Agent(rpc.CraneAgentServicer):
             self.last_seen[request.agent_id] = self.clock()
             self.suspected.discard(request.agent_id)
             self.emit("HEARTBEAT_RECEIVED", request.agent_id)
+            handoff_key = (request.epoch, request.agent_id, request.outgoing_transfer_id)
             # A known holder may announce its normal handoff. This never grants
-            # local ownership; only TokenTransfer can do that.
+            # local ownership; only TokenTransfer can do that. The receiver keeps
+            # the sender as its known holder until the transfer arrives. Remember
+            # announcements to avoid replaying an older handoff after a cycle.
             if (self.valid(request.epoch) and not self.state.has_token
                     and request.agent_id == self.state.token_holder
                     and not request.has_token and request.mode != pb.REJOINING
                     and request.outgoing_transfer_id
+                    and handoff_key not in self.observed_handoffs
                     and request.token_holder in {self.state.agent_id, *self.peers}
+                    and request.token_holder != self.state.agent_id
                     and request.token_holder != request.agent_id):
                 self.state.token_holder = request.token_holder
+                self.observed_handoffs.add(handoff_key)
                 self.persist()
                 self.emit("TOKEN_HOLDER_CHANGED", holder=request.token_holder)
             return self.reply(True)
@@ -173,6 +185,7 @@ class Agent(rpc.CraneAgentServicer):
             self.state.token_holder = self.state.agent_id
             self.state.request_queue = deque(queue)
             self.received.add(key)
+            self.observed_handoffs.add(key)
             self.persist()
             self.emit("TOKEN_TRANSFER_RECEIVED", request.sender_id, transfer_id=request.transfer_id)
             self.emit("TOKEN_HOLDER_CHANGED", holder=self.state.agent_id)
@@ -196,7 +209,10 @@ class Agent(rpc.CraneAgentServicer):
             raise recovery.RecoveryError("REJOINING")
         if payload["expected_epoch"] != self.state.current_epoch:
             raise recovery.RecoveryError("STALE_EPOCH")
-        if self.state.token_holder not in self.suspected:
+        if self.state.mode == Mode.CENTRAL:
+            if self.controller_probe is None or not self.controller_suspected:
+                raise recovery.RecoveryError("CONTROLLER_NOT_SUSPECTED")
+        elif self.state.token_holder not in self.suspected:
             raise recovery.RecoveryError("HOLDER_NOT_SUSPECTED")
         recovery.record_vote(self.vote_state, payload)
         self.persist()
@@ -347,8 +363,25 @@ class Agent(rpc.CraneAgentServicer):
             await self.transfer_next()
             await asyncio.sleep(self.interval)
 
-    async def start(self, address, auto_transfer=True):
-        self.server = grpc.aio.server()
+    async def controller_watch_loop(self):
+        """Optional integration hook: probe an actual controller, never infer clearance."""
+        while True:
+            available = await self.controller_probe()
+            async with self.lock:
+                if available:
+                    self.last_controller_seen = self.clock()
+                    if self.controller_suspected:
+                        self.emit("CONTROLLER_RESTORED")
+                    self.controller_suspected = False
+                    self.emit("CONTROLLER_HEARTBEAT_RECEIVED")
+                elif self.clock() - self.last_controller_seen > self.timeout and not self.controller_suspected:
+                    self.controller_suspected = True
+                    self.emit("CONTROLLER_SUSPECTED",
+                        detection_latency_seconds=self.clock() - self.last_controller_seen)
+            await asyncio.sleep(self.interval)
+
+    async def start(self, address, auto_transfer=True, *, interceptors=()):
+        self.server = grpc.aio.server(interceptors=interceptors)
         rpc.add_CraneAgentServicer_to_server(self, self.server)
         port = self.server.add_insecure_port(address)
         if not port:
@@ -359,6 +392,8 @@ class Agent(rpc.CraneAgentServicer):
                       asyncio.create_task(self.monitor_loop())]
         if auto_transfer:
             self.tasks.append(asyncio.create_task(self.transfer_loop()))
+        if self.controller_probe:
+            self.tasks.append(asyncio.create_task(self.controller_watch_loop()))
         return port
 
     async def close(self):
