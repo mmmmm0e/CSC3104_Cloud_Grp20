@@ -226,15 +226,18 @@ def test_essential_failure_comparisons_explain_requests_and_do_not_fake_recovery
     for scenario in ("normal", "controller-outage", "holder-failure"):
         for model in ("central-lock", "basic-token", "cranelock"):
             stalled = (scenario=="controller-outage" and model=="central-lock") or (scenario=="holder-failure" and model=="basic-token")
+            accepted = 2 if scenario=="controller-outage" and model=="central-lock" else 0 if stalled else 6
+            wait = {"normal": .2, "controller-outage": .4, "holder-failure": .7}[scenario] if model=="cranelock" else .05 if accepted else 0
             path = root / "benefits-validated" / scenario / model
             settings = dict(model=model, scenario=scenario, seed=7)
             save(path, "experiment.json", settings)
             save(path, "summary.json", dict(**settings, evaluation="benefits-v1", requested=6,
-                completed=0 if stalled else 6, unfinished_at_horizon=6 if stalled else 0,
+                completed=1 if accepted==2 else accepted, accepted=accepted,
+                unfinished_at_horizon=5 if accepted==2 else 6-accepted,
                 safety_violations=0, workload_sha256="same", duration_seconds=5,
                 crossing_time_seconds=.03, detection_timeout_seconds=.25,
                 post_fault_new_entries=0 if stalled else 4,
-                mean_wait_seconds=.2 if model=="cranelock" else .1,
+                mean_wait_seconds=wait,
                 resumed_within_window=not stalled,
                 failure_detection_seconds=.2 if not stalled else None,
                 recovery_latency_seconds=.1 if not stalled else None,
@@ -253,14 +256,32 @@ def test_essential_failure_comparisons_explain_requests_and_do_not_fake_recovery
     playwright.expect(recovery).to_contain_text("If the crane holding the token stops instead, basic token gets stuck")
     playwright.expect(recovery).to_contain_text("Did not resume")
     playwright.expect(recovery).to_contain_text("0.300 seconds")
+    waiting=page.locator('[data-chart="waiting"]')
+    playwright.expect(waiting).to_contain_text("Waiting time during this failure test")
+    playwright.expect(waiting).to_contain_text("400.0 ms")
+    playwright.expect(waiting).to_contain_text("including requests before and after the fault")
+    central_wait=waiting.locator('.bar-row').nth(0)
+    playwright.expect(central_wait).to_contain_text("2 of 6 requests entered; 4 had not entered")
+    playwright.expect(central_wait).to_contain_text("50.0 ms")
+    assert "healthy" not in waiting.inner_text()
+    assert "Waiting during normal operation" not in page.locator('#benefits').inner_text()
     assert "RPC" not in page.locator("#comparison").inner_text()
     assert not page.locator(".stats").is_visible()
     page.select_option("#focus","holder-failure")
     playwright.expect(page.locator("#benefits")).to_contain_text("CraneLock completes 6 of 6 requests")
     playwright.expect(page.locator("#benefits")).to_contain_text("Basic token completes 0 of 6")
+    playwright.expect(waiting).to_contain_text("700.0 ms")
+    token_wait=waiting.locator('.bar-row').nth(1)
+    playwright.expect(token_wait).to_contain_text("No requests entered")
+    playwright.expect(token_wait).to_contain_text("0 of 6 requests entered; 6 had not entered")
+    assert token_wait.locator('.bar-track').count()==0
+    assert "0.0 ms" not in token_wait.inner_text()
     page.select_option("#focus","normal")
     assert page.locator(".chart-group").count()==2
     assert page.locator('[data-chart="recovery"]').count()==0
+    playwright.expect(waiting).to_contain_text("200.0 ms")
+    assert "during this failure" not in waiting.inner_text()
+    playwright.expect(page.locator('#benefits')).to_contain_text("Waiting during normal operation")
     page.set_viewport_size(dict(width=390,height=844))
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     page.close()

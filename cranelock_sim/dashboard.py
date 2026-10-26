@@ -243,16 +243,21 @@ def make_server(root, port=8765):
             self.send_bytes(json.dumps(value, allow_nan=False).encode(), "application/json", status=status)
 
         def send_bytes(self, data, mime, status=200, download=None):
-            self.send_response(status)
-            self.send_header("Content-Type", mime + ("; charset=utf-8" if mime.startswith("text/") else ""))
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("X-Content-Type-Options", "nosniff")
-            self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'")
-            if download:
-                self.send_header("Content-Disposition", f'attachment; filename="{download}"')
-            self.end_headers()
-            self.wfile.write(data)
+            try:
+                self.send_response(status)
+                self.send_header("Content-Type", mime + ("; charset=utf-8" if mime.startswith("text/") else ""))
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'")
+                if download:
+                    self.send_header("Content-Disposition", f'attachment; filename="{download}"')
+                self.end_headers()
+                self.wfile.write(data)
+            except ConnectionError:
+                # Refreshing or closing a tab can abort either write. Do not try
+                # to send an error response over the same disconnected socket.
+                self.close_connection = True
 
         def log_message(self, format, *args):
             pass
