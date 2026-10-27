@@ -166,15 +166,8 @@ class Agent(rpc.CraneAgentServicer):
             self.emit("HEARTBEAT_RECEIVED", request.agent_id)
             handoff_key = (request.epoch, request.agent_id, request.outgoing_transfer_id)
             # A known holder may announce its normal handoff. This never grants
-<<<<<<< HEAD
             # local ownership; only TokenTransfer can do that.
             if (not self.gate and self.valid(request.epoch) and not self.state.has_token
-=======
-            # local ownership; only TokenTransfer can do that. The receiver keeps
-            # the sender as its known holder until the transfer arrives. Remember
-            # announcements to avoid replaying an older handoff after a cycle.
-            if (self.valid(request.epoch) and not self.state.has_token
->>>>>>> 4df653aa118842065754aacb81d27eddf3a22e15
                     and request.agent_id == self.state.token_holder
                     and not request.has_token and request.mode != pb.REJOINING
                     and request.outgoing_transfer_id
@@ -651,13 +644,8 @@ class Agent(rpc.CraneAgentServicer):
                       asyncio.create_task(self.monitor_loop())]
         if auto_transfer:
             self.tasks.append(asyncio.create_task(self.transfer_loop()))
-<<<<<<< HEAD
         if self.gate:
             self.tasks.append(asyncio.create_task(self.rejoin_loop()))
-=======
-        if self.controller_probe:
-            self.tasks.append(asyncio.create_task(self.controller_watch_loop()))
->>>>>>> 4df653aa118842065754aacb81d27eddf3a22e15
         return port
 
     async def close(self):
