@@ -55,11 +55,19 @@ class AgentCluster:
         # Same-event-loop callbacks observe every ownership transition, including
         # the relinquish-before-send gap. Never throw out of an Agent callback.
         try:
-            token_owner({identity: agent.state for identity, agent in self.agents.items()
-                         if identity not in self.stopped
-                         and agent.state.current_epoch == self.authority_epoch})
+            token_owner(self.current_authority_states({identity: agent.state
+                for identity, agent in self.agents.items() if identity not in self.stopped}))
         except SafetyViolation as error:
             self.violation = error
+
+    # excludes cached claims fenced by a newer gate-confirmed revision
+    def current_authority_states(self, states):
+        current = {identity: state for identity, state in states.items()
+                   if getattr(state, "current_epoch", getattr(state, "epoch", None)) == self.authority_epoch}
+        if self.gate_factory and current:
+            revision = max(state.revision for state in current.values())
+            current = {identity: state for identity, state in current.items() if state.revision == revision}
+        return current
 
     async def start(self):
         for identity in self.members:
@@ -111,8 +119,7 @@ class AgentCluster:
             for identity in active))))
         if self.violation:
             raise self.violation
-        owner = token_owner({identity: state for identity, state in states.items()
-                             if state.epoch == self.authority_epoch})
+        owner = token_owner(self.current_authority_states(states))
         self.emit("agent_snapshot", stage=stage, owner=owner, authority_epoch=self.authority_epoch,
                   agents={identity: dict(
             has_token=state.has_token, holder=state.token_holder, epoch=state.epoch,

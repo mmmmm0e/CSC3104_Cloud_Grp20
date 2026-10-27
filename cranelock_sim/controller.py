@@ -107,8 +107,8 @@ class TeamControllerService(ReferenceController):
 
 
 class ControllerConnection:
-    def __init__(self, port, stats):
-        self.channel = grpc.aio.insecure_channel(f"127.0.0.1:{port}")
+    def __init__(self, port, stats, *, interceptors=()):
+        self.channel = grpc.aio.insecure_channel(f"127.0.0.1:{port}", interceptors=interceptors)
         self.stats = stats
         base = "/cranelock.reference.Controller/"
         self.heartbeat_rpc = self.channel.unary_unary(base + "Heartbeat", request_serializer=encode,

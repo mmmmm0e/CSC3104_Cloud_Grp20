@@ -13,6 +13,7 @@ import grpc
 from . import protocol_pb2 as pb
 from . import protocol_pb2_grpc as rpc
 from . import recovery
+from . import reconciliation
 
 
 class Mode(IntEnum):
@@ -419,10 +420,31 @@ class Agent(rpc.CraneAgentServicer):
             self.emit("MODE_CHANGED", mode=self.state.mode.name)
         return True
 
-    async def reconcile_from_gate(self):
+    # confirms signed network instructions against the live gate
+    async def ReconcileAuthority(self, request, context):
+        if not self.gate:
+            return self.reply(False, "GATE_REQUIRED")
+        try:
+            payload = reconciliation.validate(request.payload_json, request.signature,
+                self.gate.client.config, self.state.agent_id)
+        except (ValueError, TypeError, KeyError, OverflowError, RecursionError) as error:
+            self.emit("RECONCILIATION_REJECTED", reason=str(error))
+            return self.reply(False, "INVALID_RECONCILIATION")
+        expected = {key: payload[key] for key in reconciliation.AUTHORITY_FIELDS}
+        if not await self.reconcile_from_gate(expected=expected):
+            return self.reply(False, "GATE_AUTHORITY_UNCONFIRMED")
+        self.emit("NETWORK_RECONCILIATION_ACCEPTED", payload["actor_id"],
+                  request_id=payload["request_id"])
+        return self.reply(True, "RECONCILED")
+
+    # adopts only live gate state matching the requested snapshot
+    async def reconcile_from_gate(self, *, expected=None):
         async with self.authority_lock:
             authority = await self.query_gate()
             if authority is None:
+                return False
+            if expected is not None and any(authority.get(key) != value for key, value in expected.items()):
+                self.emit("RECONCILIATION_REJECTED", reason="STALE_AUTHORITY")
                 return False
             async with self.lock:
                 old_epoch = self.state.current_epoch
@@ -641,10 +663,11 @@ class Agent(rpc.CraneAgentServicer):
                         detection_latency_seconds=self.clock() - self.last_controller_seen)
             await asyncio.sleep(self.interval)
 
-    async def start(self, address, auto_transfer=True, *, interceptors=()):
+    async def start(self, address, auto_transfer=True, *, interceptors=(), credentials=None):
         self.server = grpc.aio.server(interceptors=interceptors)
         rpc.add_CraneAgentServicer_to_server(self, self.server)
-        port = self.server.add_insecure_port(address)
+        port = (self.server.add_secure_port(address, credentials) if credentials
+                else self.server.add_insecure_port(address))
         if not port:
             raise RuntimeError("Cannot bind agent address")
         await self.server.start()

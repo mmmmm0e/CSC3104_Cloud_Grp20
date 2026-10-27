@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import json
 import time
 import uuid
 from collections.abc import Mapping
@@ -14,6 +15,7 @@ from cranelock_gate.crypto import CERTIFICATE_DOMAIN, canonical, encode_signatur
 from .agent import Agent, Mode
 from . import protocol_pb2 as agent_pb
 from . import protocol_pb2_grpc as agent_rpc
+from .reconciliation import ReconciliationClient, ReconciliationError
 
 
 class ControllerError(RuntimeError):
@@ -174,6 +176,17 @@ class CentralController:
                 return result
         return result
 
+    # reconciles remote agents without sharing agent objects
+    async def reconcile_remote(self, agents, *, credentials=None, timeout=3):
+        state = await asyncio.to_thread(self.get_state)
+        client = ReconciliationClient(self.config, self.config.controller_id, self.private_key,
+                                      credentials=credentials, timeout=timeout)
+        await client.reconcile(agents, state)
+        current = await asyncio.to_thread(self.get_state)
+        if any(current.get(key) != state.get(key) for key in ("epoch", "revision", "holder", "mode")):
+            raise ReconciliationError("Gate authority changed during reconciliation")
+        return current
+
     async def reconcile_agents(self, agents):
         # Reconciles supplied agents from the gate's currently accepted authority.
         if not isinstance(agents, Mapping):
@@ -240,6 +253,10 @@ def main():
     parser.add_argument("--agent", action="append", required=True, metavar="ID=HOST:PORT")
     parser.add_argument("--interval", type=float, default=1.0)
     parser.add_argument("--timeout", type=float, default=2.0)
+    parser.add_argument("--reconcile", action="store_true", help="send signed gate-confirmed reconciliation RPCs")
+    parser.add_argument("--gate-address")
+    parser.add_argument("--gate-config")
+    parser.add_argument("--gate-keys", help="controller private-key JSON file")
     args = parser.parse_args()
     if args.interval <= 0 or args.timeout <= 0:
         parser.error("--interval and --timeout must be positive")
@@ -251,6 +268,20 @@ def main():
         if not agent_id or not address or agent_id in agents:
             parser.error(f"Invalid or duplicate --agent {value!r}")
         agents[agent_id] = address
+
+    if args.reconcile:
+        if not all((args.gate_address, args.gate_config, args.gate_keys)):
+            parser.error("Reconciliation requires --gate-address, --gate-config and --gate-keys")
+        from cranelock_gate.config import Config
+        from cranelock_gate.demo import load_keys
+        config = Config.load(args.gate_config)
+        key = load_keys(args.gate_keys)[config.controller_id]
+        with grpc.insecure_channel(args.gate_address) as channel:
+            controller = CentralController(config, key, channel)
+            state = asyncio.run(controller.reconcile_remote(agents, timeout=args.timeout))
+            print(json.dumps({name: state[name] for name in ("epoch", "revision", "holder", "mode")}),
+                  flush=True)
+        return
 
     monitor = AgentStateMonitor(agents, timeout=args.timeout)
     try:

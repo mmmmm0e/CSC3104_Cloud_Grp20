@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CraneLock · Live yard</title><link rel="stylesheet" href="/live.css"><script src="/live.js" defer></script></head>
+<body>
+<header><a class="brand" href="/live"><span class="mark">CL</span>CraneLock<span class="subtitle">YARD OPERATIONS</span></a><nav><a class="active" href="/live">Live simulation</a><a href="/">Saved evaluation ↗</a></nav><span class="live-label"><i></i>Local · real gRPC</span></header>
+<main>
+  <div class="intro"><div><p class="eyebrow">CSC3104 / GROUP 20</p><h1>One lane. Three cranes.</h1><p>Request a turn, move a crane, then see how recovery protects the lane.</p></div><span id="connection">Connecting to yard…</span></div>
+  <div class="metrics"><article><span>AUTHORITY</span><strong id="epoch">—</strong><small id="revision">Reading gate</small></article><article><span>COORDINATION</span><strong id="mode">—</strong><small id="controller-state">Waiting for controller</small></article><article><span>GATE / LANE</span><strong id="lane-state">—</strong><small id="sensor-state">Waiting for position evidence</small></article><article><span>COMPLETED CROSSINGS</span><strong id="completed">0</strong><small>Physical entry and exit recorded</small></article></div>
+  <section class="workspace">
+    <aside class="panel fleet"><div class="section-head"><h2>Crane fleet</h2><span>3 members</span></div><p class="hint">A request is not permission to enter.</p><div id="fleet"></div></aside>
+    <section class="panel yard-panel"><div class="section-head"><h2>Shared access lane</h2><span id="holder" class="pill">No confirmed holder</span></div>
+      <div class="yard" aria-label="Live simulated crane yard"><div class="yard-label">YARD BLOCK 01 <span>CAPACITY 1</span></div><div class="bay-label">PARKING / WAITING AREA</div><div class="parking-lines"></div><div class="road"><div class="road-dashes"></div><span>SHARED LANE</span></div><div id="gate-light" class="gate-light"><i></i><b>GATE</b></div><div id="crane-art"></div><div class="yard-bottom"><span id="physical-state">Physical lane: empty</span><span id="network-state">Peer network connected</span></div></div>
+      <div id="decision" class="decision" role="status">Starting real agent and gate services…</div>
+      <div class="lane-controls"><button id="leave" data-action="exit">Exit lane</button><button data-action="stale_entry" class="secondary">Try earlier permission</button><button data-action="clear" class="danger-light">Operator clear lane</button></div>
+      <p class="hint">Movement appears only after the real gate accepts entry. Operator clearance explicitly removes a crane from this simulated yard; it is never inferred from recovery.</p>
+    </section>
+  </section>
+  <section class="panel faults"><div class="section-head"><div><h2>Failure &amp; recovery lab</h2><p class="hint">Stop a service or interrupt communication, then attempt majority recovery.</p></div><span class="pill">Manual experiment controls</span></div>
+    <div class="fault-controls"><button id="controller-toggle" data-action="stop_controller">Stop controller</button><button data-action="partition">Split holder from peers</button><button data-action="isolate">Isolate all peers</button><button data-action="heal" class="secondary">Restore peer links</button><button id="sensor-toggle" data-action="sensor">Pause position updates</button><button id="gate-toggle" data-action="gate">Stop gate</button></div>
+    <div class="recovery-strip"><label>PROPOSING CRANE<select id="proposer"><option value="crane-2">Crane 2</option><option value="crane-3">Crane 3</option><option value="crane-1">Crane 1</option></select></label><button id="recover" class="primary">Propose recovery →</button><div class="votes"><strong id="vote-count">0 / 2</strong><span id="vote-status">No certificate requested</span></div><div id="vote-signers" class="hint">Two distinct signatures are required.</div></div>
+  </section>
+  <section class="panel log-panel"><div class="section-head"><h2>Live event trail</h2><span>Actual component events · seconds since start</span></div><div id="events" class="event-list" aria-live="polite"></div><details><summary>Evidence directory</summary><code id="evidence"></code></details></section>
+  <footer><span>LIVE LOCAL SIMULATOR · not physical crane control</span><span>Gate authority and physical clearance are separate checks.</span></footer>
+</main>
+</body></html>

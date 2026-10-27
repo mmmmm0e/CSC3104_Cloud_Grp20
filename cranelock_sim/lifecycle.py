@@ -13,6 +13,7 @@ import grpc
 from cranelock.agent import Mode
 from cranelock.controller import CentralController
 from cranelock.gate_client import GateClient
+from cranelock.reconciliation import ReconciliationClient
 from cranelock_gate.client import Client
 from cranelock_gate.core import Gate
 from cranelock_gate.server import RunningServer
@@ -139,7 +140,8 @@ async def run_lifecycle(output, *, progress=print):
             certificate=cert, expected_epoch=old["epoch"], expected_revision=old["revision"])
         require(result)
         cluster.authority_epoch = result["state"]["epoch"]
-        await controller.reconcile_agents(cluster.agents)
+        await ReconciliationClient(config, "crane-2", keys["crane-2"]).reconcile(
+            cluster.addresses, result["state"])
         emit("controller_fallback_installed", epoch=result["state"]["epoch"],
              holder="crane-1", occupant=lane.occupant)
         passed("local_epoch_installed_without_clearing_occupancy",
@@ -170,7 +172,7 @@ async def run_lifecycle(output, *, progress=print):
                     8, "controller return heartbeat")
         emit("controller_restored", occupant=lane.occupant)
         require(await connections[0].assign(local["holder"]))
-        central = await controller.reconcile_agents(cluster.agents)
+        central = await controller.reconcile_remote(cluster.addresses)
         emit("controller_return_installed", epoch=central["epoch"], holder=central["holder"],
              mode="CENTRAL", occupant=lane.occupant, pending_queue=queue_before_return)
         await cluster.snapshot("controller_return_reconciled")
@@ -188,7 +190,7 @@ async def run_lifecycle(output, *, progress=print):
         passed("controller_return_cannot_clear_the_lane", blocked["reason"] == "LANE_BUSY")
         await exit_lane(second)
         require(await connections[0].assign("crane-3"))
-        await controller.reconcile_agents(cluster.agents)
+        await controller.reconcile_remote(cluster.addresses)
         emit("central_assignment", crane="crane-3", implementation=settings["controller_implementation"])
         _, _, third = await enter("crane-3", "central-after-return")
         await exit_lane(third)

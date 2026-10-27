@@ -4,6 +4,7 @@ import csv
 import json
 import math
 import mimetypes
+import secrets
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
@@ -205,7 +206,7 @@ class Results:
 
 
 # creates the read-only results server
-def make_server(root, port=8765, host="127.0.0.1"):
+def make_server(root, port=8765, host="127.0.0.1", *, live=None):
     results = Results(root)
     assets = files("cranelock_sim").joinpath("web")
 
@@ -214,6 +215,10 @@ def make_server(root, port=8765, host="127.0.0.1"):
             parsed = urlsplit(self.path)
             query = parse_qs(parsed.query)
             try:
+                if live and parsed.path == "/api/live/state":
+                    if urlsplit("http://" + self.headers.get("Host", "")).hostname not in {"localhost", "127.0.0.1", "::1"}:
+                        return self.send_json(dict(error="Local host required"), 403)
+                    return self.send_json(live.call("state"))
                 identity = query.get("id", [""])[0]
                 if parsed.path == "/api/catalog":
                     return self.send_json(results.catalog())
@@ -231,14 +236,44 @@ def make_server(root, port=8765, host="127.0.0.1"):
                     return self.send_bytes(path.read_bytes(), mimetypes.guess_type(name)[0]
                                            or "application/octet-stream", download=name)
                 asset = {"/": "index.html", "/app.js": "app.js", "/style.css": "style.css"}.get(parsed.path)
+                if live:
+                    asset = {"/live": "live.html", "/live.js": "live.js", "/live.css": "live.css"}.get(parsed.path, asset)
                 if asset:
-                    return self.send_bytes(assets.joinpath(asset).read_bytes(),
+                    data = assets.joinpath(asset).read_bytes()
+                    if live and asset == "index.html":
+                        data = data.replace(b'<div class="rail-label">Evaluation</div>',
+                            b'<a class="nav" href="/live">Live crane yard</a><div class="rail-label">Evaluation</div>', 1)
+                    return self.send_bytes(data,
                                            mimetypes.guess_type(asset)[0] or "text/plain")
                 self.send_json(dict(error="Not found"), 404)
             except FileNotFoundError:
                 self.send_json(dict(error="Artifact not found"), 404)
             except (ValueError, TypeError, OSError) as error:
                 self.send_json(dict(error=str(error)), 400)
+
+        # enables controls only on the explicitly started local live server
+        def do_POST(self):
+            if live is None:
+                self.send_error(501, "Unsupported method")
+                return
+            if urlsplit(self.path).path != "/api/live/action":
+                return self.send_json(dict(error="Not found"), 404)
+            host_header = self.headers.get("Host", "")
+            if (urlsplit("http://" + host_header).hostname not in {"localhost", "127.0.0.1", "::1"}
+                    or self.headers.get("Origin", "http://" + host_header) != "http://" + host_header
+                    or not secrets.compare_digest(self.headers.get("X-CraneLock-Session", ""),
+                                                  live.yard.session_token)):
+                return self.send_json(dict(error="Same-origin session required"), 403)
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 1 <= length <= 4096 or self.headers.get_content_type() != "application/json":
+                    raise ValueError("A bounded JSON action is required")
+                payload = json.loads(self.rfile.read(length))
+                if type(payload) is not dict:
+                    raise ValueError("Action must be an object")
+                return self.send_json(live.call("action", payload))
+            except (ValueError, TypeError, RuntimeError, TimeoutError) as error:
+                return self.send_json(dict(error=str(error)), 400)
 
         def send_json(self, value, status=200):
             self.send_bytes(json.dumps(value, allow_nan=False).encode(), "application/json", status=status)

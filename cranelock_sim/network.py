@@ -1,5 +1,6 @@
 """Experiment-only peer RPC partitioning; management and gate RPCs stay reachable."""
 import grpc
+import json
 
 
 class PeerNetwork:
@@ -21,14 +22,23 @@ class PeerNetwork:
         class Interceptor(grpc.aio.ServerInterceptor):
             async def intercept_service(self, continuation, details):
                 handler = await continuation(details)
+                method = details.method.rsplit("/", 1)[-1]
                 field = {"Heartbeat": "agent_id", "TokenRequest": "agent_id",
                          "TokenTransfer": "sender_id", "VoteRecovery": "proposer_id"}.get(
-                             details.method.rsplit("/", 1)[-1])
-                if handler is None or field is None:
+                             method)
+                if handler is None or (field is None and method != "ReconcileAuthority"):
                     return handler
 
                 async def invoke(request, context):
-                    sender = getattr(request, field)
+                    sender = getattr(request, field) if field else None
+                    if method == "ReconcileAuthority":
+                        try:
+                            payload = json.loads(request.payload_json)
+                            sender = payload.get("actor_id") if type(payload) is dict else None
+                            if not isinstance(sender, str):
+                                sender = None
+                        except (ValueError, TypeError):
+                            sender = None
                     if (sender in network.groups and
                             network.groups[sender] != network.groups[receiver]):
                         network.blocked_calls += 1

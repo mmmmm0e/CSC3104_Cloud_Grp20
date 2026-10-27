@@ -54,6 +54,11 @@ class CraneAgentStub:
                 request_serializer=cranelock_dot_protocol__pb2.RecoveryProposal.SerializeToString,
                 response_deserializer=cranelock_dot_protocol__pb2.RecoveryVote.FromString,
                 _registered_method=True)
+        self.ReconcileAuthority = channel.unary_unary(
+                '/cranelock.v1.CraneAgent/ReconcileAuthority',
+                request_serializer=cranelock_dot_protocol__pb2.AuthorityReconciliation.SerializeToString,
+                response_deserializer=cranelock_dot_protocol__pb2.Reply.FromString,
+                _registered_method=True)
         self.GetAgentState = channel.unary_unary(
                 '/cranelock.v1.CraneAgent/GetAgentState',
                 request_serializer=cranelock_dot_protocol__pb2.Empty.SerializeToString,
@@ -88,6 +93,12 @@ class CraneAgentServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ReconcileAuthority(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def GetAgentState(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -116,6 +127,11 @@ def add_CraneAgentServicer_to_server(servicer, server):
                     servicer.VoteRecovery,
                     request_deserializer=cranelock_dot_protocol__pb2.RecoveryProposal.FromString,
                     response_serializer=cranelock_dot_protocol__pb2.RecoveryVote.SerializeToString,
+            ),
+            'ReconcileAuthority': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReconcileAuthority,
+                    request_deserializer=cranelock_dot_protocol__pb2.AuthorityReconciliation.FromString,
+                    response_serializer=cranelock_dot_protocol__pb2.Reply.SerializeToString,
             ),
             'GetAgentState': grpc.unary_unary_rpc_method_handler(
                     servicer.GetAgentState,
@@ -231,6 +247,33 @@ class CraneAgent:
             '/cranelock.v1.CraneAgent/VoteRecovery',
             cranelock_dot_protocol__pb2.RecoveryProposal.SerializeToString,
             cranelock_dot_protocol__pb2.RecoveryVote.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReconcileAuthority(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/cranelock.v1.CraneAgent/ReconcileAuthority',
+            cranelock_dot_protocol__pb2.AuthorityReconciliation.SerializeToString,
+            cranelock_dot_protocol__pb2.Reply.FromString,
             options,
             channel_credentials,
             insecure,

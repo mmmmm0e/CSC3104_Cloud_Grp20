@@ -19,6 +19,25 @@ queue preservation, epoch/revision fencing and occupied-lane blocking during ret
 It is saved with model `controller-lifecycle`, separate from reference baseline data.
 Playback supports the return events without changing the evaluation calculations.
 
+The lifecycle now reconciles agents over signed gRPC requests, rather than calling
+their reconciliation methods directly. LOCAL recovery requests use a member key;
+CENTRAL return requests use the controller key. Each receiver checks live gate
+authority. The safety checker counts gate-confirmed epoch/revision pairs, excluding
+older fenced cached claims during parallel replies. Two claims at the same valid
+authority still fail the duplicate-token check.
+
+Network integration tests:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/test_network_reconciliation.py tests/test_network_reconciliation_process.py tests/test_partition_integration.py -v
+```
+
+These include process separation, signature and destination checks, replay rejection,
+optional mutual TLS, actual controller-link interruption while its service stays
+running, unavailable gates/agents, stale occupancy and no movement on an unreachable
+gate even with a previously issued grant. Peer partition scenarios retain the
+existing fault injector and its majority/no-majority checks.
+
 ```powershell
 .\.venv\Scripts\python.exe -m cranelock_sim.progress_demo
 ```
@@ -37,6 +56,19 @@ the plain eight-scenario demo excludes the controller, while `--with-controller`
 adds the real controller cycle. Kubernetes is outside both local demos.
 
 ## Open the dashboard
+
+For the separate interactive crane simulator, use:
+
+```powershell
+.\.venv\Scripts\python.exe -m cranelock_sim.live
+```
+
+Open `/live` at the printed local address. Actions run the real local agent/gate
+components; the animation reflects accepted physical entries. Logs are saved below
+`run/evaluation/live-...`. Interactive results are not baseline performance data.
+This optional command enables a protected local action API. It does not add mutation
+routes to the normal read-only dashboard command below. Only one server can use
+port 8765 at a time; stop it with Ctrl+C or give the live command another `--port`.
 
 ```powershell
 .\.venv\Scripts\python.exe -m cranelock_sim.dashboard

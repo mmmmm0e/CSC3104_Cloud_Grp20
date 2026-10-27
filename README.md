@@ -1,5 +1,147 @@
 # CraneLock
 
+CraneLock coordinates access to one shared lane using a controller, crane agents,
+token passing and a trusted gate. Signed majority recovery replaces authority when
+failures occur. The simulator models physical occupancy separately from permission
+to enter, so changing the token holder never implies that the lane is clear.
+
+## Logical flow
+
+1. **Start in CENTRAL mode.** The controller schedules a crane. The gate stores the
+   accepted epoch, holder and revision; agents reconcile against that authority.
+2. **Request a turn.** Requests wait while the lane is unavailable. Only the accepted
+   holder can obtain a grant, and only when the gate has fresh clearance evidence.
+   A grant reserves the lane; it does not move the crane.
+3. **Validate entry.** At the lane boundary, the simulator submits the grant to the
+   gate. The gate checks the holder, epoch, revision and grant validity. Only an
+   accepted entry changes physical occupancy to that crane.
+4. **Exit and confirm clearance.** Physical exit and fresh position evidence allow
+   the gate to mark the lane CLEAR. The next waiting crane can then proceed.
+5. **Suspect controller failure.** Agents detect missing controller responses. A
+   recovery proposer reads the current gate state and proposes LOCAL authority in
+   epoch `e + 1`, retaining the current holder when it is healthy and reachable.
+6. **Collect a strict majority.** Each voter saves its vote before replying and
+   signs the exact proposal using library Ed25519. Conflicting votes for the same
+   target epoch are rejected. A certificate requires `floor(N / 2) + 1` distinct
+   configured members: two votes for three cranes.
+7. **Install and reconcile.** The caller submits the certificate to the gate. The
+   gate verifies the signatures and expected epoch/revision before installing LOCAL
+   authority. Old grants are revoked. Member-signed `ReconcileAuthority` RPCs ask
+   reachable agents to adopt the state after checking it against the live gate.
+   OCCUPIED or UNKNOWN lane state remains blocked throughout recovery.
+8. **Continue locally.** Agents queue requests and pass the token without controller
+   scheduling. Gate-aware handoff records the new holder and revision before token
+   notification. If the holder also fails, another majority certificate is needed
+   for a replacement in the next epoch.
+9. **Return to CENTRAL mode.** The controller reads the accepted authority and
+   synchronizes waiting work. It installs CENTRAL authority with the current epoch
+   and a fresh revision, then sends controller-signed reconciliation RPCs. The local
+   lifecycle preserves the holder, queue and physical occupancy during this return;
+   old permissions fail the gate's revision check.
+
+The lifecycle runner orchestrates these steps through the actual local services.
+The live UI exposes operator controls for failures, recovery and controller return.
+The standalone agent CLI does not automatically orchestrate this complete cycle.
+Holder replacement, partitions and restart are also exercised in separate scenarios.
+
+### Network failures and safety
+
+| Failure | Program behavior |
+| --- | --- |
+| Controller connection fails | Agents can approve LOCAL recovery with a strict majority and a reachable gate. |
+| Peers split into groups | Only a strict-majority group can form replacement authority; it must also reach the gate. |
+| No group has a majority | No replacement certificate is formed and authority is unchanged. |
+| Gate is unreachable | No new entry is accepted, including attempts using a cached grant. |
+| Position evidence stops | Once evidence expires, the gate treats clearance as UNKNOWN and blocks new entry. |
+| Holder stops inside the lane | Recovery may replace authority, but physical occupancy continues to block admission. |
+| Communication recovers | Agents must reconcile with accepted gate state before using authority. |
+
+Two strict majorities overlap in at least one member. Because that member durably
+refuses conflicting votes for the same epoch, conflicting recovery certificates
+cannot both form under the configured crash-failure model. The gate accepts only
+the next epoch against its current revision and fences older epochs/revisions.
+A minority cannot create replacement authority. An isolated holder's existing
+permission remains subject to gate validation; after replacement is installed its
+old permission is rejected. These guarantees assume the configured membership,
+uncompromised signing keys, durable votes and one authoritative gate.
+
+## Program structure
+
+| File or directory | Responsibility |
+| --- | --- |
+| `cranelock/agent.py` | Peer heartbeats, suspicion, request queues, token handoff and agent RPC handlers. |
+| `cranelock/recovery.py` | Recovery proposals, durable voting, signature verification and majority certificates. |
+| `cranelock/reconciliation.py` | Signed network requests to adopt authority checked against the gate. |
+| `cranelock/controller.py` | Central scheduling authority, agent monitoring and controller reconciliation. |
+| `cranelock/gate_client.py` | Agent adapter for signed gate operations. |
+| `cranelock_gate/` | Gate RPC service, permission checks, cryptography and persistent SQLite state. |
+| `proto/` | Protobuf message definitions and service contracts for gRPC communication. |
+| `cranelock_sim/lane.py` | Independent physical lane model and entry/exit validation. |
+| `cranelock_sim/agents.py`, `network.py` | Local gRPC agent cluster and simulated peer partitions. |
+| `cranelock_sim/lifecycle.py` | Integrated CENTRAL → LOCAL → CENTRAL demonstration. |
+| `cranelock_sim/live.py`, `web/live.*` | Interactive crane yard, failure controls and live evidence. |
+| `cranelock_sim/progress_demo.py` | Combined scenario runner that saves presentation evidence. |
+| `cranelock_sim/experiment.py`, `comparison.py`, `benefits.py` | Traffic experiments, reference comparisons and exported metrics. |
+| `cranelock_sim/dashboard.py`, `web/` | Saved evaluation charts, playback and evidence downloads. |
+| `tests/` | Component, RPC, safety and integration tests. |
+| `deploy/` | Container and deployment configuration; runtime validation is separate from local tests. |
+
+### Choose a program
+
+Run these from the repository root after installing dependencies using the setup
+instructions below. Each command is an alternative entry point.
+
+| Purpose | PowerShell command |
+| --- | --- |
+| Interactive crane simulation | `.\.venv\Scripts\python.exe -m cranelock_sim.live` |
+| Complete controller lifecycle | `.\.venv\Scripts\python.exe -m cranelock_sim.lifecycle` |
+| Combined progress scenarios, including controller return | `.\.venv\Scripts\python.exe -m cranelock_sim.progress_demo --with-controller` |
+| Holder failure scenarios | `.\.venv\Scripts\python.exe -m cranelock_sim --mode recovery` |
+| Majority/minority partition scenarios | `.\.venv\Scripts\python.exe -m cranelock_sim --mode partition` |
+| Restart and reconciliation scenarios | `.\.venv\Scripts\python.exe -m cranelock_sim --mode restart` |
+| Benefits evaluation without optional plotting dependencies | `.\.venv\Scripts\python.exe -m cranelock_sim --mode benefits --duration 5 --no-plots` |
+| Read-only saved evaluation dashboard | `.\.venv\Scripts\python.exe -m cranelock_sim.dashboard` |
+| Test suite | `.\.venv\Scripts\python.exe -m pytest -q` |
+| Regenerate protobuf bindings | `.\.venv\Scripts\python.exe scripts/generate_proto.py` |
+
+The live UI opens at **http://127.0.0.1:8765/live**; the saved evaluation dashboard
+opens at **http://127.0.0.1:8765/**. To run both servers concurrently, give one a
+different port, for example `cranelock_sim.live --port 8767`. Live runs and saved
+scenario evidence are separate from the original evaluation's comparison metrics.
+
+## Interactive crane yard
+
+```powershell
+.\.venv\Scripts\python.exe -m cranelock_sim.live
+```
+
+Open **http://127.0.0.1:8765/live**. Stop an existing dashboard on that port first,
+or use `--port 8767`. The interactive page starts three actual local gRPC agents,
+the controller, trusted gate and physical lane model. It animates a crane only after
+the gate accepts entry. The original saved evaluation remains available at `/`.
+
+Use a crane's **Request turn**, then **Enter lane**. Use **Exit lane** to release
+physical occupancy. Requests from other cranes wait. The failure lab can stop/restart
+cranes, stop/restore the controller, partition/heal peer links, pause position evidence,
+stop/restore the gate and propose signed majority recovery from a selected crane.
+**Try earlier permission** sends the recorded old grant to the actual gate.
+**Operator clear lane** explicitly removes the physical simulated occupant; it is not
+automatic recovery or a statement about a real yard.
+
+For a short demonstration, enter Crane 1, request Crane 2, stop the controller and
+wait for the suspicion event. Propose recovery from Crane 2. Observe the new epoch
+while Crane 1 remains inside, then try the earlier permission and see its rejection.
+Exit Crane 1; Crane 2 can obtain a reservation and enter. With all peers isolated,
+a recovery attempt cannot form the required majority. With position updates paused,
+the gate becomes UNKNOWN after its observation timeout, even if the UI knows where
+the simulated crane is. A stopped crane never disappears from the physical lane.
+
+Live events, gate audit, state, request CSV and a closing summary are retained in a
+fresh `run/evaluation/live-...` directory. This is an operator-driven local simulator,
+not a performance benchmark or a multi-container deployment. The live action API is
+enabled only by this command, bound to loopback and protected by a same-origin session
+token. The ordinary `cranelock_sim.dashboard` server remains read-only.
+
 This repository contains the crane agent and recovery quorum component (`cranelock`)
 and the trusted access gate (`cranelock_gate`), plus Member 4's simulator and evaluation
 tools (`cranelock_sim`). Local demo runners connect agent gRPC, recovery certificates,
@@ -10,6 +152,32 @@ authority rules, failure behavior, validation and team integration decisions.
 The separate protobuf services and original standalone baseline are preserved.
 
 ## Full local controller integration
+
+Controller-to-agent state synchronization now uses the signed `ReconcileAuthority`
+gRPC method. The controller supplies endpoint addresses, not Python agent objects.
+Each agent verifies the caller's Ed25519 signature and checks the exact epoch,
+revision, holder and mode against its live gate before adopting them. A recovery
+member can request LOCAL reconciliation; CENTRAL reconciliation requires the controller.
+Unreachable or mismatched authority is never reported as a completed handover.
+
+The lifecycle runner uses member-signed RPCs after LOCAL recovery and controller-signed
+RPCs on return. The old in-process helper remains only for compatible tests/adapters.
+To reconcile separately running agents from already accepted gate authority:
+
+```powershell
+.\.venv\Scripts\python.exe -m cranelock.controller --reconcile --agent crane-1=127.0.0.1:50051 --agent crane-2=127.0.0.1:50052 --gate-address 127.0.0.1:50060 --gate-config demo-data/config.json --gate-keys demo-data/private-keys.json
+```
+
+Use the actual addresses and matching identities for your experiment. This command
+does not install authority or certify physical clearance. The CLI example is for an
+isolated loopback setup. The Python RPC client accepts TLS credentials, and the agent
+server accepts server credentials; signatures authenticate requests, not plaintext
+transport responses. The separate-process test verifies real network reconciliation.
+
+Network-failure coverage includes controller-link-only loss with the controller still
+running, majority/minority peer partitions, gate unavailability, missing occupancy
+observations and cached-grant rejection when services are unreachable. These are
+bounded local RPC/service-fault tests, not Kubernetes or physical-network validation.
 
 ```powershell
 .\.venv\Scripts\python.exe -m cranelock_sim.lifecycle

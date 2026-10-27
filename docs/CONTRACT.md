@@ -161,6 +161,47 @@ expiry, quorum success or crane disconnection.
 
 ## Member 5: controller and reconciliation
 
+The agent service `cranelock.v1.CraneAgent` also exposes `ReconcileAuthority`, defined
+in `proto/cranelock/protocol.proto`. `AuthorityReconciliation` carries canonical JSON
+in `payload_json` and a raw Ed25519 signature. Its separate signing domain is:
+
+```text
+UTF8("cranelock.reconciliation.v1") || 0x00 || canonical(payload)
+```
+
+The payload contains exactly `version=1`, `operation="ReconcileAuthority"`, `lane_id`,
+`membership_id`, `actor_id`, `target_agent_id`, `request_id`, `epoch`, `revision`,
+`holder` and `mode`. The target must match the receiving agent. Epoch and revision
+are nonnegative signed-64-bit-range integers; mode is CENTRAL or LOCAL. Request IDs
+are nonempty strings of at most 128 characters. The canonical payload is at most
+8192 bytes. All fields are covered by the signature.
+
+Only the configured controller can request CENTRAL reconciliation. A configured
+member can request LOCAL reconciliation after recovery, and the controller may also
+reconcile LOCAL state. Simulator/operator identities are not authorized. The agent
+requires a configured gate client: it reads live gate state and accepts only if the
+signed epoch/revision/holder/mode match. A proposal or controller message cannot
+replace a gate-accepted certificate. A gate failure suspends ownership; stale or
+invalid requests are rejected. Successful replies contain `accepted=true`, the
+confirmed epoch/revision and `reason="RECONCILED"`.
+
+Repeated requests for the same still-current authority are harmless confirmations,
+not movement instructions. Request IDs are correlation identifiers here, not the
+gate's durable grant/action cache. A delayed request cannot restore an older
+authority after a gate epoch/revision change. Reconciliation never issues a grant,
+changes physical occupancy or synthesizes clearance. Queues retain the gate-aware
+agent's existing policy: a same-epoch owner keeps its queue, while an epoch change
+requires pending requests to be requeued by the integration caller.
+
+`CentralController.reconcile_remote()` accepts an ID-to-address mapping and requires
+every endpoint to acknowledge the same accepted authority. Partial or unreachable
+results raise an error; they do not count as successful system-wide reconciliation.
+Controller and agent processes need not share objects or files. `ReconciliationClient`
+supports secure-channel credentials and `Agent.start()` supports server credentials.
+The demonstration CLI uses isolated plaintext loopback; use an authenticated transport
+configuration outside a trusted environment. Signature checking alone does not
+authenticate plaintext responses.
+
 CENTRAL certificates use the same payload, but have exactly the controller's signature
 and arrive in a controller-signed command. Initial central bootstrap is epoch zero.
 Once initialised, controller updates must preserve the current epoch and match the

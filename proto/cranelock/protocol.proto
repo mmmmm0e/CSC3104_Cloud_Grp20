@@ -52,6 +52,11 @@ message RecoveryVote {
   string voter_id = 4;
   bytes signature = 5;
 }
+// requests reconciliation against live gate authority
+message AuthorityReconciliation {
+  bytes payload_json = 1;
+  bytes signature = 2;
+}
 message PeerState {
   string agent_id = 1;
   double last_seen_monotonic = 2;
@@ -73,5 +78,6 @@ service CraneAgent {
   rpc TokenRequest(TokenRequestMessage) returns (Reply);
   rpc TokenTransfer(TokenTransferMessage) returns (Reply);
   rpc VoteRecovery(RecoveryProposal) returns (RecoveryVote);
+  rpc ReconcileAuthority(AuthorityReconciliation) returns (Reply);
   rpc GetAgentState(Empty) returns (AgentState);
 }

@@ -44,3 +44,10 @@ def test_progress_compose_resolves_container_commands():
     assert dashboard["ports"][0]["host_ip"] == "127.0.0.1"
     assert dashboard["volumes"][0]["read_only"] is True
     assert services["demo"]["volumes"][0].get("read_only", False) is False
+    interactive = subprocess.run(
+        ["docker", "compose", "-f", "deploy/compose.progress.json", "--profile", "interactive",
+         "config", "--format", "json"], cwd=root, capture_output=True, text=True, timeout=30)
+    assert interactive.returncode == 0, interactive.stderr
+    service = json.loads(interactive.stdout)["services"]["live"]
+    assert service["ports"][0]["host_ip"] == "127.0.0.1"
+    assert service["command"] == ["-m", "cranelock_sim.live", "--bind", "0.0.0.0"]

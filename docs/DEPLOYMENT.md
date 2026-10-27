@@ -2,6 +2,20 @@
 
 ## Container-packaged progress demo (Members 1 to 4 and platform)
 
+For interactive crane controls in a separate optional container:
+
+```powershell
+docker compose -f deploy/compose.progress.json --profile interactive up -d --build live
+```
+
+Open **http://127.0.0.1:8766/live**. The live service uses the existing named evidence
+volume read/write and leaves the read-only evaluation dashboard on host port 8765.
+It runs a fresh simulated yard on startup, not a continuation of an occupied yard
+from a previous process. Past logs and databases are retained in separate directories.
+The host port is restricted to loopback and actions require the same-origin session
+token. This profile packages the local simulator; it does not put each crane in a
+separate container. Runtime verification still requires Docker on the target machine.
+
 `Dockerfile.progress` packages the combined demo, simulator, agents, gate and original
 evaluation dashboard. `deploy/compose.progress.json` is a Compose file written in JSON
 and uses its own `cranelock-progress` project and named results volume. It is separate
