@@ -194,7 +194,11 @@ class CentralController:
 
         mode = Mode[mode_name]
         for agent in agents.values():
-            await agent.reconcile(epoch, holder, mode)
+            if agent.gate:
+                if not await agent.reconcile_from_gate():
+                    raise ControllerError("Agent could not reconcile from its gate")
+            else:
+                await agent.reconcile(epoch, holder, mode, revision=state["revision"])
         return state
 
 

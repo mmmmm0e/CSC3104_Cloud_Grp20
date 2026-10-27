@@ -1,8 +1,10 @@
 import asyncio
 
 import grpc
+import pytest
 
 from cranelock.agent import Agent, Mode
+from cranelock.gate_client import GateClient
 from cranelock.controller import (
     AgentStateMonitor,
     CentralController,
@@ -52,7 +54,8 @@ def test_controller_switches_existing_authority_to_central(h):
         server.close()
 
 
-def test_controller_reconciles_agents_from_gate_state(h):
+@pytest.mark.parametrize("with_gate", [False, True])
+def test_controller_reconciles_agents_from_gate_state(h, with_gate):
     assert h.install(mode="CENTRAL")["allowed"]
     server = RunningServer(h.gate, "127.0.0.1:0")
     try:
@@ -67,11 +70,14 @@ def test_controller_reconciles_agents_from_gate_state(h):
                     "crane-1",
                     epoch=0,
                     mode=Mode.REJOINING,
+                    gate=GateClient(grpc.insecure_channel(f"127.0.0.1:{server.port}"),
+                                    h.config, h.keys, "crane-2") if with_gate else None,
                 )
                 try:
                     state = await controller.reconcile_agents({"crane-2": agent})
                     assert state["holder"] == "crane-1"
                     assert agent.state.current_epoch == 0
+                    assert agent.state.revision == state["revision"] == 1
                     assert agent.state.token_holder == "crane-1"
                     assert agent.state.mode == Mode.CENTRAL
                     assert not agent.state.has_token
@@ -133,6 +139,31 @@ def test_agent_state_monitor_reads_running_agent():
     assert result["status"] == "AVAILABLE"
     assert result["state"]["agent_id"] == "crane-a"
     assert result["state"]["has_token"]
+
+
+@pytest.mark.parametrize("with_probe", [False, True])
+def test_agent_starts_controller_watch_only_when_configured(with_probe):
+    async def scenario():
+        called = asyncio.Event()
+
+        async def probe():
+            called.set()
+            return True
+
+        agent = Agent("crane-a", {}, "crane-a", event_sink=lambda event: None,
+                      controller_probe=probe if with_probe else None)
+        try:
+            await agent.start("127.0.0.1:0", auto_transfer=False)
+            watchers = [task for task in agent.tasks
+                        if task.get_coro().__name__ == "controller_watch_loop"]
+            assert len(watchers) == int(with_probe)
+            if with_probe:
+                await asyncio.wait_for(called.wait(), timeout=1)
+                assert not agent.controller_suspected
+        finally:
+            await agent.close()
+
+    asyncio.run(scenario())
 
 
 def test_format_snapshot_shows_agent_state_and_failures():
