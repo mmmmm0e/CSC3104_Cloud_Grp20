@@ -194,7 +194,14 @@ class CentralController:
 
         mode = Mode[mode_name]
         for agent in agents.values():
-            await agent.reconcile(epoch, holder, mode)
+            if agent.gate:
+                if not await agent.reconcile_from_gate():
+                    raise ControllerError("Agent could not confirm accepted gate authority")
+                if (agent.state.current_epoch, agent.state.revision, agent.state.token_holder,
+                        agent.state.mode) != (epoch, state["revision"], holder, mode):
+                    raise ControllerError("Authority changed during controller reconciliation")
+            else:
+                await agent.reconcile(epoch, holder, mode, revision=state["revision"])
         return state
 
 

@@ -18,4 +18,4 @@ USER 10001:10001
 WORKDIR /data
 EXPOSE 8765
 ENTRYPOINT ["python", "-u"]
-CMD ["-m", "cranelock_sim.progress_demo"]
+CMD ["-m", "cranelock_sim.progress_demo", "--with-controller"]

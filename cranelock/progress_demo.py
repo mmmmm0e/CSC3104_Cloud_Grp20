@@ -137,9 +137,8 @@ async def scenario(directory, evidence):
                 reason="demo runner confirms simulated lane is empty")
 
         current = await state()
-        bootstrap = certificate(config, keys, current, "crane-1", 0,
-                                mode="CENTRAL", signers=[config.controller_id])
-        result = await call("controller", "InstallAuthority", certificate=bootstrap,
+        bootstrap = certificate(config, keys, current, "crane-1", 0)
+        result = await call("crane-1", "InstallAuthority", certificate=bootstrap,
             expected_epoch=current["epoch"], expected_revision=current["revision"])
         evidence.check("gate bootstrap", result["action_applied"], epoch=0)
         for identity in config.members:
@@ -162,7 +161,7 @@ async def scenario(directory, evidence):
         evidence.check("gate records normal handoff", result["action_applied"])
         current = await state()
         for agent in agents.values():
-            await agent.reconcile(current["epoch"], current["holder"], Mode.CENTRAL)
+            await agent.reconcile(current["epoch"], current["holder"], Mode.LOCAL)
         result = await grant("crane-2", current)
         evidence.check("member 3 grants current holder", result["action_applied"])
         reserved = result["state"]
@@ -186,7 +185,7 @@ async def scenario(directory, evidence):
         evidence.check("restarted agent blocks ownership", not returning.state.has_token
                        and returning.state.mode == Mode.REJOINING)
         current = await state()
-        await returning.reconcile(current["epoch"], current["holder"], Mode.CENTRAL)
+        await returning.reconcile(current["epoch"], current["holder"], Mode.LOCAL)
         await connect_agents()
         await wait_for(lambda: "crane-2" in returning.suspected)
         cert = await agents["crane-1"].propose_recovery(current, "crane-1")

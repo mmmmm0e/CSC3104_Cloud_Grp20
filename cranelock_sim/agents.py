@@ -36,7 +36,8 @@ def token_owner(states):
 
 class AgentCluster:
     def __init__(self, members, output, emit, *, recovery_config=None, keys=None, timeout=3,
-                 network=None, controller_probes=None, initial_mode=Mode.LOCAL, peer_interceptor=None):
+                 network=None, controller_probes=None, initial_mode=Mode.LOCAL, peer_interceptor=None,
+                 gate_factory=None):
         self.members, self.output, self.emit = members, output, emit
         self.agents, self.channels, self.stubs = {}, {}, {}
         self.violation = None
@@ -47,6 +48,7 @@ class AgentCluster:
         self.addresses = {}
         self.controller_probes = controller_probes or {}
         self.initial_mode, self.peer_interceptor = initial_mode, peer_interceptor
+        self.gate_factory = gate_factory
 
     def on_event(self, event):
         self.emit("agent_event", agent_event=event)
@@ -66,7 +68,8 @@ class AgentCluster:
                 interval=0.05, timeout=self.timeout, state_file=self.output / f"{identity}.json",
                 event_sink=self.on_event, recovery_config=self.recovery_config,
                 recovery_private_key=self.keys[identity] if self.recovery_config else None,
-                controller_probe=self.controller_probes.get(identity))
+                controller_probe=self.controller_probes.get(identity),
+                gate=self.gate_factory(identity) if self.gate_factory else None)
         ports = {}
         for identity, agent in self.agents.items():
             ports[identity] = await agent.start("127.0.0.1:0", auto_transfer=False,
@@ -97,6 +100,8 @@ class AgentCluster:
                            asyncio.create_task(agent.monitor_loop())]
             if agent.controller_probe:
                 agent.tasks.append(asyncio.create_task(agent.controller_watch_loop()))
+            if agent.gate:
+                agent.tasks.append(asyncio.create_task(agent.rejoin_loop()))
         self.emit("cluster_started", addresses={k: f"127.0.0.1:{v}" for k, v in ports.items()})
 
     async def snapshot(self, stage):
@@ -145,6 +150,17 @@ class AgentCluster:
         new_owner, _ = await self.snapshot("after_token_transfer")
         if new_owner != expected:
             raise SafetyViolation(f"Expected queued holder {expected}, got {new_owner}")
+        if sender.gate:
+            current = await asyncio.to_thread(client.state)
+            if (current["holder"] != expected or current["epoch"] != old["epoch"]
+                    or current["revision"] != old["revision"] + 1):
+                raise SafetyViolation("Agent handoff does not match committed gate authority")
+            for agent in self.agents.values():
+                if not await agent.reconcile_from_gate():
+                    raise RuntimeError("Agent could not reconcile the accepted handoff")
+            self.emit("gate_handoff", sender=owner, receiver=expected,
+                      revision=current["revision"])
+            return
         # Deliver the old holder's actual announcement over gRPC before a later
         # handoff. Otherwise a third agent may still know an earlier holder.
         sender = self.agents[owner]
@@ -174,7 +190,9 @@ class AgentCluster:
         agent = Agent(identity, peers, self.members[0], epoch=0, interval=0.05,
             timeout=self.timeout, state_file=path, event_sink=self.on_event,
             recovery_config=self.recovery_config,
-            recovery_private_key=self.keys[identity] if self.recovery_config else None)
+            recovery_private_key=self.keys[identity] if self.recovery_config else None,
+            controller_probe=self.controller_probes.get(identity),
+            gate=self.gate_factory(identity) if self.gate_factory else None)
         self.agents[identity] = agent
         # Keep the old endpoint so surviving peer channels reconnect normally.
         try:

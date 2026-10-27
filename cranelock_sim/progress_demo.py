@@ -8,6 +8,7 @@ import uuid
 
 from .agents import run_agent_demo
 from .failures import run_partition_suite, run_recovery_suite, run_restart_suite
+from .lifecycle import run_lifecycle
 
 
 # compares physical movements with accepted gate entries
@@ -35,12 +36,16 @@ def verify_evidence(directory, summary):
 
 
 # runs member 4 scenarios with the existing agents and gate
-async def run_progress_demo(output, progress=print):
+async def run_progress_demo(output, progress=print, *, include_controller=False):
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
     scope = ("Members 1 to 4, real loopback gRPC agents and gate, simulator lane and "
              "safety checks; local runner orchestration, no teammate controller or Kubernetes.")
-    summary = dict(model="members-1-to-4-progress", passed=False, scope=scope, scenarios={})
+    if include_controller:
+        scope = ("Members 1 to 5 with gate-authorized agents and actual team controller; "
+                 "loopback services, adapter-driven faults; Docker packaging available, Kubernetes unverified.")
+    summary = dict(model="members-1-to-5-progress" if include_controller else "members-1-to-4-progress",
+                   passed=False, scope=scope, scenarios={})
     with (output / "demo.log").open("x", encoding="utf-8") as log:
         # records timestamped progress on screen and disk
         def emit(message):
@@ -63,7 +68,7 @@ async def run_progress_demo(output, progress=print):
             emit(f"[PASS] {name}: {count} accepted physical entries, zero safety violations")
 
         try:
-            emit("[START] members 1 to 4 local progress demo")
+            emit(f"[START] members 1 to {5 if include_controller else 4} local progress demo")
             emit("[RUN] normal token handoff and simulator crossings")
             result = await run_agent_demo(output / "normal", rounds=2, crossing_time=0.05)
             record("normal", result, output / "normal")
@@ -74,6 +79,10 @@ async def run_progress_demo(output, progress=print):
                 suite = await runner(output / name, progress=emit)
                 for scenario, result in suite["scenarios"].items():
                     record(f"{name}/{scenario}", result, output / name / scenario)
+            if include_controller:
+                emit("[RUN] team controller outage and return")
+                result = await run_lifecycle(output / "controller-cycle", progress=emit)
+                record("controller-cycle", result, output / "controller-cycle")
             summary.update(passed=True, scenario_count=len(summary["scenarios"]),
                 physical_entries=sum(item["physical_entries"]
                                      for item in summary["scenarios"].values()),
@@ -102,11 +111,13 @@ async def run_progress_demo(output, progress=print):
 def main():
     parser = argparse.ArgumentParser(description="Connected members 1 to 4 progress demo")
     parser.add_argument("--output", type=Path, help="new evidence directory")
+    parser.add_argument("--with-controller", action="store_true", help="include the actual controller lifecycle")
     args = parser.parse_args()
     output = args.output or Path("run/evaluation") / (
         "progress-" + datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8])
     print(f"Evidence directory: {output.resolve()}", flush=True)
-    asyncio.run(run_progress_demo(output, progress=lambda line: print(line, flush=True)))
+    asyncio.run(run_progress_demo(output, progress=lambda line: print(line, flush=True),
+                                 include_controller=args.with_controller))
     print(f"View saved runs: python -m cranelock_sim.dashboard --root \"{output.resolve()}\"")
 
 

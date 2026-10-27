@@ -11,7 +11,7 @@
       "security_opt": ["no-new-privileges:true"],
       "profiles": ["tools"],
       "restart": "no",
-      "command": ["-m", "cranelock_sim.progress_demo"],
+      "command": ["-m", "cranelock_sim.progress_demo", "--with-controller"],
       "volumes": ["progress-data:/data"]
     },
     "evaluation": {

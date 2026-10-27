@@ -1,4 +1,4 @@
-"""Experimental reference controller transport; not the teammate's controller API."""
+# controller transports for reference evaluation and team integration
 import threading
 import time
 from collections import Counter
@@ -60,7 +60,7 @@ class MeasuredGateClient(Client):
 
 
 class ReferenceController:
-    def __init__(self, client):
+    def __init__(self, client, *, port=0):
         self.client = client
         self.pool = ThreadPoolExecutor(max_workers=4)
         self.server = grpc.server(self.pool)
@@ -71,7 +71,7 @@ class ReferenceController:
                 request_deserializer=json.loads, response_serializer=encode),
         }
         self.server.add_generic_rpc_handlers((grpc.method_handlers_generic_handler("cranelock.reference.Controller", methods),))
-        self.port = self.server.add_insecure_port("127.0.0.1:0")
+        self.port = self.server.add_insecure_port(f"127.0.0.1:{port}")
         self.server.start()
         self.stopped = False
 
@@ -90,6 +90,20 @@ class ReferenceController:
             self.server.stop(0).wait(timeout=3)
             self.pool.shutdown(wait=True)
             self.stopped = True
+
+
+# exposes kirby's controller through the experiment transport
+class TeamControllerService(ReferenceController):
+    def __init__(self, controller, *, port=0):
+        self.controller = controller
+        super().__init__(controller.client, port=port)
+
+    # assigns authority using the actual controller implementation
+    def assign(self, request, context):
+        state = self.controller.get_state()
+        if state["holder"] == request["holder"] and state["mode"] == "CENTRAL":
+            return dict(allowed=True, reason="UNCHANGED", state=state)
+        return self.controller.install_central(request["holder"])
 
 
 class ControllerConnection:

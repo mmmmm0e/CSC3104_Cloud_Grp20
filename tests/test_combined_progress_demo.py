@@ -7,12 +7,17 @@ from cranelock_sim import progress_demo
 
 
 # verifies all connected scenarios and dashboard evidence
-def test_members_1_to_4_demo(tmp_path):
+@pytest.mark.parametrize("include_controller", [False, True])
+def test_members_1_to_4_demo(tmp_path, include_controller):
     from cranelock_sim.dashboard import Results
 
     output = tmp_path / "progress"
-    result = asyncio.run(progress_demo.run_progress_demo(output, progress=lambda line: None))
-    assert result["passed"] and result["scenario_count"] == 8
+    result = asyncio.run(progress_demo.run_progress_demo(output, progress=lambda line: None,
+                                                       include_controller=include_controller))
+    count = 9 if include_controller else 8
+    assert result["passed"] and result["scenario_count"] == count
+    if include_controller:
+        assert result["scenarios"]["controller-cycle"]["completed"] == 3
     assert result["scenarios"]["normal"]["completed"] == 6
     minority = result["scenarios"]["partition/no-majority"]
     assert not minority["recovered"] and minority["physical_entries"] == 0
@@ -22,7 +27,7 @@ def test_members_1_to_4_demo(tmp_path):
         assert detail["status"] == "passed"
         assert "requests.csv" in detail["artifacts"]
     assert json.loads((output / "summary.json").read_text())["passed"]
-    assert "all 8 scenarios completed" in (output / "demo.log").read_text()
+    assert f"all {count} scenarios completed" in (output / "demo.log").read_text()
 
 
 # retains failure evidence without reporting success

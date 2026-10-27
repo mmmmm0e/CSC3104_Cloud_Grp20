@@ -3,8 +3,40 @@
 This repository contains the crane agent and recovery quorum component (`cranelock`)
 and the trusted access gate (`cranelock_gate`), plus Member 4's simulator and evaluation
 tools (`cranelock_sim`). Local demo runners connect agent gRPC, recovery certificates,
-gate validation and the simulator's physical lane. Deployment integration and the
-teammate controller remain pending; the normal agent CLI does not orchestrate recovery.
+gate validation and the simulator's physical lane. Gate-authorized token handoff and
+gate-based restart reconciliation are available in opt-in gate mode.
+See [agent/gate integration and exact local demo](docs/AGENT_GATE.md) for setup,
+authority rules, failure behavior, validation and team integration decisions.
+The separate protobuf services and original standalone baseline are preserved.
+
+## Full local controller integration
+
+```powershell
+.\.venv\Scripts\python.exe -m cranelock_sim.lifecycle
+```
+
+This uses Kendrick's gate-aware agents, Moe's quorum certificates, Max's gate,
+Darius's physical lane and Kirby's `CentralController`. It verifies CENTRAL operation,
+actual controller-service loss, majority-approved LOCAL fallback, gate-authorized token
+handoff and CENTRAL return. Return preserves the current epoch, holder, waiting queue
+and physical occupancy; old grants are fenced by revision. Waiting work resumes only
+after the simulator confirms exit. The caller paces the handoffs and return; the
+normal agent CLI does not supply the entire orchestration policy.
+
+To include this cycle with all existing progress scenarios:
+
+```powershell
+.\.venv\Scripts\python.exe -m cranelock_sim.progress_demo --with-controller
+.\.venv\Scripts\python.exe -m cranelock_sim.dashboard
+```
+
+The extended suite runs nine scenarios and saves fresh evidence under `run/evaluation`.
+In the unchanged dashboard layout, select the saved controller-cycle experiment under
+**Other saved experiments** for playback. Controller restoration and CENTRAL return
+are reflected in playback. Existing baseline calculations and reference-controller
+comparison runs are preserved; those graphs are not measurements of this new cycle.
+Docker Compose's `demo` tool includes this cycle by default. Container execution and
+Kubernetes/monitoring validation remain separate platform checks.
 
 Install both components and test dependencies with `python -m pip install -e ".[dev]"`
 (or `python -m pip install -r requirements.txt`), then run `python -m pytest -q`.
@@ -160,7 +192,7 @@ Generated modules are checked in; regenerate them after changing the proto. Do n
 edit generated code. The schema uses package `cranelock.v1` and stable numbered
 fields; add future recovery/gate/controller services without replacing this API.
 
-### Two-process demo
+### Standalone baseline two-process demo (without the gate)
 
 Use a **fresh demo directory** for each new simulated cluster. All agents must agree
 on initial epoch, holder and complete membership. Only one configured initial
@@ -195,7 +227,7 @@ received heartbeat, A emits `PEER_SUSPECTED` and `TOKEN_HOLDER_SUSPECTED`. State
 `SUSPECTED_UNAVAILABLE`; A never regenerates the token. Change timing with
 `--interval 0.5 --timeout 2`. Repeat `--peer ID=HOST:PORT` for arbitrary membership.
 
-Restarting with an existing state file intentionally enters REJOINING with
+In standalone mode, restarting with an existing state file intentionally enters REJOINING with
 `has_token=false`. There is no CLI bypass. `Agent.reconcile()` is a trusted Python
 integration hook whose caller must supply authoritative epoch/holder information.
 Do not delete state files to rejoin an existing cluster. For a separate fresh demo,
@@ -244,17 +276,17 @@ durations on one host; do not subtract monotonic timestamps from different hosts
 
 ### Limits and team integration decisions
 
-- **Moe (Recovery):** implemented by the optional recovery configuration on each
-  agent. `TOKEN_HOLDER_SUSPECTED` enables voting; `propose_recovery` gathers a
-  strict majority of durable Ed25519 votes into the gate's certificate format.
-  The certificate must still be installed at the trusted gate before agents call
-  the authoritative `reconcile` hook.
-- **Max (Gate):** confirm holder/epoch/request correlation and the future gate
-  client boundary. The separate gate service provides lane-entry and occupancy/fencing APIs; agent integration remains pending.
+- **Moe (Recovery):** recovery proposals, persistent votes and Ed25519 majority
+  certificates are implemented. LOCAL mode requires holder suspicion; CENTRAL
+  fallback requires controller suspicion. Gate-enabled agents reconcile accepted
+  recovery authority through their signed gate client.
+- **Max (Gate):** normal handoff and restart integration are documented in
+  [the gate integration guide](docs/AGENT_GATE.md). Grant/entry integration remains deferred.
 - **Darius (Evaluation):** confirm JSON event fields, operation IDs, clock alignment
   and detection-latency definition. Current heartbeat fanout is O(N²) per round.
-- **Kirby (Controller):** confirm CENTRAL command semantics and who authorizes
-  LOCAL transitions and rejoining. Automatic controller-failure/return logic is deferred.
+- **Kirby (Controller):** `CentralController` is connected in the local lifecycle
+  scenario, including outage, LOCAL fallback, queue reconciliation and CENTRAL return.
+  Distributed deployment and scheduler policy remain integration work.
 - **Arif (Platform):** confirm ports, peer configuration, persistent storage path,
   shutdown behavior and eventual authentication. This is plaintext trusted-peer
   local demo gRPC; IDs are validated against configured membership, not authenticated.
@@ -269,9 +301,10 @@ must be consistent; it is not a consensus algorithm.
 Tests cover the eleven requested behaviors across scenario tests, plus uncertain
 transfer retry, duplicate reception and restart blocking.
 
-Recommended next milestone: integrate the returned recovery certificate with the
-controller/gate client and reconcile every rejoining agent from the accepted gate
-state. Never reconcile from a heartbeat or an uninstalled proposal.
+The next milestone after the standalone baseline is now implemented in opt-in gate
+mode; see [the integration guide](docs/AGENT_GATE.md) for its remaining boundaries.
+Recovery and gate authority remain separate components, connected through their
+existing signed contracts.
 
 ## CraneLock: Member 2 recovery and quorum
 
@@ -280,7 +313,7 @@ authority revision. Members sign the same canonical payload using Ed25519 from t
 `cryptography` library. A certificate requires `floor(N/2)+1` distinct member votes;
 a minority partition cannot form one.
 
-Each voter validates the proposer signature, checks its current epoch and holder
+Each voter validates the proposer signature, checks its current epoch and failure
 suspicion, and persists its vote before returning a signature. A member cannot sign
 a conflicting proposal for the same target epoch, including after restart. The gate
 independently verifies the certificate and fences the previous holder when it installs
@@ -296,19 +329,15 @@ the new authority. Recovery does not establish physical lane clearance.
 
 ### Test recovery (PowerShell, repository root)
 
-Use a fresh temporary directory and disable the pytest cache if Windows denies access
-to its default temporary or cache directories:
-
 ```powershell
 $testTemp = Join-Path ([IO.Path]::GetTempPath()) ("cranelock-tests-" + [guid]::NewGuid())
 .\.venv\Scripts\python.exe -m pytest tests\test_recovery.py -v -p no:cacheprovider --basetemp="$testTemp"
 ```
 
-Expected result: **3 passed**. These tests exercise a two-of-three majority over gRPC,
-install its certificate at the gate, reject an old holder with `STALE_EPOCH`, deny a
-one-of-three minority a certificate, and reject a conflicting vote after restart.
+Expected result: **4 passed**. Majority recovery is tested both with standalone and
+gate-aware agents; the other tests verify minority rejection and persistent votes.
 
-Run the complete suite with a new temporary directory:
+Run the complete suite with a fresh temporary directory:
 
 ```powershell
 $testTemp = Join-Path ([IO.Path]::GetTempPath()) ("cranelock-tests-" + [guid]::NewGuid())
@@ -320,18 +349,15 @@ test may print a handshake error while still passing.
 
 ### Integration API
 
-Construct each recovery-enabled `Agent` with `recovery_config` (the gate's `Config`),
-its own `recovery_private_key`, and a durable `state_file`. The configured membership
-must match the agent and its peers exactly; each process should hold only its own
-private key. Agents without these options retain normal-operation behavior.
-
-After holder suspicion, call `await agent.propose_recovery(gate_state, holder)`.
-It returns a gate-compatible certificate or `None` when the attempt cannot gather
-a majority or its local vote is rejected. It does not install authority or change
-token ownership. The integration caller submits the certificate through
-`InstallAuthority`, using its signed `expected_epoch` and `expected_revision`, then
-reconciles agents from the gate's accepted state. A certificate alone never authorizes
-entry. The existing agent CLI does not automatically start this workflow.
+Construct recovery-enabled agents with `recovery_config`, their own
+`recovery_private_key` and a durable `state_file`. Membership must match the configured
+peers. Call `await agent.propose_recovery(gate_state, holder)` after the appropriate
+failure suspicion. It returns a gate-compatible certificate or `None` if the attempt
+cannot gather a majority or its local vote is rejected. Submit the certificate through
+`InstallAuthority` with its signed expected epoch/revision. Gate-aware agents then use
+`reconcile_from_gate()`; standalone adapters may use the trusted `reconcile()` hook.
+The normal CLI does not orchestrate the complete recovery workflow. A certificate
+alone never authorizes entry.
 
 ## CraneLock: Member 3 trusted access gate
 

@@ -38,7 +38,7 @@ def test_progress_compose_resolves_container_commands():
          "config", "--format", "json"], cwd=root, capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stderr
     services = json.loads(result.stdout)["services"]
-    assert services["demo"]["command"] == ["-m", "cranelock_sim.progress_demo"]
+    assert services["demo"]["command"] == ["-m", "cranelock_sim.progress_demo", "--with-controller"]
     assert not services["demo"].get("ports")
     dashboard = services["dashboard"]
     assert dashboard["ports"][0]["host_ip"] == "127.0.0.1"

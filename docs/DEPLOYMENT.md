@@ -23,7 +23,8 @@ CSS, JavaScript and evaluation calculations. Its optional `--bind 0.0.0.0` is us
 inside the container; the published host port is restricted to loopback. The normal
 Python dashboard command still binds to loopback by default.
 
-The `demo` tool runs eight connected scenarios and saves timestamped progress logs,
+The `demo` tool runs nine connected scenarios, including the actual controller's
+CENTRAL to LOCAL to CENTRAL cycle, and saves timestamped progress logs,
 summary/CSV results, agent state and gate databases below `/data/run/evaluation`.
 Each invocation uses a fresh directory. The named volume retains these artifacts
 after the tool container exits. The separate dashboard mounts that volume read-only;
@@ -42,7 +43,7 @@ The image includes plotting dependencies. A smaller comparison can be run with:
 docker compose -f deploy/compose.progress.json run --rm evaluation -m cranelock_sim --mode benefits --seed 20 --loads 6 --scenario controller-outage --duration 5 --no-plots
 ```
 
-Use **Refresh results** in the dashboard after a tool finishes. An eight-scenario demo
+Use **Refresh results** in the dashboard after a tool finishes. The progress demo
 produces safety/recovery evidence; the separate benefits experiment produces the
 baseline comparison results. Their measurement rules are unchanged.
 

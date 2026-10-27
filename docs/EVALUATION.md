@@ -5,6 +5,20 @@ the comparisons. Commands below run from the repository root in PowerShell.
 
 ## Combined project progress demo
 
+For the complete local controller integration, including safe CENTRAL return:
+
+```powershell
+.\.venv\Scripts\python.exe -m cranelock_sim.lifecycle
+.\.venv\Scripts\python.exe -m cranelock_sim.progress_demo --with-controller
+```
+
+The first command runs only the controller cycle; the second adds it to the eight
+existing progress scenarios. The cycle uses the team's actual `CentralController`
+over the experiment's gRPC service transport and gate-aware agents. It verifies
+queue preservation, epoch/revision fencing and occupied-lane blocking during return.
+It is saved with model `controller-lifecycle`, separate from reference baseline data.
+Playback supports the return events without changing the evaluation calculations.
+
 ```powershell
 .\.venv\Scripts\python.exe -m cranelock_sim.progress_demo
 ```
@@ -19,7 +33,8 @@ reports success. A no-majority scenario passes by refusing recovery safely.
 Use the printed dashboard command to restrict the viewer to this new result set.
 The dashboard shows saved playback, not live control. The experiment setup remains
 single-host loopback with adapter-controlled failure handling and reconciliation;
-the teammate controller and Kubernetes are outside this demo.
+the plain eight-scenario demo excludes the controller, while `--with-controller`
+adds the real controller cycle. Kubernetes is outside both local demos.
 
 ## Open the dashboard
 
@@ -165,7 +180,8 @@ these runs. State databases and private keys must not be published.
 | `tests/test_*.py` | Checks grouped by the behavior they test |
 
 These experiments use three agents on one host, a common trusted gate and fixed
-membership. The teammate controller is not integrated. Physical occupancy is
+membership. Baseline comparisons retain the experimental reference controller;
+the separate lifecycle scenario integrates the teammate controller. Physical occupancy is
 modeled independently of digital authority: changing holder or epoch never clears
 the lane. Zero detected safety violations is a bounded observation, not a proof
 of safety for every failure or a production port performance benchmark.

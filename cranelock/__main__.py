@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import json
+from pathlib import Path
 import grpc
 from google.protobuf.json_format import MessageToDict
 from .agent import Agent, Mode
@@ -22,6 +23,12 @@ async def main():
     run.add_argument("--timeout", type=float, default=2)
     run.add_argument("--state-file", required=True)
     run.add_argument("--request-after", type=float)
+    run.add_argument("--gate-address")
+    run.add_argument("--gate-config")
+    run.add_argument("--gate-keys", help="JSON private signing keys; only this agent's key is retained")
+    run.add_argument("--gate-tls-ca")
+    run.add_argument("--gate-tls-cert")
+    run.add_argument("--gate-tls-key")
     state = commands.add_parser("state")
     state.add_argument("address")
     args = parser.parse_args()
@@ -34,8 +41,30 @@ async def main():
     peers = dict(p.split("=", 1) for p in args.peer)
     if len(peers) != len(args.peer):
         parser.error("Duplicate peer IDs")
+    gate = None
+    if any([args.gate_tls_ca, args.gate_tls_cert, args.gate_tls_key]) and not args.gate_address:
+        parser.error("Gate TLS options require --gate-address")
+    if any([args.gate_address, args.gate_config, args.gate_keys]):
+        if not all([args.gate_address, args.gate_config, args.gate_keys]):
+            parser.error("Provide --gate-address, --gate-config and --gate-keys together")
+        from .gate_client import GateClient
+        credentials = None
+        tls = [args.gate_tls_ca, args.gate_tls_cert, args.gate_tls_key]
+        if any(tls):
+            if not all(tls):
+                parser.error("Provide all three --gate-tls-* files for mutual TLS")
+            credentials = grpc.ssl_channel_credentials(
+                Path(args.gate_tls_ca).read_bytes(), Path(args.gate_tls_key).read_bytes(),
+                Path(args.gate_tls_cert).read_bytes())
+        elif args.gate_address.rsplit(":", 1)[0] not in {"127.0.0.1", "localhost", "[::1]"}:
+            parser.error("Gate connections outside loopback require mutual TLS")
+        gate = GateClient.connect(args.gate_address, args.gate_config, args.gate_keys,
+                                  args.id, timeout=args.timeout, credentials=credentials)
+        if set(gate.client.config.members) != {args.id, *peers}:
+            await gate.close()
+            parser.error("Agent IDs and peers must match configured gate membership")
     agent = Agent(args.id, peers, args.holder, epoch=args.epoch, mode=Mode[args.mode],
-                  interval=args.interval, timeout=args.timeout, state_file=args.state_file)
+                  interval=args.interval, timeout=args.timeout, state_file=args.state_file, gate=gate)
     try:
         await agent.start(args.listen)
         if args.request_after is not None:

@@ -399,6 +399,8 @@ function explainEvent(e){
     controller_stopped:["The central controller service stops",detail?.experiment.model==="basic-token"?"The central service stops, but basic token already passes permission between the cranes without that service. All three cranes remain running and can continue using the token.":detail?.experiment.model==="central-lock"?"The central service stops while all three cranes remain running. This central-lock reference cannot assign new work without its controller.":"The central service stops while all three cranes remain running. CraneLock must detect the outage and obtain majority approval before switching to local token coordination."],
     controller_rpc_unavailable:["The stopped controller no longer answers","A real gRPC heartbeat attempt failed after stopping the reference service. No controller assignment is fabricated by the test."],
     controller_fallback_installed:["CraneLock switches to LOCAL coordination",`The gate accepted a real majority certificate at epoch ${e.epoch}. The agents reconciled from accepted gate authority. ${e.occupant?"An existing occupant remains protected; the switch does not clear the lane.":"New work can now use real token handoffs."}`],
+    controller_restored:["The controller service returns","Controller heartbeats are available again. Returning the service alone does not change accepted lane authority."],
+    controller_return_installed:["The controller resumes CENTRAL coordination",`The gate retains epoch ${e.epoch} and accepts a new authority revision. Waiting requests and any existing physical occupant remain protected.`],
     stale_central_authority_rejected:["Old central authority is rejected",`The gate denied the saved old central certificate (${e.reason}). Authority cannot roll back to the pre-outage version.`],
     cluster_started:["The agent services are ready","Three software crane agents are serving gRPC requests locally. The test can now observe requests, token handoffs and lane entry."],
     request:[`${who} requests lane access`,"A request starts its waiting time. It is not permission to move; the current authority and gate still decide entry."],
@@ -491,6 +493,8 @@ function renderPlayback(time,order=null){
     if(e.event==="network_partitioned")partition=true;
     if(e.event==="workload_started"){coordinationMode=e.mode;trafficStarted=true;}
     if(e.event==="controller_stopped")controllerStopped=true;
+    if(e.event==="controller_restored")controllerStopped=false;
+    if(e.event==="controller_return_installed"){controllerStopped=false;coordinationMode="CENTRAL";owner=e.holder;epoch=e.epoch;}
     if(e.event==="agent_event"&&e.agent_event?.event==="CONTROLLER_SUSPECTED")controllerDetected=true;
     if(e.event==="grant_issued"){owner=e.crane;epoch=e.epoch;}
     if(e.event==="controller_fallback_installed"){owner=e.holder;epoch=e.epoch;coordinationMode="LOCAL";}

@@ -391,3 +391,29 @@ def test_controller_visibly_stops_and_stays_offline_during_local_fallback(browse
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     assert not errors
     page.close()
+
+
+# checks playback returns to central when real return events are recorded
+def test_controller_return_updates_recorded_playback(browser, dashboard_server):
+    import json
+    from test_dashboard import save
+    url, root = dashboard_server
+    path = root / "lifecycle" / "cycle"
+    save(path, "experiment.json", dict(model="controller-lifecycle", scenario="controller-outage-return"))
+    save(path, "summary.json", dict(passed=True, completed=3, requested=3, safety_violations=0))
+    events = [dict(time=0, event="workload_started", mode="CENTRAL"),
+              dict(time=1, event="controller_stopped"),
+              dict(time=2, event="controller_fallback_installed", epoch=1, holder="crane-1"),
+              dict(time=3, event="controller_restored"),
+              dict(time=4, event="controller_return_installed", epoch=1, holder="crane-2")]
+    (path / "events.jsonl").write_text("\n".join(json.dumps(event) for event in events))
+    page = browser.new_page()
+    page.goto(url)
+    page.locator(".advanced-settings > summary").click()
+    page.check("#all-collections")
+    page.select_option("#collection", "lifecycle")
+    page.locator("#scrub").evaluate("el => { el.value=4; el.dispatchEvent(new Event('input')); }")
+    playwright.expect(page.locator("#controller-console")).to_have_attribute("data-state", "running")
+    playwright.expect(page.locator("#coordination-status")).to_have_attribute("data-mode", "CENTRAL")
+    playwright.expect(page.locator("#holder")).to_contain_text("Crane 2")
+    page.close()
