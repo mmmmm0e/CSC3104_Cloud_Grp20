@@ -11,3 +11,7 @@ Requires-Dist: prometheus-client==0.26.0
 Provides-Extra: dev
 Requires-Dist: grpcio-tools==1.84.0; extra == "dev"
 Requires-Dist: pytest==9.1.1; extra == "dev"
+Provides-Extra: evaluation
+Requires-Dist: matplotlib<4,>=3.9; extra == "evaluation"
+Provides-Extra: ui-test
+Requires-Dist: playwright<2,>=1.50; extra == "ui-test"

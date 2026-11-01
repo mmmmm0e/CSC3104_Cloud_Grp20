@@ -46,6 +46,7 @@ class Agent(rpc.CraneAgentServicer):
         self.path = Path(state_file) if state_file else None
         self.lock = asyncio.Lock()
         self.authority_lock = asyncio.Lock()
+        self.recovery_lock = asyncio.Lock()
         self.gate = gate
         self.gate_attempt = None
         self.authority_refresh_needed = False
@@ -608,6 +609,63 @@ class Agent(rpc.CraneAgentServicer):
             await self.detect()
             await asyncio.sleep(self.interval)
 
+    async def recover_suspected_holder(self):
+        """LOCAL-only orchestration; votes and gate acceptance remain authoritative.
+
+        All automatic proposers choose the same fixed successor for a snapshot.
+        Do not filter candidates by local suspicion: partitions could then split
+        durable votes between conflicting proposals for the same target epoch.
+        """
+        if not self.gate or self.recovery_config is None or self.recovery_lock.locked():
+            return
+        async with self.recovery_lock, self.authority_lock:
+            async with self.lock:
+                if (self.state.mode != Mode.LOCAL or self.gate_attempt or self.pending
+                        or self.state.token_holder not in self.suspected):
+                    return
+            authority = await self.query_gate()
+            if authority is None:
+                return
+            async with self.lock:
+                old_epoch = self.state.current_epoch
+                if not self.adopt_gate_state(authority):
+                    return
+                if old_epoch != self.state.current_epoch:
+                    self.state.request_queue.clear()
+                if (self.state.mode != Mode.LOCAL
+                        or self.state.token_holder not in self.suspected):
+                    return
+                candidates = sorted(set(self.recovery_config.members) - {self.state.token_holder})
+                if not candidates:
+                    return
+                holder = candidates[0]
+            certificate = await self.propose_recovery(authority, holder)
+            if certificate is None:
+                return
+            try:
+                result = await self.gate.install_recovery(certificate)
+                self.emit("RECOVERY_AUTHORITY_INSTALL_RESULT", accepted=result["allowed"],
+                          reason=result["reason"])
+            except (grpc.RpcError, RuntimeError) as error:
+                # A timed-out install may have committed. Read current authority;
+                # never infer ownership from the certificate or historical reply.
+                self.emit("RECOVERY_AUTHORITY_INSTALL_UNCERTAIN", reason=str(error))
+            authority = await self.query_gate()
+            if authority is not None:
+                async with self.lock:
+                    old_epoch = self.state.current_epoch
+                    if self.adopt_gate_state(authority) and old_epoch != self.state.current_epoch:
+                        self.state.request_queue.clear()
+                        self.pending = None
+                        self.last_handoff = ""
+                        self.received.clear()
+                        self.observed_handoffs.clear()
+
+    async def recovery_loop(self):
+        while True:
+            await self.recover_suspected_holder()
+            await asyncio.sleep(self.interval)
+
     async def transfer_loop(self):
         while True:
             await self.transfer_next()
@@ -648,6 +706,8 @@ class Agent(rpc.CraneAgentServicer):
             self.tasks.append(asyncio.create_task(self.rejoin_loop()))
         if self.controller_probe:
             self.tasks.append(asyncio.create_task(self.controller_watch_loop()))
+        if self.gate and self.recovery_config is not None:
+            self.tasks.append(asyncio.create_task(self.recovery_loop()))
         return port
 
     async def close(self):

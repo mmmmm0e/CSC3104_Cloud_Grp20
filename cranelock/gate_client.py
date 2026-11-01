@@ -47,5 +47,11 @@ class GateClient:
         # Reusing an unchanged payload preserves the gate's durable retry contract.
         return await asyncio.to_thread(self.client.send, payload)
 
+    async def install_recovery(self, certificate):
+        payload = certificate["payload"]
+        return await asyncio.to_thread(self.client.call, self.agent_id, "InstallAuthority",
+            certificate=certificate, expected_epoch=payload["expected_epoch"],
+            expected_revision=payload["expected_revision"])
+
     async def close(self):
         await asyncio.to_thread(self.channel.close)

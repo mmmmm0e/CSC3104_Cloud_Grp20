@@ -7,3 +7,9 @@ prometheus-client==0.26.0
 [dev]
 grpcio-tools==1.84.0
 pytest==9.1.1
+
+[evaluation]
+matplotlib<4,>=3.9
+
+[ui-test]
+playwright<2,>=1.50
