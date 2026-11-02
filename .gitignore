@@ -11,3 +11,7 @@ demo-data/
 *.lock
 *.jsonl
 config/private/
+
+# Local project documents and presentation build files
+/project/
+/.presentation-build/

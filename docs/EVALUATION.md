@@ -66,8 +66,10 @@ retains the earlier fixed-window healthy/holder-failure comparison.
 | Basic token | Cranes pass one token | Continues locally; no controller recovery needed | Stalls because it cannot replace the missing token |
 | CraneLock | Starts centrally in the benefits experiment | Detects missing heartbeats, obtains majority votes and installs LOCAL authority | Can replace the token with majority-approved recovery |
 
-Central authority now uses `cranelock/controller.py`, imported unchanged from
-the team's controller commit `0d4866b`. The benefits harness supplies a small gRPC
+Central authority now uses `cranelock/controller.py`, merged from the team's
+`main` snapshot `6417ecc`, including gate-aware reconciliation. Previously saved
+team-controller runs retain source commit `0d4866b`; new runs record `6417ecc`.
+The benefits harness supplies a small gRPC
 Heartbeat/Assign service around `CentralController.install_central`; it contains
 no substitute signing or assignment algorithm. The outage test stops this service
 during demand while the cranes and gate remain running. Holder-failure comparison
