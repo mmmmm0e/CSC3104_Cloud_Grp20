@@ -28,7 +28,7 @@ Run `python -m cranelock_sim --mode restart` to restart the failed holder from
 its old state after recovery, verify REJOINING blocks participation, then reconcile
 from accepted gate authority and complete a new token-authorized crossing.
 Run `python -m cranelock_sim --mode compare` for paired normal/holder-failure
-comparisons of a central reference scheduler, basic-token agents and CraneLock.
+comparisons of the team's central authority implementation, basic-token agents and CraneLock.
 Install `.[evaluation]` for PNG/SVG graphs. See [baseline comparison scope and metrics](docs/EVALUATION.md#run-the-comparisons).
 View saved experiments with `python -m cranelock_sim.dashboard`, then open
 `http://127.0.0.1:8765`. The local dashboard includes model charts, run filters,
@@ -283,10 +283,13 @@ unless explicitly enabled for an isolated simulation.
 ### Team handoff
 
 For the evaluation role, [benefits and costs](docs/EVALUATION.md#read-the-measurements) compares actual
-reference-controller outage, lost-token recovery and healthy-operation overhead.
-Run `python -m cranelock_sim --mode benefits --output run/evaluation/benefits-completion-validated`,
+team-controller adapter outage, lost-token recovery and healthy-operation overhead.
+Run `python -m cranelock_sim --mode benefits --duration 5 --output run/evaluation/benefits-team-controller-validated`,
 then `python -m cranelock_sim.dashboard`. The dashboard explains paired gains and
-costs; the teammate controller remains an outstanding integration boundary.
+costs. Central permissions use `cranelock.controller.CentralController`; the harness
+provides gRPC transport, workload scheduling and recovery initiation. Autonomous
+deployed orchestration remains an outstanding integration boundary. Older saved
+reference-controller results remain historical evidence.
 
 - [Contract and signing format](docs/CONTRACT.md): Member 1's proposed shared proto,
   Member 2's certificate format, and Member 4/5 integration rules.

@@ -46,6 +46,47 @@ def test_progress_chart_shows_one_sequence_and_marks_recorded_fault(browser, das
     page.close()
 
 
+def test_team_controller_results_are_preferred_and_historical_labels_are_preserved(browser, dashboard_server):
+    import json
+    from test_dashboard import save
+    url, root = dashboard_server
+    implementation = "cranelock.controller.CentralController"
+    for scenario in ("normal", "controller-outage", "holder-failure"):
+        for model in ("central-lock", "basic-token", "cranelock"):
+            path = root / "benefits-team-controller-validated" / scenario / model
+            settings = dict(model=model, scenario=scenario, seed=20,
+                controller_implementation=implementation, controller_source_commit="0d4866b")
+            save(path, "experiment.json", settings)
+            save(path, "summary.json", dict(**settings, evaluation="benefits-v3", requested=6,
+                completed=6, accepted=6, mean_wait_seconds=.2, safety_violations=0,
+                workload_sha256="same", duration_seconds=5, crossing_time_seconds=.03,
+                detection_timeout_seconds=.25, post_fault_new_entries=4, resumed_within_window=True,
+                outage_to_entry_seconds=.3))
+            (path / "events.jsonl").write_text("\n".join(json.dumps(e) for e in [
+                dict(time=0, event="workload_started", mode="CENTRAL", requests=6),
+                dict(time=.1, event="central_assignment", crane="crane-2")]))
+    page = browser.new_page()
+    page.goto(url)
+    playwright.expect(page.locator('#collection')).to_have_value('benefits-team-controller-validated')
+    playwright.expect(page.locator('#benefit-scope')).to_contain_text("team's CentralController")
+    playwright.expect(page.locator('#benefit-scope')).to_contain_text("not a deployed controller service")
+    page.select_option('#trace-model', 'central-lock')
+    playwright.expect(page.locator('#raw-summary')).to_contain_text(implementation)
+    page.click('#next-event')
+    page.click('#next-event')
+    playwright.expect(page.locator('#moment-title')).to_have_text('The team controller assigns lane authority')
+    data = page.evaluate('comparisonRows("controller-outage")')
+    assert len(page.evaluate('rows => pairDifferences(rows,"controller-outage","central-lock","mean_wait_seconds")', data))==1
+    next(r for r in data if r['model']=='central-lock')['summary']['controller_source_commit']='different'
+    assert page.evaluate('rows => pairDifferences(rows,"controller-outage","central-lock","mean_wait_seconds")', data)==[]
+    page.locator('.advanced-settings > summary').click()
+    page.check('#all-collections')
+    page.select_option('#collection', 'comparison-validated')
+    playwright.expect(page.locator('#benefit-scope')).to_contain_text('Historical reference-controller results')
+    assert "team's CentralController" not in page.locator('#benefit-scope').inner_text()
+    page.close()
+
+
 def test_dashboard_filter_playback_download_and_mobile(browser, dashboard_server):
     url, _ = dashboard_server
     page = browser.new_page(viewport=dict(width=1440, height=1000))

@@ -4,6 +4,8 @@ import json
 import pytest
 
 from cranelock.agent import Agent, Mode
+from cranelock.controller import CentralController
+from cranelock_sim.controller import CONTROLLER_IMPLEMENTATION, CONTROLLER_SOURCE
 from cranelock_sim.benefits import make_workload, paired, run_case, run_benefits
 from cranelock_sim.failures import until
 
@@ -56,7 +58,13 @@ def test_complete_batch_pairing_does_not_mix_fixed_window_results():
 
 
 @pytest.mark.parametrize("model", ["central-lock", "basic-token", "cranelock"])
-def test_normal_finishes_entire_batch_beyond_former_cutoff(tmp_path, model):
+def test_normal_finishes_entire_batch_beyond_former_cutoff(tmp_path, model, monkeypatch):
+    calls = []
+    original = CentralController.install_central
+    def install(self, holder, **options):
+        calls.append(holder)
+        return original(self, holder, **options)
+    monkeypatch.setattr(CentralController, "install_central", install)
     rows=[dict(row,requested_at=0.0) for row in make_workload(7,3,.1)]
     output=tmp_path / model
     result=asyncio.run(run_case(output,model,"normal",rows,seed=7,duration=.1,
@@ -69,11 +77,38 @@ def test_normal_finishes_entire_batch_beyond_former_cutoff(tmp_path, model):
     assert result["mean_wait_seconds"]>=0
     assert result["unfinished_at_horizon"] is None
     assert result["rpc_per_completed"]>0
+    assert result["evaluation"] == "benefits-v3"
+    assert result["controller_implementation"] == CONTROLLER_IMPLEMENTATION
+    assert calls == ([] if model == "basic-token" else ["crane-1"] + [r["crane"] for r in rows])
     import csv
     with (output / "requests.csv").open() as stream:
         requests=list(csv.DictReader(stream))
     assert all(row["status"]=="completed" for row in requests)
     assert result["total_completion_seconds"]>=max(float(row["exited_at"]) for row in requests)
+
+
+def test_controller_errors_do_not_fall_back_to_reference_logic(tmp_path, monkeypatch):
+    def unavailable(self, holder, **options):
+        raise RuntimeError("injected team controller failure")
+    monkeypatch.setattr(CentralController, "install_central", unavailable)
+    with pytest.raises(Exception, match="injected team controller failure"):
+        asyncio.run(run_case(tmp_path / "failed", "central-lock", "normal",
+            [dict(r, requested_at=0.0) for r in make_workload(7, 3, 1)], seed=7,
+            duration=1, crossing_time=.03, detection_timeout=.2))
+    assert (tmp_path / "failed/failure.json").is_file()
+
+
+def test_team_results_are_not_paired_with_reference_or_different_controller_versions():
+    base = dict(seed=7, requested=6, workload_sha256="same", duration_seconds=5,
+        crossing_time_seconds=.03, detection_timeout_seconds=.25,
+        evaluation="benefits-v3", scenario="controller-outage", mean_wait_seconds=.1,
+        controller_implementation=CONTROLLER_IMPLEMENTATION, controller_source_commit=CONTROLLER_SOURCE)
+    central = dict(base, model="central-lock")
+    crane = dict(base, model="cranelock", mean_wait_seconds=.2)
+    assert paired([central, crane], "controller-outage", "central-lock", "mean_wait_seconds")["median"] == pytest.approx(.1)
+    for change in (dict(evaluation="benefits-v1"), dict(controller_implementation="reference"),
+                   dict(controller_source_commit="different"), dict(controller_source_commit=None)):
+        assert paired([dict(central, **change), crane], "controller-outage", "central-lock", "mean_wait_seconds")["median"] is None
 
 
 @pytest.mark.parametrize("model", ["central-lock", "basic-token", "cranelock"])

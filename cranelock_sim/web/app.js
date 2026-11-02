@@ -8,6 +8,9 @@ const names = {"central-lock":"Central lock", "basic-token":"Basic token", crane
   "holder-service-stop-recovery":"Holder recovery", "holder-restart-rejoin":"Restart & rejoin", "peer-network-partition":"Network partition"};
 const title = text => String(text??"").replaceAll("_"," ").replaceAll("-"," ").replace(/^./,c=>c.toUpperCase());
 const label = m => names[m] || title(m);
+const usesTeamController=r=>r?.summary?.controller_implementation==="cranelock.controller.CentralController";
+const controllerLabel=r=>usesTeamController(r)?"Team controller":"Reference controller";
+const controllerScope=r=>usesTeamController(r)?"Central permissions use the team's CentralController through a test adapter. Scheduling, heartbeats and recovery initiation are supplied by the local harness; this is not a deployed controller service.":"Historical reference-controller results; these saved runs do not exercise the teammate controller.";
 let catalog={runs:[],collections:[],warnings:[]}, visible=[], selected=null, detail=null, trace=[], eventRows=[];
 let playing=false, frame=0, lastFrame=0, generation=0, currentTime=0, lastActive=-1;
 let steps=[], currentOrder=-1, holdElapsed=0;
@@ -17,10 +20,10 @@ const situation=s=>situationNames[s]||title(s);
 const familyNames={comparison:"Compare the three systems",agents:"Normal token handoff",logical:"Generated lane traffic",recovery:"Crash and majority recovery",partition:"Lost communication / network split",restart:"Restart and safe rejoin",other:"Other saved experiments"};
 function describe(r){
   const s=r?.summary||{},f=r?.family||"other",scenario=r?.scenario||"normal";
-  if(f==="comparison"&&scenario==="controller-outage")return {what:"The reference controller service is stopped one-third through a steady stream of identical requests. All three cranes and the gate stay running.",expected:"Central lock loses its coordinator. CraneLock starts centrally, detects missing controller heartbeats, obtains real majority votes and installs LOCAL authority. Basic token is already local and needs no switch. Existing occupancy must remain protected."};
+  if(f==="comparison"&&scenario==="controller-outage")return {what:`The ${usesTeamController(r)?"team controller service adapter":"reference controller service"} is stopped one-third through a steady stream of identical requests. All three cranes and the gate stay running.`,expected:"Central lock loses its coordinator. CraneLock starts centrally, detects missing controller heartbeats, obtains real majority votes and installs LOCAL authority. Basic token is already local and needs no switch. Existing occupancy must remain protected."};
   if(f==="comparison")return {
     what:scenario==="holder-failure"?"Crane A starts with the token, then its software is stopped before entry. The same requests from B and C are sent to each system.":"The same requests are sent to three systems while all cranes are healthy. This measures how they coordinate access to one shared lane.",
-    expected:scenario==="holder-failure"?"Basic token should stall because it cannot replace a lost token. CraneLock should recover with B and C's approval. The central reference can also reassign because its coordinator remains available.":"Each system should let one authorised crane enter at a time and complete the requests. A recovery advantage is not expected when nothing has failed."};
+    expected:scenario==="holder-failure"?"Basic token should stall because it cannot replace a lost token. CraneLock should recover with B and C's approval. The central controller can also reassign because its coordinator remains available.":"Each system should let one authorised crane enter at a time and complete the requests. A recovery advantage is not expected when nothing has failed."};
   if(f==="restart")return {what:"A stops while holding the token. B and C recover first. A is then restarted using its saved, out-of-date state.",expected:"Restarted A must remain blocked. It may rejoin only after reading accepted gate authority, and must receive a fresh token before entering."};
   if(f==="partition"&&s.fault==="no-majority")return {what:"All three cranes keep running, but each is disconnected from the others. No group can reach two of the three members.",expected:"No replacement authority should be installed. Refusing recovery is the safe result here. A's previously valid authority is not automatically revoked."};
   if(f==="partition")return {what:`A stays running but loses peer communication with B and C${scenario.includes("occupancy")?" while physically occupying the lane":" before entry"}. B and C can still communicate.`,expected:"B and C can approve a new holder. The gate must reject A's old permissions. If A occupies the lane, the new holder must wait for confirmed physical clearance."};
@@ -43,9 +46,9 @@ function populateCollections(previous){
   let choices=catalog.collections;
   if(!$("all-collections").checked){
     const families=[...new Set(choices.map(c=>c.family))];
-    choices=families.map(f=>choices.find(c=>c.family===f&&c.id==="benefits-completion-validated")||choices.find(c=>c.family===f&&c.id==="benefits-validated")||choices.find(c=>c.family===f&&c.id.includes("validated"))||choices.find(c=>c.family===f&&!c.id.includes("development"))||choices.find(c=>c.family===f));
+    choices=families.map(f=>choices.find(c=>c.family===f&&catalog.runs.some(r=>r.collection===c.id&&r.summary.evaluation==="benefits-v3"&&r.status==="passed"))||choices.find(c=>c.family===f&&c.id==="benefits-completion-validated")||choices.find(c=>c.family===f&&c.id==="benefits-validated")||choices.find(c=>c.family===f&&c.id.includes("validated"))||choices.find(c=>c.family===f&&!c.id.includes("development"))||choices.find(c=>c.family===f));
   }
-  const preferred=choices.find(c=>c.id==="benefits-completion-validated")||choices.find(c=>c.id==="benefits-validated")||choices.find(c=>c.id==="comparison-validated")||choices.find(c=>c.family==="comparison")||choices[0];
+  const preferred=choices.find(c=>catalog.runs.some(r=>r.collection===c.id&&r.summary.evaluation==="benefits-v3"&&r.status==="passed"))||choices.find(c=>c.id==="benefits-completion-validated")||choices.find(c=>c.id==="benefits-validated")||choices.find(c=>c.id==="comparison-validated")||choices.find(c=>c.family==="comparison")||choices[0];
   setOptions($("collection"),choices.map(c=>[c.id,`${familyNames[c.family]||"Saved results"} · ${c.count} runs${$("all-collections").checked?` · ${c.id}`:""}`]),choices.some(c=>c.id===previous)?previous:preferred?.id);
 }
 function renderExplanation(){
@@ -54,16 +57,16 @@ function renderExplanation(){
   const description=describe(first);
   $("experiment-title").textContent=familyNames[first.family]||"Understand this experiment";
   const allScenarios=[...new Set(visible.map(r=>r.scenario))];
-  $("test-explanation").textContent=first.family==="comparison"&&allScenarios.length>1?"We send the same requests to a central reference, basic token and CraneLock. One situation has no failure; the other stops the token holder before entry. Each request sequence is repeated for all three systems.":description.what;
+  $("test-explanation").textContent=first.family==="comparison"&&allScenarios.length>1?"We send the same requests to central lock, basic token and CraneLock. One situation has no failure; the other stops the token holder before entry. Each request sequence is repeated for all three systems.":description.what;
   $("expected-explanation").textContent=first.family==="comparison"&&allScenarios.length>1?"All three should progress normally. After holder failure, basic token should stall, while CraneLock and the still-running central coordinator can restore progress. Keeping an unsafe request blocked can also be a passed check.":description.expected;
   if(first.family==="comparison"&&allScenarios.length>1&&allScenarios.includes("controller-outage")){
     $("test-explanation").textContent="The same requests test healthy traffic, a stopped controller during traffic, and a stopped token holder before entry. Each demand level and request sequence is repeated for the three systems.";
-    $("expected-explanation").textContent="Controller loss should stop the central reference while CraneLock switches locally; basic token is already local. Lost-token recovery should help CraneLock versus basic token. Healthy traffic measures the cost of monitoring, with no assumed speed advantage.";
+    $("expected-explanation").textContent="Controller loss should stop central lock while CraneLock switches locally; basic token is already local. Lost-token recovery should help CraneLock versus basic token. Healthy traffic measures the cost of monitoring, with no assumed speed advantage.";
   }
   const result=$("result-explanation");result.replaceChildren();
   if(first.family==="comparison"){
     for(const scenario of allScenarios){const p=node("p");p.append(node("strong","",`${situation(scenario)}: `));const groups=["central-lock","basic-token","cranelock"].map(model=>{const rows=visible.filter(r=>r.model===model&&r.scenario===scenario),valid=rows.filter(r=>finite(completed(r))&&finite(r.summary.requested));return rows.length?valid.length?`${label(model)} ${valid.reduce((n,r)=>n+completed(r),0)}/${valid.reduce((n,r)=>n+r.summary.requested,0)} completed${valid.length<rows.length?" (some results missing)":""}`:`${label(model)}: no completed summary`:null;}).filter(Boolean);p.append(document.createTextNode(groups.join("; ")+"."));result.append(p);}
-    result.append(node("p","", visible.some(r=>r.scenario==="controller-outage"&&r.summary.evaluation==="benefits-v1")?"These tests stop an experimental reference controller. The teammate controller is not integrated. See paired benefits and costs below; normal operation alone does not demonstrate a recovery advantage.":"These are recorded local test results. The central coordinator was not stopped; this does not establish how it behaves during controller failure."));
+    result.append(node("p","",controllerScope(first)+(allScenarios.includes("controller-outage")?" The controller service is deliberately stopped during traffic.":" The controller is not stopped in this selected scenario.")));
   }else for(const r of visible.slice(0,3)){const p=node("p");p.append(node("strong","",`${situation(r.scenario)}: `),document.createTextNode(outcome(r)));result.append(p);}
 }
 function syncTraceChoices(preferred){
@@ -127,8 +130,8 @@ function filter(){
 }
 function pairDifferences(rows,scenario,baseline,metric){
   const fields=["seed","requested","workload_sha256","duration_seconds","crossing_time_seconds","detection_timeout_seconds","evaluation"];
-  const key=r=>JSON.stringify([...fields.map(f=>r.summary[f]),r.summary.measurement_policy||"fixed_window"]);
-  const valid=r=>r.status==="passed"&&["benefits-v1","benefits-v2"].includes(r.summary.evaluation)&&typeof r.summary.workload_sha256==="string"&&fields.every(f=>r.summary[f]!==undefined);
+  const key=r=>JSON.stringify([...fields.map(f=>r.summary[f]),r.summary.measurement_policy||"fixed_window",r.summary.controller_implementation,r.summary.controller_source_commit]);
+  const valid=r=>r.status==="passed"&&["benefits-v1","benefits-v2","benefits-v3"].includes(r.summary.evaluation)&&(r.summary.evaluation!=="benefits-v3"||(usesTeamController(r)&&typeof r.summary.controller_source_commit==="string"))&&typeof r.summary.workload_sha256==="string"&&fields.every(f=>r.summary[f]!==undefined);
   const refs=rows.filter(r=>valid(r)&&r.scenario===scenario&&r.model===baseline);
   return rows.filter(r=>valid(r)&&r.scenario===scenario&&r.model==="cranelock").flatMap(r=>{const matches=refs.filter(other=>key(other)===key(r));if(matches.length!==1)return [];const other=matches[0];return finite(r.summary[metric])&&finite(other.summary[metric])?[r.summary[metric]-other.summary[metric]]:[];});
 }
@@ -148,7 +151,7 @@ function renderBenefits(){
   $("benefits").classList.toggle("hidden",first?.family!=="comparison");
   if(first?.family!=="comparison")return;
   $("benefit-title").textContent="Results summary";
-  $("benefit-scope").textContent="Read one situation at a time. The same requests go to each system. One completed request means a crane entered the lane and exited. The controller is an experimental reference; the teammate controller is still to be integrated.";
+  $("benefit-scope").textContent="Read one situation at a time. The same requests go to each system. One completed request means a crane entered the lane and exited. "+controllerScope(first);
   const card=(heading,text)=>{const a=node("article");a.append(node("h3","",heading),node("p","",text));area.append(a);return a;};
   if(scenario==="normal"&&rows.length&&rows.every(r=>r.summary.measurement_policy==="complete_all_requests")){
     const n=typical(rows,"cranelock","requested"),cl=typical(rows,"cranelock","total_completion_seconds"),central=typical(rows,"central-lock","total_completion_seconds");
@@ -162,7 +165,7 @@ function renderBenefits(){
   }else if(scenario==="holder-failure"){
     const c=typical(rows,"cranelock","completed"),b=typical(rows,"basic-token","completed"),n=typical(rows,"cranelock","requested");
     const a=card("Token-holder failure",finite(c)&&finite(b)?`Crane A stops before entering, while holding the token—the permission needed to use the lane. In a typical test, CraneLock completes ${fmt(c)} of ${fmt(n)} requests from the other cranes. Basic token completes ${fmt(b)} of ${fmt(n)} because it cannot replace the missing token.`:"This selection has no completed holder-failure comparison.");
-    a.append(node("p","","CraneLock requires the remaining cranes to agree before replacing permission. The central reference can also assign another crane while its controller remains available."));
+    a.append(node("p","","CraneLock requires the remaining cranes to agree before replacing permission. The central controller can also assign another crane while its controller remains available."));
   }
   if(scenario!=="normal"){
     card("Reading waiting during this failure test","Waiting is measured from asking for access until entering the lane, across the selected failure test, including requests before and after the fault. Requests that never entered have no finished waiting time and are excluded from the average. Read the entry counts beside each waiting bar: a short wait for a few served requests does not mean a stalled system performed better.");
@@ -171,7 +174,7 @@ function renderBenefits(){
   const comparable=pairDifferences(healthy,"normal","central-lock","mean_wait_seconds").length>0;
   const cl=typical(healthy,"cranelock","mean_wait_seconds"),central=typical(healthy,"central-lock","mean_wait_seconds"),difference=(cl-central)*1000;
   const a=card("Waiting during normal operation",comparable&&finite(cl)&&finite(central)?`When nothing failed, the typical average wait was ${(cl*1000).toFixed(1)} ms with CraneLock and ${(central*1000).toFixed(1)} ms with central lock. That is ${Math.abs(difference).toFixed(2)} ms ${difference>=0?"longer":"shorter"} for the middle values shown in the waiting graph. Waiting means the time from asking for access until the crane is allowed into the lane.`:"Healthy-operation waiting is not measured for these selected requests. A system passing a safety check does not tell us how fast it is.");
-  a.append(node("p","",healthy.length&&healthy.every(r=>r.summary.measurement_policy==="complete_all_requests")?"These healthy tests include every request's wait, because the batch runs to completion. Short local runs still vary; this is a reference integration, not a real-port performance benchmark.":"The repeat runs vary, and requests that never entered have no measured waiting time. Use the waiting chart with its unfinished-request notes. These samples do not establish a consistent speed advantage."));
+  a.append(node("p","",healthy.length&&healthy.every(r=>r.summary.measurement_policy==="complete_all_requests")?"These healthy tests include every request's wait, because the batch runs to completion. Short local runs still vary; these local measurements are not real-port performance benchmarks.":"The repeat runs vary, and requests that never entered have no measured waiting time. Use the waiting chart with its unfinished-request notes. These samples do not establish a consistent speed advantage."));
 }
 function renderStats(){
   const passed=visible.filter(r=>r.status==="passed").length,failed=visible.filter(r=>r.status==="failed").length;
@@ -332,7 +335,7 @@ function renderTable(){
   const body=$("runs");body.replaceChildren();$("run-count").textContent=`${visible.length} runs`;
   for(const r of visible){
     const tr=node("tr",r.id===selected?"selected-row":""),model=node("td");
-    model.append(node("strong","",label(r.model)));if(r.model==="central-lock")model.append(node("small","","Reference controller"));else model.append(node("small","",r.collection));tr.append(model);
+    model.append(node("strong","",label(r.model)));if(r.model==="central-lock")model.append(node("small","",controllerLabel(r)));else model.append(node("small","",r.collection));tr.append(model);
     for(const text of [title(r.scenario),r.seed??"—"])tr.append(node("td","",text));
     const status=node("td");status.append(node("span",`status ${r.status}`,r.status.toUpperCase()));tr.append(status);
     for(const text of [fmt(completed(r)),fmt(r.summary.p95_wait_seconds," s"),fmt(r.summary.recovery_latency_seconds," s")])tr.append(node("td","",text));
@@ -395,9 +398,9 @@ function explainEvent(e){
   if(e.event==="check_passed"&&checkStories[e.check])return checkStories[e.check];
   const stories={
     workload_started:[`Traffic starts in ${e.mode} mode`,detail?.summary?.measurement_policy==="complete_all_requests"?"All requests are submitted at the start. The clock runs until every request has entered and exited. This healthy test has no five-second completion cutoff.":"Requests continue throughout the observation window, including after any injected fault. Each model receives the same scheduled requests."],
-    central_assignment:["The reference controller assigns lane authority",`${who} receives central authority through the running controller service. Entry still requires gate validation.`],
-    controller_stopped:["The central controller service stops",detail?.experiment.model==="basic-token"?"The central service stops, but basic token already passes permission between the cranes without that service. All three cranes remain running and can continue using the token.":detail?.experiment.model==="central-lock"?"The central service stops while all three cranes remain running. This central-lock reference cannot assign new work without its controller.":"The central service stops while all three cranes remain running. CraneLock must detect the outage and obtain majority approval before switching to local token coordination."],
-    controller_rpc_unavailable:["The stopped controller no longer answers","A real gRPC heartbeat attempt failed after stopping the reference service. No controller assignment is fabricated by the test."],
+    central_assignment:[`The ${usesTeamController(detail)?"team":"reference"} controller assigns lane authority`,`${who} receives central authority through the running controller service. Entry still requires gate validation.`],
+    controller_stopped:["The central controller service stops",detail?.experiment.model==="basic-token"?"The central service stops, but basic token already passes permission between the cranes without that service. All three cranes remain running and can continue using the token.":detail?.experiment.model==="central-lock"?"The central service stops while all three cranes remain running. Central lock cannot assign new work without its controller.":"The central service stops while all three cranes remain running. CraneLock must detect the outage and obtain majority approval before switching to local token coordination."],
+    controller_rpc_unavailable:["The stopped controller no longer answers","A real gRPC heartbeat attempt failed after stopping the controller service adapter. No controller assignment is fabricated by the test."],
     controller_fallback_installed:["CraneLock switches to LOCAL coordination",`The gate accepted a real majority certificate at epoch ${e.epoch}. The agents reconciled from accepted gate authority. ${e.occupant?"An existing occupant remains protected; the switch does not clear the lane.":"New work can now use real token handoffs."}`],
     stale_central_authority_rejected:["Old central authority is rejected",`The gate denied the saved old central certificate (${e.reason}). Authority cannot roll back to the pre-outage version.`],
     cluster_started:["The agent services are ready","Three software crane agents are serving gRPC requests locally. The test can now observe requests, token handoffs and lane entry."],

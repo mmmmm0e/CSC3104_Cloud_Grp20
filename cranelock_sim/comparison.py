@@ -1,8 +1,8 @@
-"""Paired, bounded comparisons of reference adapters through the same trusted gate.
+"""Paired, bounded comparisons through the same trusted gate.
 
-Central scheduling is a test fixture. Both token variants use the existing Agent;
-only CraneLock enables real recovery voting. No team controller is substituted
-silently, and no logical-time metrics are mixed with these host-local RPC runs.
+The team's CentralController installs central authority; request scheduling is a
+test fixture. Both token variants use the existing Agent; only CraneLock enables
+real recovery voting. No logical-time metrics are mixed with these local RPC runs.
 """
 import asyncio
 import csv
@@ -19,11 +19,13 @@ from pathlib import Path
 
 import grpc
 
+from cranelock.controller import CentralController
 from cranelock_gate.client import Client, certificate
 from cranelock_gate.core import Gate
 from cranelock_gate.server import RunningServer
 from cranelock_gate.storage import initialize
 from .agents import AgentCluster, wall_clock
+from .controller import CONTROLLER_IMPLEMENTATION, CONTROLLER_SOURCE
 from .experiment import new_config, percentile, require
 from .failures import until
 from .lane import Lane, SafetyViolation
@@ -31,7 +33,7 @@ from .lane import Lane, SafetyViolation
 
 MODELS = ("central-lock", "basic-token", "cranelock")
 SCENARIOS = ("normal", "holder-failure")
-LIMITS = ("Reference central scheduler; token handoffs paced by test adapter; common gate/fencing "
+LIMITS = ("Team CentralController authority logic; scheduling and token handoffs paced by test adapter; common gate/fencing "
           "for all models; one host process; no controller outage or production performance claim.")
 
 
@@ -60,6 +62,7 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
             detections.setdefault(raw["agent_id"], now)
 
     settings = dict(model=model, scenario=scenario, seed=seed, duration_seconds=duration,
+        controller_implementation=CONTROLLER_IMPLEMENTATION, controller_source_commit=CONTROLLER_SOURCE,
         crossing_time_seconds=crossing_time, detection_timeout_seconds=detection_timeout,
         workload_sha256=workload_hash(workload), time_basis="host_monotonic_seconds", limitations=LIMITS)
     (output / "experiment.json").write_text(json.dumps(settings, indent=2), encoding="utf-8")
@@ -80,11 +83,13 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
         client = Client(channel, config, keys)
         state = await asyncio.to_thread(client.state)
         central = model == "central-lock"
-        cert = certificate(config, keys, state, "crane-1", 0,
-            mode="CENTRAL" if central else "LOCAL", signers=["controller"] if central else None)
-        require(await asyncio.to_thread(client.call, "controller" if central else "crane-1",
-            "InstallAuthority", certificate=cert, expected_epoch=state["epoch"],
-            expected_revision=state["revision"]))
+        controller = CentralController(config, keys[config.controller_id], channel) if central else None
+        if central:
+            require(await asyncio.to_thread(controller.install_central, "crane-1"))
+        else:
+            cert = certificate(config, keys, state, "crane-1", 0)
+            require(await asyncio.to_thread(client.call, "crane-1", "InstallAuthority",
+                certificate=cert, expected_epoch=state["epoch"], expected_revision=state["revision"]))
         lane = Lane(client, wall_clock, emit)
         require(await asyncio.to_thread(lane.observe))
         await cluster.start()
@@ -153,10 +158,7 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
                 state = await asyncio.to_thread(client.state)
                 if central:
                     if state["holder"] != identity:
-                        cert = certificate(config, keys, state, identity, state["epoch"],
-                                           mode="CENTRAL", signers=["controller"])
-                        require(await asyncio.to_thread(client.call, "controller", "InstallAuthority",
-                            certificate=cert, expected_epoch=state["epoch"], expected_revision=state["revision"]))
+                        require(await asyncio.to_thread(controller.install_central, identity))
                     if detected_at is not None and authority_at is None:
                         authority_at = time.monotonic() - origin
                 else:

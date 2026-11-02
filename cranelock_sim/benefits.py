@@ -1,6 +1,6 @@
-"""Paired benefit/cost experiments, with an actual reference-controller outage.
+"""Paired benefit/cost experiments using the team's CentralController.
 
-This is a loopback reference integration, not the teammate controller protocol.
+Central authority uses the team implementation behind a test-only gRPC service.
 Workload pacing and the CENTRAL -> LOCAL orchestration belong to this adapter.
 """
 import asyncio
@@ -23,13 +23,15 @@ from cranelock_gate.server import RunningServer
 from cranelock_gate.storage import initialize
 from .agents import AgentCluster, wall_clock
 from .comparison import MODELS, run_case as holder_case, workload_hash, write_csv
-from .controller import ControllerConnection, MeasuredGateClient, PeerCounter, RPCStats, ReferenceController
+from .controller import (CONTROLLER_IMPLEMENTATION, CONTROLLER_SOURCE, ControllerConnection,
+                         MeasuredGateClient, PeerCounter, RPCStats, TeamControllerService)
 from .experiment import new_config, percentile, require
 from .failures import until
 from .lane import Lane
 
 SCENARIOS = ("normal", "controller-outage", "holder-failure")
-LIMITS = ("Experimental reference controller and adapter-driven fallback, not teammate controller integration. "
+LIMITS = ("Team CentralController authority logic with test-only gRPC Heartbeat/Assign transport. "
+          "Workload scheduling and fallback initiation are adapter-driven, not autonomous deployed orchestration. "
           "Three agents, one host, common trusted gate. Load varies request count, not crane count. "
           "RPC attempts count instrumented peer, controller and gate calls; excludes management snapshots "
           "and gate internal maintenance. Not packet/byte counts or production benchmarks. "
@@ -46,7 +48,7 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
     if scenario == "holder-failure":
         result = await holder_case(output, model, scenario, workload, seed=seed, duration=duration,
                                    crossing_time=crossing_time, detection_timeout=detection_timeout)
-        result.update(evaluation="benefits-v1", limitations=LIMITS, rpc_attempts=None,
+        result.update(evaluation="benefits-v3", limitations=LIMITS, rpc_attempts=None,
                       rpc_per_completed=None, post_fault_new_entries=result["accepted"])
         (output / "summary.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
         return result
@@ -59,7 +61,8 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
     def emit(event, **fields):
         events.append(dict(time=time.monotonic() - origin, event=event, **fields))
     settings = dict(model=model, scenario=scenario, seed=seed,
-        evaluation="benefits-v2" if complete_all else "benefits-v1",
+        evaluation="benefits-v3", controller_implementation=CONTROLLER_IMPLEMENTATION,
+        controller_source_commit=CONTROLLER_SOURCE,
         measurement_policy="complete_all_requests" if complete_all else "fixed_window",
         arrival_pattern="batch" if all(row["requested_at"] == 0 for row in workload) else "scheduled",
         safety_timeout_seconds=safety_timeout if complete_all else None,
@@ -85,15 +88,18 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
         channel = grpc.insecure_channel(f"127.0.0.1:{server.port}")
         await asyncio.to_thread(grpc.channel_ready_future(channel).result, timeout=5)
         client = MeasuredGateClient(channel, config, keys, stats)
+        controller = TeamControllerService(config, keys[config.controller_id], channel, stats)
+        connections = [ControllerConnection(controller.port, stats) for _ in range(4)]
         state = await asyncio.to_thread(client.state)
         bootstrap = certificate(config, keys, state, "crane-1", 0, mode=mode,
                                 signers=["controller"] if mode == "CENTRAL" else None)
-        require(await asyncio.to_thread(client.call, "controller" if mode == "CENTRAL" else "crane-1",
-            "InstallAuthority", certificate=bootstrap, expected_epoch=state["epoch"], expected_revision=state["revision"]))
+        if mode == "CENTRAL":
+            require(await connections[-1].assign("crane-1"))
+        else:
+            require(await asyncio.to_thread(client.call, "crane-1", "InstallAuthority",
+                certificate=bootstrap, expected_epoch=state["epoch"], expected_revision=state["revision"]))
         lane = Lane(client, wall_clock, emit)
         require(await asyncio.to_thread(lane.observe))
-        controller = ReferenceController(MeasuredGateClient(channel, config, {"controller": keys["controller"]}, stats))
-        connections = [ControllerConnection(controller.port, stats) for _ in range(4)]
         cluster = AgentCluster(list(config.members), output, emit, timeout=detection_timeout,
             initial_mode=Mode.CENTRAL if mode == "CENTRAL" else Mode.LOCAL,
             recovery_config=config if model == "cranelock" else None,
@@ -104,7 +110,7 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
         await asyncio.sleep(max(.15, detection_timeout))
         if model == "cranelock":
             if not all(await asyncio.gather(*(connection.probe() for connection in connections))):
-                raise RuntimeError("Reference controller did not warm up")
+                raise RuntimeError("Team controller service adapter did not warm up")
             # Healthy controller must prevent a locally manufactured replacement.
             if await cluster.agents["crane-2"].propose_recovery(await asyncio.to_thread(client.state), "crane-2") is not None:
                 raise RuntimeError("Recovery accepted while controller healthy")
@@ -302,8 +308,11 @@ def paired(results, scenario, baseline, metric):
     """Only compare exact seeded inputs and timing parameters; missing stays missing."""
     def key(row):
         return tuple(row.get(field) for field in ("seed", "requested", "workload_sha256", "duration_seconds",
-                     "crossing_time_seconds", "detection_timeout_seconds", "evaluation")) + (row.get("measurement_policy","fixed_window"),)
-    results = [row for row in results if row.get("evaluation") in {"benefits-v1","benefits-v2"}
+                     "crossing_time_seconds", "detection_timeout_seconds", "evaluation")) + (row.get("measurement_policy","fixed_window"), row.get("controller_implementation"), row.get("controller_source_commit"))
+    results = [row for row in results if row.get("evaluation") in {"benefits-v1","benefits-v2","benefits-v3"}
+               and (row.get("evaluation") != "benefits-v3" or
+                    (row.get("controller_implementation") == CONTROLLER_IMPLEMENTATION and
+                     isinstance(row.get("controller_source_commit"), str)))
                and isinstance(row.get("workload_sha256"), str)
                and all(row.get(field) is not None for field in ("seed", "requested",
                    "crossing_time_seconds", "detection_timeout_seconds"))

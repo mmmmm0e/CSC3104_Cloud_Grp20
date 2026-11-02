@@ -13,7 +13,7 @@ Open **http://127.0.0.1:8765**. The viewer reads `run/evaluation`; it does not s
 experiments or control cranes. Use **Refresh results** after generating results
 and **Ctrl + F5** after changing the interface. Stop the server with Ctrl+C.
 
-The recommended set is `benefits-completion-validated`. Select a scenario in the
+The recommended set is `benefits-team-controller-validated` when available. Select a scenario in the
 main dropdown. Request count and sequence filters are inside **Test settings and
 saved experiments**. A sequence (seed) repeats the same requests; it is not a crane.
 
@@ -62,15 +62,20 @@ retains the earlier fixed-window healthy/holder-failure comparison.
 
 | System | Healthy operation | Controller stops | Token holder stops |
 | --- | --- | --- | --- |
-| Central lock | A reference coordinator assigns access | Cannot assign new access | Can reassign while its coordinator is available |
+| Central lock | The team's CentralController installs access authority | Cannot assign new access | Can reassign while its coordinator is available |
 | Basic token | Cranes pass one token | Continues locally; no controller recovery needed | Stalls because it cannot replace the missing token |
 | CraneLock | Starts centrally in the benefits experiment | Detects missing heartbeats, obtains majority votes and installs LOCAL authority | Can replace the token with majority-approved recovery |
 
-The controller-outage test stops an actual experimental reference controller
-service during steady demand. All cranes and the gate remain running. The holder
-failure test instead stops A before entry and exercises LOCAL recovery. Its
-central baseline is the earlier direct-sign reference adapter. These are separate
-faults; success under controller loss does not imply lost-token recovery.
+Central authority now uses `cranelock/controller.py`, imported unchanged from
+the team's controller commit `0d4866b`. The benefits harness supplies a small gRPC
+Heartbeat/Assign service around `CentralController.install_central`; it contains
+no substitute signing or assignment algorithm. The outage test stops this service
+during demand while the cranes and gate remain running. Holder-failure comparison
+also calls the team's controller for the central baseline, through its Python API.
+The harness still schedules requests and initiates majority recovery. This does
+not establish autonomous deployment or the controller CLI's availability: the
+teammate's CLI is a state monitor, not this test-only service. Separate-device and
+cloud/container integration remain to be tested.
 
 ## Read the measurements
 
@@ -78,7 +83,7 @@ faults; success under controller loss does not imply lost-token recovery.
 finishes. Total completion time excludes setup and teardown. Average waiting
 includes every request's request-to-entry delay. Lower values are better. A
 separate watchdog fails a stalled batch; it never reports partial work as a fast
-successful completion. These runs use `benefits-v2` and
+successful completion. New team-controller runs use `benefits-v3` and
 `measurement_policy=complete_all_requests`.
 
 **Failure tests** keep requests arriving over a fixed observation window (five
@@ -97,9 +102,17 @@ compare batch waiting directly with steady-stream waiting or mix old and new
 healthy measurements. RPC counts, where recorded, count instrumented attempts;
 they are not network packet or byte totals. Holder-failure RPC cost is unmeasured.
 
-The recommended saved collection contains 18 new healthy batch runs and 36 failure
-runs copied unchanged from `benefits-validated`. Its root summary records that
-provenance. The older validated set remains as historical evidence.
+New team-controller results use `benefits-v3` and record
+`controller_implementation` and `controller_source_commit`. Pairing rejects
+different implementations or controller revisions. Generate a fresh full matrix:
+
+```powershell
+.\.venv\Scripts\python.exe -m cranelock_sim --mode benefits --duration 5 --output run/evaluation/benefits-team-controller-validated
+```
+
+The directory must not already exist. Older `benefits-completion-validated` and
+`benefits-validated` results retain their original reference-controller evidence
+and labels; changing the code does not upgrade previously saved measurements.
 
 ## Other safety tests
 
@@ -134,13 +147,14 @@ these runs. State databases and private keys must not be published.
 | `cranelock_sim/__main__.py` | Command entry point for all simulator modes |
 | `experiment.py`, `agents.py`, `failures.py` | Workload, live-agent and failure scenarios |
 | `comparison.py`, `benefits.py` | Paired baseline and benefits experiments |
-| `lane.py`, `network.py`, `controller.py` | Shared physical lane, network faults and reference controller |
+| `lane.py`, `network.py`, `controller.py` | Shared physical lane, network faults and test transport for the team controller |
 | `dashboard.py` | Local results server |
 | `web/index.html`, `web/style.css`, `web/app.js` | Page structure, appearance and interaction |
 | `tests/test_*.py` | Checks grouped by the behavior they test |
 
 These experiments use three agents on one host, a common trusted gate and fixed
-membership. The teammate controller is not integrated. Physical occupancy is
+membership. The team's authority implementation is integrated locally through a
+test adapter; deployment and autonomous recovery orchestration remain pending. Physical occupancy is
 modeled independently of digital authority: changing holder or epoch never clears
 the lane. Zero detected safety violations is a bounded observation, not a proof
 of safety for every failure or a production port performance benchmark.
