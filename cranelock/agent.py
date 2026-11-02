@@ -609,19 +609,27 @@ class Agent(rpc.CraneAgentServicer):
             await self.detect()
             await asyncio.sleep(self.interval)
 
+    def automatic_recovery_needed(self):
+        """Called under the state lock; uncertainty in a handoff takes priority."""
+        return not (self.gate_attempt or self.pending) and (
+            (self.state.mode == Mode.LOCAL and self.state.token_holder in self.suspected)
+            or (self.state.mode == Mode.CENTRAL and self.controller_probe is not None
+                and self.controller_suspected))
+
     async def recover_suspected_holder(self):
-        """LOCAL-only orchestration; votes and gate acceptance remain authoritative.
+        """Recover a LOCAL holder or fall back after CENTRAL controller failure.
 
         All automatic proposers choose the same fixed successor for a snapshot.
         Do not filter candidates by local suspicion: partitions could then split
         durable votes between conflicting proposals for the same target epoch.
+        Controller fallback retains the gate's holder; a simultaneous holder
+        failure is handled by the existing LOCAL recovery in the following epoch.
         """
         if not self.gate or self.recovery_config is None or self.recovery_lock.locked():
             return
         async with self.recovery_lock, self.authority_lock:
             async with self.lock:
-                if (self.state.mode != Mode.LOCAL or self.gate_attempt or self.pending
-                        or self.state.token_holder not in self.suspected):
+                if not self.automatic_recovery_needed():
                     return
             authority = await self.query_gate()
             if authority is None:
@@ -632,16 +640,25 @@ class Agent(rpc.CraneAgentServicer):
                     return
                 if old_epoch != self.state.current_epoch:
                     self.state.request_queue.clear()
-                if (self.state.mode != Mode.LOCAL
-                        or self.state.token_holder not in self.suspected):
+                if not self.automatic_recovery_needed():
                     return
-                candidates = sorted(set(self.recovery_config.members) - {self.state.token_holder})
-                if not candidates:
-                    return
-                holder = candidates[0]
+                controller_fallback = self.state.mode == Mode.CENTRAL
+                if controller_fallback:
+                    holder = self.state.token_holder
+                else:
+                    candidates = sorted(set(self.recovery_config.members) - {self.state.token_holder})
+                    if not candidates:
+                        return
+                    holder = candidates[0]
             certificate = await self.propose_recovery(authority, holder)
             if certificate is None:
                 return
+            if controller_fallback:
+                async with self.lock:
+                    # A successful probe during vote collection cancels this
+                    # local attempt; already persisted votes remain immutable.
+                    if not self.controller_suspected:
+                        return
             try:
                 result = await self.gate.install_recovery(certificate)
                 self.emit("RECOVERY_AUTHORITY_INSTALL_RESULT", accepted=result["allowed"],
@@ -673,8 +690,17 @@ class Agent(rpc.CraneAgentServicer):
 
     async def controller_watch_loop(self):
         """Optional integration hook: probe an actual controller, never infer clearance."""
+        if self.controller_probe is None:
+            return
         while True:
-            available = await self.controller_probe()
+            try:
+                async with asyncio.timeout(self.interval):
+                    available = await self.controller_probe()
+            except Exception as error:
+                # Timeouts and probe errors are failed observations, not worker
+                # termination. Cancellation still propagates during shutdown.
+                available = False
+                self.emit("CONTROLLER_PROBE_FAILED", reason=type(error).__name__, detail=str(error))
             async with self.lock:
                 if available:
                     self.last_controller_seen = self.clock()

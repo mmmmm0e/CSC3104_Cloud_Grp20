@@ -17,7 +17,7 @@ async def until(predicate):
 
 
 @asynccontextmanager
-async def survivors(h, tmp_path, members, mode="LOCAL"):
+async def survivors(h, tmp_path, members, mode="LOCAL", probes=None):
     assert h.install("crane-1", mode=mode)["allowed"]
     server = RunningServer(h.gate, "127.0.0.1:0")
     agents, events, ports = {}, [], {}
@@ -29,7 +29,8 @@ async def survivors(h, tmp_path, members, mode="LOCAL"):
                 {p: "127.0.0.1:1" for p in h.config.members if p != identity},
                 "crane-1", epoch=0, gate=gate, recovery_config=h.config,
                 recovery_private_key=h.keys[identity], state_file=tmp_path / f"{identity}.json",
-                interval=.02, timeout=.2, event_sink=events.append)
+                interval=.02, timeout=.2, event_sink=events.append,
+                controller_probe=probes.get(identity) if probes else None)
         for identity, agent in agents.items():
             ports[identity] = await agent.start("127.0.0.1:0", auto_transfer=False)
             for task in agent.tasks:
@@ -48,6 +49,8 @@ async def survivors(h, tmp_path, members, mode="LOCAL"):
                            asyncio.create_task(agent.monitor_loop()),
                            asyncio.create_task(agent.rejoin_loop()),
                            asyncio.create_task(agent.recovery_loop())]
+            if agent.controller_probe:
+                agent.tasks.append(asyncio.create_task(agent.controller_watch_loop()))
         yield agents, events
     finally:
         await asyncio.gather(*(agent.close() for agent in agents.values()))
