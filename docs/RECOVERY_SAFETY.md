@@ -9,6 +9,8 @@ when it is active at epoch `e`, locally suspects the current holder, authenticat
 proposer, and has not durably voted for a different payload at target epoch `e+1`.
 The vote is fsynced before its signature is returned. A certificate contains distinct
 valid member signatures and is usable only with at least `floor(N/2)+1` signatures.
+In CENTRAL mode, voting instead requires suspicion of the configured controller;
+fallback retains the current holder. LOCAL mode requires holder suspicion.
 
 The gate independently verifies every signature, the strict-majority count, the
 fixed membership/lane identity, the exact `e+1` step, and the expected `(e, r)` against
@@ -52,3 +54,17 @@ holder, delayed packet, or replay cannot turn obsolete digital authority into an
 accepted lane entry. The claim assumes fixed membership, uncompromised member keys,
 honest non-equivocating voters, one durable gate, and all entry paths passing through
 that gate.
+
+## Retry safety and availability
+
+Identical proposals may be retried without changing the durable vote. The exact
+proposal is retained alongside its digest and validated after restart. A proposal
+for another holder or expected revision at the same target epoch remains conflicting.
+Live gate checks before voting and after collection reduce stale attempts, while the
+gate's atomic expected-snapshot check closes the remaining installation race.
+
+A changed gate revision can permanently invalidate already signed proposals while
+their target-epoch locks remain. A returning majority alone does not remove this
+limitation. The system retains votes and blocks rather than signing another proposal
+for that target epoch. See [recovery retry contract and failure tests](RECOVERY_RETRY.md)
+for the chosen safe strategy, container validation command and future protocol options.

@@ -29,6 +29,7 @@ async def main():
     run.add_argument("--gate-tls-ca")
     run.add_argument("--gate-tls-cert")
     run.add_argument("--gate-tls-key")
+    run.add_argument("--enable-recovery", action="store_true", help="enable durable signed voting and automatic recovery")
     state = commands.add_parser("state")
     state.add_argument("address")
     args = parser.parse_args()
@@ -42,6 +43,8 @@ async def main():
     if len(peers) != len(args.peer):
         parser.error("Duplicate peer IDs")
     gate = None
+    if args.enable_recovery and not args.gate_address:
+        parser.error("--enable-recovery requires the signed gate configuration")
     if any([args.gate_tls_ca, args.gate_tls_cert, args.gate_tls_key]) and not args.gate_address:
         parser.error("Gate TLS options require --gate-address")
     if any([args.gate_address, args.gate_config, args.gate_keys]):
@@ -64,7 +67,9 @@ async def main():
             await gate.close()
             parser.error("Agent IDs and peers must match configured gate membership")
     agent = Agent(args.id, peers, args.holder, epoch=args.epoch, mode=Mode[args.mode],
-                  interval=args.interval, timeout=args.timeout, state_file=args.state_file, gate=gate)
+                  interval=args.interval, timeout=args.timeout, state_file=args.state_file, gate=gate,
+                  recovery_config=gate.client.config if args.enable_recovery else None,
+                  recovery_private_key=gate.client.keys[args.id] if args.enable_recovery else None)
     try:
         await agent.start(args.listen)
         if args.request_after is not None:

@@ -1,5 +1,16 @@
 # CraneLock
 
+Recovery retry review (Moe): see [retry behavior, safety limits and failure tests](docs/RECOVERY_RETRY.md).
+Votes stay immutable across gate revision changes; identical retries are supported.
+The real-container validation harness is available as:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/validate_recovery_containers.py
+```
+
+This requires Docker. Preparation without runtime validation is available with
+`--prepare-only`; it must not be reported as a passed container experiment.
+
 This repository contains the normal-operation crane agent (`cranelock`) and the
 trusted access gate (`cranelock_gate`). Normal gate-authorized token handoff and
 gate-based restart reconciliation are now available in opt-in gate mode.
