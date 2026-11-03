@@ -57,11 +57,11 @@ async def run_recovery_scenario(output, scenario, *, detection_timeout=0.5,
         detection_timeout_seconds=detection_timeout, clearance_delay_seconds=clearance_delay,
         crossing_time_seconds=crossing_time, time_basis="host_monotonic_seconds")
     (output / "experiment.json").write_text(json.dumps(settings, indent=2), encoding="utf-8")
-    origin = time.monotonic()
+    origin = time.perf_counter()
     events, rows, detections, checks = [], [], {}, []
 
     def emit(event, **fields):
-        now = time.monotonic() - origin
+        now = time.perf_counter() - origin
         events.append(dict(time=now, event=event, **fields))
         agent_event = fields.get("agent_event", {})
         if (agent_event.get("event") == "TOKEN_HOLDER_SUSPECTED"
@@ -108,7 +108,7 @@ async def run_recovery_scenario(output, scenario, *, detection_timeout=0.5,
             epoch=old_state["epoch"], revision=old_state["revision"])
         require(old_grant)
         old_row = dict(request_id="old-holder", crane="crane-1",
-            requested_at=time.monotonic() - origin, entered_at=None, exited_at=None,
+            requested_at=time.perf_counter() - origin, entered_at=None, exited_at=None,
             status="crashed-before-entry" if fault == "service-stop" else "isolated-before-entry")
         rows.append(old_row)
         emit("grant_issued", request_id=old_row["request_id"], crane="crane-1",
@@ -117,7 +117,7 @@ async def run_recovery_scenario(output, scenario, *, detection_timeout=0.5,
             if not await asyncio.to_thread(lane.enter, "crane-1", old_row["request_id"],
                                            old_grant["grant"], old_state):
                 raise RuntimeError("Initial holder could not enter")
-            old_row.update(entered_at=time.monotonic() - origin,
+            old_row.update(entered_at=time.perf_counter() - origin,
                            status="crashed-occupied" if fault == "service-stop" else "isolated-occupied")
         _, initial = await cluster.snapshot("before_crash")
         if not initial["crane-1"].has_token:
@@ -129,7 +129,7 @@ async def run_recovery_scenario(output, scenario, *, detection_timeout=0.5,
         else:
             # Closing the actual service preserves durable token and vote files.
             await cluster.stop("crane-1")
-        crashed_at = time.monotonic() - origin
+        crashed_at = time.perf_counter() - origin
         emit("holder_isolated" if network else "holder_stopped", crane="crane-1")
         if network:
             for identity in config.members:
@@ -199,7 +199,7 @@ async def run_recovery_scenario(output, scenario, *, detection_timeout=0.5,
             (output / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
             return summary
         replacement = dict(request_id="replacement-holder", crane="crane-2",
-            requested_at=time.monotonic() - origin, entered_at=None, exited_at=None, status="waiting")
+            requested_at=time.perf_counter() - origin, entered_at=None, exited_at=None, status="waiting")
         rows.append(replacement)
         state = await asyncio.to_thread(client.state)
         cert = await cluster.agents["crane-2"].propose_recovery(state, "crane-2")
@@ -213,7 +213,7 @@ async def run_recovery_scenario(output, scenario, *, detection_timeout=0.5,
         installed = await asyncio.to_thread(client.call, "crane-2", "InstallAuthority",
             certificate=cert, expected_epoch=state["epoch"], expected_revision=state["revision"])
         require(installed)
-        authority_at = time.monotonic() - origin
+        authority_at = time.perf_counter() - origin
         authoritative = await asyncio.to_thread(client.state)
         if authoritative["epoch"] != 1 or authoritative["holder"] != "crane-2":
             raise SafetyViolation("Gate did not install replacement authority")
@@ -257,20 +257,20 @@ async def run_recovery_scenario(output, scenario, *, detection_timeout=0.5,
                 epoch=authoritative["epoch"], revision=authoritative["revision"])
             if blocked["allowed"] or blocked["reason"] not in {"LANE_BUSY", "LANE_UNKNOWN"}:
                 raise SafetyViolation("Replacement admitted before physical clearance")
-            blocked_at = time.monotonic() - origin
+            blocked_at = time.perf_counter() - origin
             passed("occupied_lane_blocks_replacement", reason=blocked["reason"])
             await asyncio.sleep(clearance_delay)
             emit("trusted_simulator_removal", crane="crane-1", reason="Explicit test fixture clearance")
             await asyncio.to_thread(lane.exit, "crane-1", old_row["request_id"])
-            old_row.update(exited_at=time.monotonic() - origin,
+            old_row.update(exited_at=time.perf_counter() - origin,
                            status="removed-after-crash" if not network else "cleared-after-isolation")
-            clearance_at = time.monotonic() - origin
+            clearance_at = time.perf_counter() - origin
         else:
             # Recovery revoked an unentered reservation. Actual physical model is
             # empty, so fresh sampling establishes clearance; silence never does.
             require(await asyncio.to_thread(lane.observe))
             blocked_at = None
-            clearance_at = time.monotonic() - origin
+            clearance_at = time.perf_counter() - origin
         passed("physical_clearance_confirmed")
         authority = await asyncio.to_thread(client.state)
         new_grant = await asyncio.to_thread(client.call, "crane-2", "RequestGrant",
@@ -281,11 +281,11 @@ async def run_recovery_scenario(output, scenario, *, detection_timeout=0.5,
         if not await asyncio.to_thread(lane.enter, "crane-2", replacement["request_id"],
                                        new_grant["grant"], authority):
             raise RuntimeError("Replacement failed to enter the clear lane")
-        entered_at = time.monotonic() - origin
+        entered_at = time.perf_counter() - origin
         replacement.update(entered_at=entered_at, status="occupied")
         await asyncio.sleep(crossing_time)
         await asyncio.to_thread(lane.exit, "crane-2", replacement["request_id"])
-        replacement.update(exited_at=time.monotonic() - origin, status="completed")
+        replacement.update(exited_at=time.perf_counter() - origin, status="completed")
         passed("replacement_completed_safe_crossing")
         rejoined_crossings = 0
         restart_to_reconcile, restart_to_entry = None, None
@@ -336,9 +336,9 @@ async def run_recovery_scenario(output, scenario, *, detection_timeout=0.5,
                     or states["crane-1"].has_token or states["crane-1"].epoch != accepted["epoch"]):
                 raise SafetyViolation("Trusted reconciliation granted unintended token ownership")
             passed("gate_reconciliation_rejoins_without_granting_token")
-            restart_to_reconcile = time.monotonic() - origin - restarted_at
+            restart_to_reconcile = time.perf_counter() - origin - restarted_at
             row = dict(request_id="rejoined-holder", crane="crane-1",
-                requested_at=time.monotonic() - origin, entered_at=None, exited_at=None, status="waiting")
+                requested_at=time.perf_counter() - origin, entered_at=None, exited_at=None, status="waiting")
             rows.append(row)
             if not (await restarted.request_token()).accepted:
                 raise RuntimeError("Reconciled agent's token request was rejected")
@@ -352,11 +352,11 @@ async def run_recovery_scenario(output, scenario, *, detection_timeout=0.5,
                  grant_id=grant["grant"]["id"], epoch=current["epoch"], revision=current["revision"])
             if not await asyncio.to_thread(lane.enter, "crane-1", row["request_id"], grant["grant"], current):
                 raise RuntimeError("Rejoined agent could not enter with its new grant")
-            row.update(entered_at=time.monotonic() - origin, status="occupied")
+            row.update(entered_at=time.perf_counter() - origin, status="occupied")
             restart_to_entry = row["entered_at"] - restarted_at
             await asyncio.sleep(crossing_time)
             await asyncio.to_thread(lane.exit, "crane-1", row["request_id"])
-            row.update(exited_at=time.monotonic() - origin, status="completed")
+            row.update(exited_at=time.perf_counter() - origin, status="completed")
             rejoined_crossings = 1
             passed("rejoined_agent_completes_new_authorized_crossing")
         owner, _ = await cluster.snapshot("finished")
