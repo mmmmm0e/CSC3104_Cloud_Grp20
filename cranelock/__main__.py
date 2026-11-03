@@ -29,6 +29,8 @@ async def main():
     run.add_argument("--gate-tls-ca")
     run.add_argument("--gate-tls-cert")
     run.add_argument("--gate-tls-key")
+    run.add_argument("--auto-recover", action="store_true", help="automatically install majority-approved LOCAL recovery")
+    run.add_argument("--controller-address", help="controller heartbeat endpoint for CENTRAL fallback")
     state = commands.add_parser("state")
     state.add_argument("address")
     args = parser.parse_args()
@@ -42,6 +44,14 @@ async def main():
     if len(peers) != len(args.peer):
         parser.error("Duplicate peer IDs")
     gate = None
+    probe = None
+    if args.auto_recover and not args.gate_address:
+        parser.error("--auto-recover requires the signed gate configuration")
+    if args.controller_address:
+        if args.controller_address.rsplit(":", 1)[0] not in {"127.0.0.1", "localhost", "[::1]"}:
+            parser.error("The CLI controller probe is restricted to loopback; use credentialed Python clients remotely")
+        from .controller_service import ControllerProbe
+        probe = ControllerProbe(args.controller_address, timeout=args.interval)
     if any([args.gate_tls_ca, args.gate_tls_cert, args.gate_tls_key]) and not args.gate_address:
         parser.error("Gate TLS options require --gate-address")
     if any([args.gate_address, args.gate_config, args.gate_keys]):
@@ -64,7 +74,10 @@ async def main():
             await gate.close()
             parser.error("Agent IDs and peers must match configured gate membership")
     agent = Agent(args.id, peers, args.holder, epoch=args.epoch, mode=Mode[args.mode],
-                  interval=args.interval, timeout=args.timeout, state_file=args.state_file, gate=gate)
+                  interval=args.interval, timeout=args.timeout, state_file=args.state_file, gate=gate,
+                  recovery_config=gate.client.config if args.auto_recover else None,
+                  recovery_private_key=gate.client.keys[args.id] if args.auto_recover else None,
+                  controller_probe=probe.probe if probe else None, auto_recover=args.auto_recover)
     try:
         await agent.start(args.listen)
         if args.request_after is not None:
@@ -74,6 +87,8 @@ async def main():
         await asyncio.Event().wait()
     finally:
         await agent.close()
+        if probe:
+            await probe.close()
 
 
 if __name__ == "__main__":

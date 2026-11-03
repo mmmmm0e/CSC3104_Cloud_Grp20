@@ -5,8 +5,10 @@
 For a gate snapshot `(e, r)`, a proposer constructs exactly one canonical authority
 payload naming epoch `e+1`, the replacement holder, lane, fixed membership, and the
 expected snapshot `(e, r)`. The proposer signs it with Ed25519. A member votes only
-when it is active at epoch `e`, locally suspects the current holder, authenticates the
+when it is active at epoch `e`, locally suspects the relevant failed authority, authenticates the
 proposer, and has not durably voted for a different payload at target epoch `e+1`.
+In CENTRAL mode, the required suspicion is of the configured controller, established
+by its heartbeat probe; LOCAL mode requires suspicion of the token holder.
 The vote is fsynced before its signature is returned. A certificate contains distinct
 valid member signatures and is usable only with at least `floor(N/2)+1` signatures.
 
@@ -52,3 +54,16 @@ holder, delayed packet, or replay cannot turn obsolete digital authority into an
 accepted lane entry. The claim assumes fixed membership, uncompromised member keys,
 honest non-equivocating voters, one durable gate, and all entry paths passing through
 that gate.
+
+## Automatic orchestration and liveness
+
+The optional recovery worker uses a stable majority view and deterministic proposer
+to call this same protocol. It does not weaken voting, gate checks or occupancy
+barriers. Controller return pins its observed epoch/revision to avoid overwriting
+a concurrent handoff or recovery with a decision based on an older snapshot.
+
+Safety does not imply eventual recovery under every message schedule. Competing
+proposals may split irrevocable votes for a target epoch; the worker then cannot
+form a majority. A reachable majority is necessary, but not sufficient once votes
+have split. The implementation deliberately does not erase durable votes or infer
+lane clearance to regain availability. See [automatic operation](AUTOMATION.md).

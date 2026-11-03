@@ -5,6 +5,38 @@ token passing and a trusted gate. Signed majority recovery replaces authority wh
 failures occur. The simulator models physical occupancy separately from permission
 to enter, so changing the token holder never implies that the lane is clear.
 
+## Run the automatic application
+
+```powershell
+.\.venv\Scripts\python.exe -m cranelock_sim.live --automatic --port 8767
+```
+
+Open **http://127.0.0.1:8767/live**. Request a turn and enter the lane, then stop
+the controller. Agents detect the outage, collect durable signed votes and install
+LOCAL authority automatically. Stopping the local holder triggers replacement
+recovery. Restore the controller service to trigger automatic CENTRAL return.
+Physical entry/exit and explicit operator clearance remain separate controls.
+There is no need to click **Propose recovery** in automatic mode.
+
+For a bounded demonstration with saved checks and logs:
+
+```powershell
+.\.venv\Scripts\python.exe -m cranelock_sim.automatic_demo
+```
+
+For tests, all progress scenarios, six delayed automatic cycles, 54 reference
+comparison runs and 27 logical scaling runs in one evidence directory:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/validate_project.py
+```
+
+Use `--skip-evaluation` for a quicker functional check. Each invocation uses a new
+directory under `run/`; logs and `validation.json` retain actual exit statuses.
+See [automatic service setup and limitations](docs/AUTOMATION.md) for independent
+agent/controller processes. The original manual UI and evaluation remain available.
+See [current validation results and remaining platform work](docs/FINAL_STATUS.md).
+
 ## Logical flow
 
 1. **Start in CENTRAL mode.** The controller schedules a crane. The gate stores the
@@ -41,7 +73,9 @@ to enter, so changing the token holder never implies that the lane is clear.
 
 The lifecycle runner orchestrates these steps through the actual local services.
 The live UI exposes operator controls for failures, recovery and controller return.
-The standalone agent CLI does not automatically orchestrate this complete cycle.
+The default agent CLI remains manual. Opt-in `--auto-recover` connects suspicion,
+certificate collection, gate installation and reconciliation; the controller's
+`--serve` mode handles automatic return. The live `--automatic` mode enables both.
 Holder replacement, partitions and restart are also exercised in separate scenarios.
 
 ### Network failures and safety
@@ -71,6 +105,8 @@ uncompromised signing keys, durable votes and one authoritative gate.
 | --- | --- |
 | `cranelock/agent.py` | Peer heartbeats, suspicion, request queues, token handoff and agent RPC handlers. |
 | `cranelock/recovery.py` | Recovery proposals, durable voting, signature verification and majority certificates. |
+| `cranelock/automation.py` | Stable-view recovery coordinator and automatic certificate installation. |
+| `cranelock/controller_service.py` | Controller RPC service, heartbeat probe and automatic return worker. |
 | `cranelock/reconciliation.py` | Signed network requests to adopt authority checked against the gate. |
 | `cranelock/controller.py` | Central scheduling authority, agent monitoring and controller reconciliation. |
 | `cranelock/gate_client.py` | Agent adapter for signed gate operations. |
@@ -189,7 +225,8 @@ actual controller-service loss, majority-approved LOCAL fallback, gate-authorize
 handoff and CENTRAL return. Return preserves the current epoch, holder, waiting queue
 and physical occupancy; old grants are fenced by revision. Waiting work resumes only
 after the simulator confirms exit. The caller paces the handoffs and return; the
-normal agent CLI does not supply the entire orchestration policy.
+default agent CLI does not supply the entire orchestration policy. The opt-in
+automatic workers and their independent-process commands are described above.
 
 To include this cycle with all existing progress scenarios:
 
@@ -332,7 +369,7 @@ model unavailable members, restarts one from its persistent state, and explicitl
 reconciles it from the gate. It also sends an old signed request to model a delayed
 holder command. These are local component integration checks, not Kubernetes failure
 injection or a complete controller/yard-simulator implementation. The normal agent
-CLI still requires team integration for automatic recovery.
+CLI stays manual unless the automatic recovery options above are enabled.
 
 ## CraneLock — normal crane-agent milestone
 
@@ -524,7 +561,9 @@ failure suspicion. It returns a gate-compatible certificate or `None` if the att
 cannot gather a majority or its local vote is rejected. Submit the certificate through
 `InstallAuthority` with its signed expected epoch/revision. Gate-aware agents then use
 `reconcile_from_gate()`; standalone adapters may use the trusted `reconcile()` hook.
-The normal CLI does not orchestrate the complete recovery workflow. A certificate
+The default CLI does not orchestrate the complete recovery workflow. With
+`--auto-recover`, the recovery worker installs and reconciles certificates after
+failure suspicion. Without that option, a certificate
 alone never authorizes entry.
 
 ## CraneLock: Member 3 trusted access gate

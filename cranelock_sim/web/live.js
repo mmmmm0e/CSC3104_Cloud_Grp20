@@ -8,6 +8,9 @@ function actionButton(text,action,crane,disabled=false){const b=node("button",te
 function render(s){
   const focused=document.activeElement,focusedAction=focused?.dataset.action,focusedCrane=focused?.dataset.crane;
   state=s;token=s.session_token;
+  document.querySelector(".faults .section-head .pill").textContent=s.automatic?"Automatic recovery and return":"Manual experiment controls";
+  $("recover").disabled=busy||s.automatic;
+  $("proposer").disabled=s.automatic;
   $("connection").textContent="● Connected to actual local services";
   $("epoch").textContent=`Epoch ${s.gate.epoch}`;$("revision").textContent=`Revision ${s.gate.revision} · ${name(s.gate.holder)}`;
   $("mode").textContent=s.gate.mode;$("controller-state").textContent=s.controller_online?"Controller service running":"Controller stopped";
@@ -40,7 +43,7 @@ function render(s){
   }
   const events=$("events");events.replaceChildren();
   for(const e of [...s.events].reverse()){
-    const raw=e.agent_event||e,label=raw.event.replaceAll("_"," ").toLowerCase();
+    const raw=e.agent_event||e.controller_event||e,label=raw.event.replaceAll("_"," ").toLowerCase();
     const row=node("div",undefined,"event"),body=node("div");body.append(node("strong",label));
     const details=[raw.agent_id||raw.crane,raw.reason,raw.holder?`holder ${name(raw.holder)}`:"",raw.epoch!==undefined?`epoch ${raw.epoch}`:""] .filter(Boolean).join(" · ");
     if(details)body.append(node("small",details));row.append(node("time",`${e.time.toFixed(2)}s`),body);events.append(row);

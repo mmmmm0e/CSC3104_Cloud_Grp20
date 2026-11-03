@@ -14,6 +14,7 @@ import grpc
 
 from cranelock.agent import Mode
 from cranelock.controller import CentralController
+from cranelock.controller_service import ControllerReturnWorker
 from cranelock.gate_client import GateClient
 from cranelock.reconciliation import ReconciliationClient
 from cranelock_gate.client import Client
@@ -30,7 +31,7 @@ from .network import PeerNetwork
 
 # owns one interactive experiment and its actual grpc services
 class LiveYard:
-    def __init__(self, root):
+    def __init__(self, root, *, automatic=False):
         self.root = Path(root)
         self.session_token = secrets.token_urlsafe(32)
         self.lock = asyncio.Lock()
@@ -41,6 +42,8 @@ class LiveYard:
         self.events, self.rows = [], []
         self.stream = None
         self.directory = None
+        self.automatic = automatic
+        self.return_worker = None
 
     # writes component events without exposing signing keys
     def emit(self, event, **fields):
@@ -68,7 +71,8 @@ class LiveYard:
         config, self.keys = new_config(3)
         self.config = replace(config, grant_ttl_seconds=30)
         (self.directory / "experiment.json").write_text(json.dumps(dict(model="interactive-yard",
-            scenario="operator-controlled", time_basis="host_monotonic_seconds")), encoding="utf-8")
+            scenario="automatic-recovery" if self.automatic else "operator-controlled",
+            time_basis="host_monotonic_seconds")), encoding="utf-8")
         (self.directory / "gate-config.json").write_text(json.dumps(asdict(self.config)), encoding="utf-8")
         self.database = self.directory / "gate.sqlite"
         initialize(self.database, self.config, wall_clock())
@@ -91,11 +95,14 @@ class LiveYard:
 
         self.cluster = AgentCluster(list(self.config.members), self.directory, self.emit,
             recovery_config=self.config, keys=self.keys, timeout=0.8, initial_mode=Mode.CENTRAL,
-            network=self.network, gate_factory=gate_factory,
+            network=self.network, gate_factory=gate_factory, auto_recover=self.automatic,
             controller_probes=dict(zip(self.config.members, (connection.probe for connection in self.connections))))
         self.lane = Lane(self.client, wall_clock, self.emit)
         await asyncio.to_thread(self.lane.observe)
         await self.cluster.start()
+        if self.automatic:
+            self.return_worker = ControllerReturnWorker(self.controller, self.cluster.addresses,
+                timeout=0.3, emit=lambda raw: self.emit("controller_event", controller_event=json.loads(raw)))
         self.cached = await asyncio.to_thread(self.client.state)
         self.emit("workload_started", mode="CENTRAL")
         self.tick = asyncio.create_task(self.observe_loop())
@@ -110,6 +117,24 @@ class LiveYard:
                         await asyncio.to_thread(self.lane.observe)
                     except (grpc.RpcError, RuntimeError):
                         pass
+                if self.automatic and self.gate_online:
+                    try:
+                        if await self.connections[0].probe():
+                            await self.return_worker.step()
+                        await self.snapshot()
+                        await self.dispatch()
+                    except (grpc.RpcError, RuntimeError, ValueError) as error:
+                        self.last_decision = f"Automatic coordination waiting: {error}"
+
+    # retains an unentered request when authority revokes its reservation
+    def revoke_reservation(self):
+        if self.reservation:
+            self.stale = self.reservation
+            row = self.reservation["row"]
+            row["status"] = "waiting"
+            if row not in self.waiting:
+                self.waiting.insert(0, row)
+            self.reservation = None
 
     # reconciles local authority with member-signed network requests
     async def reconcile_local(self, signer, state):
@@ -122,9 +147,10 @@ class LiveYard:
     async def dispatch(self):
         if not self.waiting or self.reservation or self.lane.occupant or not self.gate_online:
             return
-        identity = self.waiting[0]["crane"]
-        if identity in self.cluster.stopped:
+        row = next((row for row in self.waiting if row["crane"] not in self.cluster.stopped), None)
+        if row is None:
             return
+        identity = row["crane"]
         state = await asyncio.to_thread(self.client.state)
         if state["mode"] == "CENTRAL":
             if not self.controller_online:
@@ -153,7 +179,7 @@ class LiveYard:
         self.last_decision = result["reason"]
         self.emit("grant_decision", crane=identity, allowed=result["allowed"], reason=result["reason"])
         if result["allowed"] and result["action_applied"]:
-            row = self.waiting.pop(0)
+            self.waiting.remove(row)
             self.reservation = dict(crane=identity, grant=result["grant"], authority=state, row=row)
             self.emit("grant_issued", crane=identity, request_id=row["request_id"],
                       grant_id=result["grant"]["id"], epoch=state["epoch"], revision=state["revision"])
@@ -238,12 +264,14 @@ class LiveYard:
                     if not self.controller_online:
                         self.service = TeamControllerService(self.controller, port=self.controller_port)
                         self.controller_online = True
+                    if self.automatic:
+                        self.emit("controller_restored")
+                        return await self.snapshot()
                     state = await asyncio.to_thread(self.client.state)
                     holder = state["holder"] if state["holder"] not in self.cluster.stopped else next(iter(self.active_addresses()))
                     await asyncio.to_thread(self.controller.install_central, holder)
                     await self.controller.reconcile_remote(self.active_addresses())
-                    self.stale = self.reservation or self.stale
-                    self.reservation = None
+                    self.revoke_reservation()
                     self.emit("controller_restored")
                     await self.dispatch()
                 elif action in {"partition", "isolate", "heal"}:
@@ -253,6 +281,8 @@ class LiveYard:
                               if action == "isolate" else [[holder], [member for member in members if member != holder]])
                     self.network.partition(groups)
                 elif action == "recover":
+                    if self.automatic:
+                        raise ValueError("Automatic workers coordinate recovery in this yard")
                     if identity in self.cluster.stopped:
                         raise ValueError("Stopped cranes cannot propose recovery")
                     state = await asyncio.to_thread(self.client.state)
@@ -277,8 +307,7 @@ class LiveYard:
                         self.last_decision = result["reason"]
                         if result["allowed"]:
                             self.cluster.authority_epoch = result["state"]["epoch"]
-                            self.stale = self.reservation or self.stale
-                            self.reservation = None
+                            self.revoke_reservation()
                             await self.reconcile_local(identity, result["state"])
                             self.recovery["status"] = "Installed at gate"
                             self.emit("controller_fallback_installed", epoch=result["state"]["epoch"],
@@ -304,8 +333,7 @@ class LiveYard:
                     self.observations = not self.observations
                     self.last_decision = "Position observations resumed" if self.observations else "Position observations stopped"
                 elif action == "gate":
-                    self.stale = self.reservation or self.stale
-                    self.reservation = None
+                    self.revoke_reservation()
                     if self.gate_online:
                         self.save_gate_events()
                         await asyncio.to_thread(self.server.close)
@@ -333,9 +361,7 @@ class LiveYard:
                 pass
         if fresh and self.reservation and (not self.cached["grant"] or
                 self.cached["grant"]["id"] != self.reservation["grant"]["id"]):
-            self.stale = self.reservation
-            self.reservation["row"]["status"] = "revoked"
-            self.reservation = None
+            self.revoke_reservation()
             self.last_decision = "Reservation expired or revoked; request a fresh turn"
         agents = []
         for identity, agent in self.cluster.agents.items():
@@ -346,12 +372,21 @@ class LiveYard:
                 suspected=sorted(agent.suspected), controller_suspected=agent.controller_suspected))
         with self.event_lock:
             events = list(self.events)
+        if self.automatic:
+            installed = next((event["agent_event"] for event in reversed(events)
+                if event["event"] == "agent_event"
+                and event["agent_event"]["event"] == "AUTOMATIC_RECOVERY_INSTALLED"), None)
+            if installed:
+                self.recovery = dict(votes=installed["votes"], required=self.config.majority,
+                    status="Automatically installed at gate", signers=installed["signers"])
         significant = [event for event in events if event["event"] != "peer_rpc_blocked"
             and (event["event"] != "agent_event" or event["agent_event"]["event"] in {
                 "TOKEN_HOLDER_SUSPECTED", "CONTROLLER_SUSPECTED", "RECOVERY_VOTE_CAST",
                 "RECOVERY_NO_QUORUM", "RECOVERY_REJECTED", "RECOVERY_CERTIFICATE_FORMED",
-                "NETWORK_RECONCILIATION_ACCEPTED", "TOKEN_TRANSFER_RECEIVED"})]
-        return dict(session_token=self.session_token, gate=self.cached, gate_online=self.gate_online, gate_fresh=fresh,
+                "NETWORK_RECONCILIATION_ACCEPTED", "TOKEN_TRANSFER_RECEIVED",
+                "AUTOMATIC_RECOVERY_INSTALLED", "AUTOMATION_WAITING"})]
+        return dict(session_token=self.session_token, automatic=self.automatic,
+            gate=self.cached, gate_online=self.gate_online, gate_fresh=fresh,
             controller_online=self.controller_online, observations=self.observations,
             occupant=self.lane.occupant, agents=agents, waiting=[row["crane"] for row in self.waiting],
             reservation=self.reservation["crane"] if self.reservation else None,
@@ -377,6 +412,8 @@ class LiveYard:
             await asyncio.gather(self.tick, return_exceptions=True)
         if self.cluster:
             await self.cluster.close()
+        if self.return_worker:
+            await self.return_worker.close()
         for connection in self.connections:
             await connection.close()
         if self.service:
@@ -404,11 +441,11 @@ class LiveYard:
 
 # bridges the http threads to one asyncio service loop
 class LiveRuntime:
-    def __init__(self, root):
+    def __init__(self, root, *, automatic=False):
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self.loop.run_forever, daemon=True)
         self.thread.start()
-        self.yard = LiveYard(root)
+        self.yard = LiveYard(root, automatic=automatic)
         try:
             asyncio.run_coroutine_threadsafe(self.yard.start(), self.loop).result(timeout=15)
         except BaseException:
@@ -436,8 +473,9 @@ def main():
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--bind", choices=["127.0.0.1", "0.0.0.0"], default="127.0.0.1")
     parser.add_argument("--root", type=Path, default=Path("run/evaluation"))
+    parser.add_argument("--automatic", action="store_true", help="recover and return authority automatically after detected failures")
     args = parser.parse_args()
-    live = LiveRuntime(args.root)
+    live = LiveRuntime(args.root, automatic=args.automatic)
     try:
         with make_server(args.root, args.port, args.bind, live=live) as server:
             print(f"Live crane yard: http://127.0.0.1:{server.server_port}/live", flush=True)

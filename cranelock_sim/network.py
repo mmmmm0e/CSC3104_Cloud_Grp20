@@ -1,6 +1,9 @@
 """Experiment-only peer RPC partitioning; management and gate RPCs stay reachable."""
 import grpc
 import json
+import asyncio
+import math
+import random
 
 
 class PeerNetwork:
@@ -8,6 +11,16 @@ class PeerNetwork:
         self.members, self.emit = set(members), emit
         self.groups = {member: 0 for member in members}
         self.blocked_calls = 0
+        self.delay_seconds = self.jitter_seconds = 0
+        self.random = random.Random(20)
+
+    # delays peer deliveries independently so concurrent calls can reorder
+    def set_delay(self, seconds=0, jitter=0, seed=20):
+        if any(not math.isfinite(value) or value < 0 for value in (seconds, jitter)):
+            raise ValueError("Peer delay and jitter must be finite and nonnegative")
+        self.delay_seconds, self.jitter_seconds = seconds, jitter
+        self.random = random.Random(seed)
+        self.emit("peer_delay_configured", delay_seconds=seconds, jitter_seconds=jitter, seed=seed)
 
     def partition(self, groups):
         flat = [member for group in groups for member in group]
@@ -39,6 +52,12 @@ class PeerNetwork:
                                 sender = None
                         except (ValueError, TypeError):
                             sender = None
+                    if sender in network.groups:
+                        delay = network.delay_seconds + network.random.uniform(0, network.jitter_seconds)
+                        if delay:
+                            network.emit("peer_rpc_delayed", sender=sender, receiver=receiver,
+                                         method=method, delay_seconds=delay)
+                            await asyncio.sleep(delay)
                     if (sender in network.groups and
                             network.groups[sender] != network.groups[receiver]):
                         network.blocked_calls += 1

@@ -1,5 +1,9 @@
 # Deployment, persistence and testing handoff
 
+For the new automatic local recovery/return workers and independent process commands,
+see [automatic operation](AUTOMATION.md). The latest [validation status](FINAL_STATUS.md)
+distinguishes local results from deployment checks that remain outstanding.
+
 ## Container-packaged progress demo (Members 1 to 4 and platform)
 
 For interactive crane controls in a separate optional container:
@@ -15,6 +19,16 @@ from a previous process. Past logs and databases are retained in separate direct
 The host port is restricted to loopback and actions require the same-origin session
 token. This profile packages the local simulator; it does not put each crane in a
 separate container. Runtime verification still requires Docker on the target machine.
+
+To enable the new automatic recovery and controller return in this packaged yard:
+
+```powershell
+docker compose -f deploy/compose.progress.json --profile interactive run --rm --service-ports live -m cranelock_sim.live --bind 0.0.0.0 --automatic
+```
+
+Stop another `live` container using port 8766 first. This command is supplied for
+target-machine verification; the automatic integration was tested locally and across
+independent processes, not in Docker/Kubernetes during the latest validation.
 
 `Dockerfile.progress` packages the combined demo, simulator, agents, gate and original
 evaluation dashboard. `deploy/compose.progress.json` is a Compose file written in JSON

@@ -37,7 +37,8 @@ class Agent(rpc.CraneAgentServicer):
     def __init__(self, agent_id, peers, holder, *, epoch=1, mode=Mode.LOCAL,
                  interval=0.5, timeout=2.0, state_file=None, clock=time.monotonic,
                  event_sink=None, gate=None, revision=0,
-                 recovery_config=None, recovery_private_key=None, controller_probe=None):
+                 recovery_config=None, recovery_private_key=None, controller_probe=None,
+                 auto_recover=False):
         if not agent_id or epoch < 0 or revision < 0 or interval <= 0 or timeout <= interval:
             raise ValueError("Require ID, nonnegative epoch/revision and 0 < interval < timeout")
         if agent_id in peers or not holder or holder not in {agent_id, *peers}:
@@ -95,6 +96,9 @@ class Agent(rpc.CraneAgentServicer):
         self.controller_probe = controller_probe
         self.controller_suspected = False
         self.last_controller_seen = clock()
+        if auto_recover and (gate is None or recovery_config is None):
+            raise ValueError("Automatic recovery requires a gate and recovery signing identity")
+        self.auto_recover = auto_recover
         self.persist()
 
     def emit(self, event, peer_id=None, **fields):
@@ -682,6 +686,9 @@ class Agent(rpc.CraneAgentServicer):
             self.tasks.append(asyncio.create_task(self.rejoin_loop()))
         if self.controller_probe:
             self.tasks.append(asyncio.create_task(self.controller_watch_loop()))
+        if self.auto_recover:
+            from .automation import RecoveryWorker
+            self.tasks.append(asyncio.create_task(RecoveryWorker(self).run()))
         return port
 
     async def close(self):

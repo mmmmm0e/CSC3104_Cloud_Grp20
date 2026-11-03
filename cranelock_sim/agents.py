@@ -37,7 +37,7 @@ def token_owner(states):
 class AgentCluster:
     def __init__(self, members, output, emit, *, recovery_config=None, keys=None, timeout=3,
                  network=None, controller_probes=None, initial_mode=Mode.LOCAL, peer_interceptor=None,
-                 gate_factory=None):
+                 gate_factory=None, auto_recover=False):
         self.members, self.output, self.emit = members, output, emit
         self.agents, self.channels, self.stubs = {}, {}, {}
         self.violation = None
@@ -49,8 +49,11 @@ class AgentCluster:
         self.controller_probes = controller_probes or {}
         self.initial_mode, self.peer_interceptor = initial_mode, peer_interceptor
         self.gate_factory = gate_factory
+        self.auto_recover = auto_recover
 
     def on_event(self, event):
+        if event["event"] == "AUTOMATIC_RECOVERY_INSTALLED":
+            self.authority_epoch = max(self.authority_epoch, event["target_epoch"])
         self.emit("agent_event", agent_event=event)
         # Same-event-loop callbacks observe every ownership transition, including
         # the relinquish-before-send gap. Never throw out of an Agent callback.
@@ -77,7 +80,8 @@ class AgentCluster:
                 event_sink=self.on_event, recovery_config=self.recovery_config,
                 recovery_private_key=self.keys[identity] if self.recovery_config else None,
                 controller_probe=self.controller_probes.get(identity),
-                gate=self.gate_factory(identity) if self.gate_factory else None)
+                gate=self.gate_factory(identity) if self.gate_factory else None,
+                auto_recover=self.auto_recover)
         ports = {}
         for identity, agent in self.agents.items():
             ports[identity] = await agent.start("127.0.0.1:0", auto_transfer=False,
@@ -110,6 +114,9 @@ class AgentCluster:
                 agent.tasks.append(asyncio.create_task(agent.controller_watch_loop()))
             if agent.gate:
                 agent.tasks.append(asyncio.create_task(agent.rejoin_loop()))
+            if self.auto_recover:
+                from cranelock.automation import RecoveryWorker
+                agent.tasks.append(asyncio.create_task(RecoveryWorker(agent).run()))
         self.emit("cluster_started", addresses={k: f"127.0.0.1:{v}" for k, v in ports.items()})
 
     async def snapshot(self, stage):
@@ -199,7 +206,8 @@ class AgentCluster:
             recovery_config=self.recovery_config,
             recovery_private_key=self.keys[identity] if self.recovery_config else None,
             controller_probe=self.controller_probes.get(identity),
-            gate=self.gate_factory(identity) if self.gate_factory else None)
+            gate=self.gate_factory(identity) if self.gate_factory else None,
+            auto_recover=self.auto_recover)
         self.agents[identity] = agent
         # Keep the old endpoint so surviving peer channels reconnect normally.
         try:

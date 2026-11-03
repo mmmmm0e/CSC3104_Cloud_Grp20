@@ -3,6 +3,22 @@
 This guide covers running the simulator, reading the dashboard and interpreting
 the comparisons. Commands below run from the repository root in PowerShell.
 
+## Automatic application validation
+
+```powershell
+.\.venv\Scripts\python.exe -m cranelock_sim.live --automatic --port 8767
+.\.venv\Scripts\python.exe -m cranelock_sim.automatic_demo --delay-sweep
+.\.venv\Scripts\python.exe scripts/validate_project.py
+```
+
+Automatic cycles use the actual team controller and gate-aware agents. Recovery,
+certificate installation and controller return are triggered by background workers,
+not the failure injector. Logs measure injected failure to installed authority and
+controller restoration to completed reconciliation. The stable-view delay is included.
+The delay sweep applies application-level RPC delay/jitter and allows concurrent
+deliveries to reorder; it does not emulate a physical network. Results stay separate
+from the reference comparisons below. See [31 October results](FINAL_STATUS.md).
+
 ## Combined project progress demo
 
 For the complete local controller integration, including safe CENTRAL return:

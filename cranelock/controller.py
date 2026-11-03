@@ -127,7 +127,7 @@ class CentralController:
         # Returns the latest state reported by this gate.
         return self.client.state()
 
-    def install_central(self, holder, *, request_id=None, max_attempts=3):
+    def install_central(self, holder, *, request_id=None, max_attempts=3, expected_state=None):
         # Installs CENTRAL authority, refreshing snapshots after stale decisions.
         if holder not in self.config.members:
             raise ValueError("Holder must be a configured member")
@@ -138,7 +138,7 @@ class CentralController:
             raise ValueError("request_id must contain 1 to 128 characters")
 
         for attempt in range(max_attempts):
-            state = self.get_state()
+            state = expected_state if expected_state is not None else self.get_state()
             epoch = state.get("epoch")
             revision = state.get("revision")
             if type(epoch) is not int or epoch < -1 or type(revision) is not int or revision < 0:
@@ -172,7 +172,8 @@ class CentralController:
                 expected_epoch=epoch,
                 expected_revision=revision,
             )
-            if result["allowed"] or result["reason"] not in {"STALE_EPOCH", "STALE_REVISION"}:
+            if (expected_state is not None or result["allowed"]
+                    or result["reason"] not in {"STALE_EPOCH", "STALE_REVISION"}):
                 return result
         return result
 
@@ -254,6 +255,9 @@ def main():
     parser.add_argument("--interval", type=float, default=1.0)
     parser.add_argument("--timeout", type=float, default=2.0)
     parser.add_argument("--reconcile", action="store_true", help="send signed gate-confirmed reconciliation RPCs")
+    parser.add_argument("--serve", action="store_true", help="serve controller RPCs and automatically reconcile LOCAL return")
+    parser.add_argument("--listen", default="127.0.0.1:50070")
+    parser.add_argument("--bootstrap-holder", help="initialize an empty gate when starting --serve")
     parser.add_argument("--gate-address")
     parser.add_argument("--gate-config")
     parser.add_argument("--gate-keys", help="controller private-key JSON file")
@@ -269,15 +273,48 @@ def main():
             parser.error(f"Invalid or duplicate --agent {value!r}")
         agents[agent_id] = address
 
-    if args.reconcile:
+    if args.serve and args.reconcile:
+        parser.error("Choose --serve or --reconcile")
+    if args.bootstrap_holder and not args.serve:
+        parser.error("--bootstrap-holder requires --serve")
+    if args.reconcile or args.serve:
         if not all((args.gate_address, args.gate_config, args.gate_keys)):
             parser.error("Reconciliation requires --gate-address, --gate-config and --gate-keys")
         from cranelock_gate.config import Config
         from cranelock_gate.demo import load_keys
         config = Config.load(args.gate_config)
         key = load_keys(args.gate_keys)[config.controller_id]
+        if args.serve and (args.listen.rsplit(":", 1)[0] not in {"127.0.0.1", "localhost", "[::1]"}
+                or args.gate_address.rsplit(":", 1)[0] not in {"127.0.0.1", "localhost", "[::1]"}
+                or any(address.rsplit(":", 1)[0] not in {"127.0.0.1", "localhost", "[::1]"}
+                       for address in agents.values())):
+            parser.error("The controller service CLI is restricted to loopback; use credentialed Python services remotely")
         with grpc.insecure_channel(args.gate_address) as channel:
             controller = CentralController(config, key, channel)
+            if args.serve:
+                if args.bootstrap_holder:
+                    state = controller.get_state()
+                    if state["epoch"] == -1:
+                        result = controller.install_central(args.bootstrap_holder, expected_state=state)
+                        if not result["allowed"]:
+                            raise ControllerError(result["reason"])
+                from .controller_service import ControllerService, ControllerReturnWorker
+
+                # runs return reconciliation for the lifetime of the controller service
+                async def serve():
+                    service = ControllerService(controller, args.listen)
+                    worker = ControllerReturnWorker(controller, agents, timeout=args.timeout)
+                    try:
+                        await worker.run(args.interval)
+                    finally:
+                        await worker.close()
+                        await asyncio.to_thread(service.close)
+
+                try:
+                    asyncio.run(serve())
+                except KeyboardInterrupt:
+                    pass
+                return
             state = asyncio.run(controller.reconcile_remote(agents, timeout=args.timeout))
             print(json.dumps({name: state[name] for name in ("epoch", "revision", "holder", "mode")}),
                   flush=True)

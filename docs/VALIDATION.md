@@ -1,5 +1,11 @@
 # Validation record
 
+Latest local integration validation: **31 October 2026 — 249 passed, 2 skipped**,
+plus nine combined progress scenarios, six delayed automatic cycles, 54 reference
+comparison runs and 27 logical scaling runs. See [current results and scope](FINAL_STATUS.md)
+and [automatic operation](AUTOMATION.md). The record below is historical gate-component
+validation; it does not establish current full-deployment acceptance.
+
 Date: 14 October 2026 (Asia/Singapore).
 
 ## Automated component checks
