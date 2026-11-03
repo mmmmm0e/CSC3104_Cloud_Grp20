@@ -149,6 +149,15 @@ class Gate:
     def _commit(self):
         self.db.commit()
 
+    def _fail(self):
+        # Mark failure first: rollback itself raises if BEGIN never started a transaction.
+        self.failed = True
+        try:
+            self.db.rollback()
+        except sqlite3.Error:
+            pass
+        return self._unavailable()
+
     def _unavailable(self, reason="STORAGE_UNAVAILABLE"):
         return dict(allowed=False, reason=reason, replayed=False, action_applied=False,
                     request_id="", state={}, grant=None)
@@ -174,9 +183,7 @@ class Gate:
                 return dict(allowed=True, reason="STATE", replayed=False,
                             action_applied=False, request_id="", state=state, grant=None)
             except (sqlite3.Error, OSError, ValueError, KeyError, TypeError):
-                self.db.rollback()
-                self.failed = True
-                return self._unavailable()
+                return self._fail()
 
     def execute(self, operation, payload_bytes, signature):
         if operation not in SCHEMAS:
@@ -242,9 +249,7 @@ class Gate:
                                     state, now, result["replayed"])
                 self._commit()
             except (sqlite3.Error, OSError, ValueError, KeyError, TypeError, OverflowError):
-                self.db.rollback()
-                self.failed = True
-                return self._unavailable()
+                return self._fail()
             LOG.info(canonical(event).decode())
             return result
 

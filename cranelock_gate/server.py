@@ -26,6 +26,11 @@ def response(result):
         state_json=canonical(result["state"]), grant_json=canonical(result["grant"]))
 
 
+def bind_host(address):
+    """Host part of a gRPC bind address, e.g. "[::1]:50051" -> "::1"."""
+    return address.rsplit(":", 1)[0].strip("[]")
+
+
 class Metrics:
     def __init__(self):
         self.registry = CollectorRegistry()
@@ -86,7 +91,8 @@ class Servicer(gate_pb2_grpc.TrustedAccessGateServicer):
 
 
 class RunningServer:
-    def __init__(self, gate, address="127.0.0.1:50051", metrics_port=None, credentials=None):
+    def __init__(self, gate, address="127.0.0.1:50051", metrics_port=None, credentials=None,
+                 metrics_address="127.0.0.1"):
         self.gate = gate
         self.metrics = Metrics()
         self.server = grpc.server(ThreadPoolExecutor(max_workers=16), options=[
@@ -101,7 +107,9 @@ class RunningServer:
         self.done = threading.Event()
         self.http = None
         if metrics_port is not None:
-            self.http, self.http_thread = start_http_server(metrics_port, registry=self.metrics.registry)
+            # The metrics endpoint is unauthenticated: never widen it beyond the requested host.
+            self.http, self.http_thread = start_http_server(metrics_port, addr=metrics_address,
+                                                            registry=self.metrics.registry)
         self.server.start()
         self._check()
         self.thread = threading.Thread(target=self._maintain, daemon=True)
@@ -141,6 +149,7 @@ def main():
         if name == "serve":
             command.add_argument("--bind", default="127.0.0.1:50051")
             command.add_argument("--metrics-port", type=int, default=9090)
+            command.add_argument("--metrics-bind", help="Metrics host; defaults to the --bind host")
             command.add_argument("--tls-cert")
             command.add_argument("--tls-key")
             command.add_argument("--tls-ca")
@@ -172,9 +181,10 @@ def main():
         elif (args.bind.rsplit(":", 1)[0] not in {"127.0.0.1", "localhost", "[::1]"}
               and not args.allow_insecure_development):
             parser.error("Network listeners require mutual TLS or explicit --allow-insecure-development")
+        metrics_address = args.metrics_bind or bind_host(args.bind)
         gate = Gate(args.database, config)
         try:
-            server = RunningServer(gate, args.bind, args.metrics_port, credentials)
+            server = RunningServer(gate, args.bind, args.metrics_port, credentials, metrics_address)
         except Exception:
             gate.close()
             raise

@@ -62,3 +62,19 @@ def test_mutual_tls_accepts_client_certificate_and_rejects_anonymous(h):
                 client.state()
     finally:
         server.close()
+
+
+def test_health_check_authenticates_with_client_certificate(h):
+    from cranelock_gate.healthcheck import check
+    ca, server_key, server_cert, client_key, client_cert = credentials()
+    secure = grpc.ssl_server_credentials([(server_key, server_cert)], ca, require_client_auth=True)
+    server = RunningServer(h.gate, "127.0.0.1:0", credentials=secure)
+    target = f"127.0.0.1:{server.port}"
+    try:
+        trusted = grpc.ssl_channel_credentials(ca, client_key, client_cert)
+        assert check(target, trusted)
+        assert check(target, trusted, server_name="localhost")
+        assert not check(target, grpc.ssl_channel_credentials(ca), timeout=0.4)
+        assert not check(target, timeout=0.4)  # Plaintext probes cannot reach a TLS listener.
+    finally:
+        server.close()

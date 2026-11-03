@@ -61,7 +61,8 @@ development simulations.
 
 An in-process lock serialises state-changing operations. SQLite transactions commit
 authority, grant, occupancy, request-cache and audit changes together before returning
-success. A process-level database lease prevents a second process from concurrently
+success. The database runs in write-ahead-log mode with full synchronous commits, so
+read-only audit exports never block decisions. A process-level database lease prevents a second process from concurrently
 using the same state file. Concurrent grant requests therefore cannot independently
 observe CLEAR and both create accepted reservations. Durable grant and entry checks
 also prevent multiple admissions through reordered requests.
