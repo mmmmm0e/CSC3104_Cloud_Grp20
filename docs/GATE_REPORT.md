@@ -98,6 +98,10 @@ persistence were validated; Kubernetes execution must be validated in the team's
 
 ## Evidence and remaining integration
 
+[SAFETY_PROOF.md](SAFETY_PROOF.md) maps each safety claim (exclusive access, stale-permission
+fencing, fallback, mid-transfer failures and occupied-lane recovery) to its tests,
+including a randomised failure model check and a mutation check of the tests themselves.
+
 The automated standalone suite tests certificate quorum/signature failures, normal
 handoff fencing, concurrent grants and entries, expiry, missing/delayed observations,
 restart, idempotent retries, clock rollback, commit failure, controller reconciliation,

@@ -148,25 +148,75 @@ with grpc.secure_channel("gate.example:50051", credentials) as channel:
     current_state = client.state()
 ```
 
-For Kubernetes TLS deployment, mount TLS files from Secrets, replace the insecure
-argument with TLS arguments, and replace the native plaintext gRPC probes with
-authenticated checks. A kubelet native gRPC probe cannot use the client certificate
-required by this listener; use the bundled health check as an exec probe instead,
-with a client certificate the gate's CA trusts:
+### Development certificates
 
-```yaml
-readinessProbe:
-  exec:
-    command: [python, -m, cranelock_gate.healthcheck,
-              --tls-cert, /tls/probe.pem, --tls-key, /tls/probe-key.pem,
-              --tls-ca, /tls/ca.pem, --server-name, cranelock-gate]
-  initialDelaySeconds: 2
+Generate a development CA, a server certificate and two client identities (`client` for
+cranes, controller and simulator connections; `probe` for health checks):
+
+```powershell
+.\.venv\Scripts\python.exe -m cranelock_gate.tls --directory demo-data/tls
 ```
 
-Use the same command for `livenessProbe`. `--server-name` must match a SAN in the gate's
-server certificate when that certificate does not name `127.0.0.1`. Without TLS
-arguments the health check probes the plaintext development listener, as Compose does. The supplied default manifest intentionally targets the
-isolated plaintext simulation. Do not deploy it unchanged as an authenticated-network
+The server certificate names `localhost`, `127.0.0.1`, `gate` (Compose), and
+`cranelock-gate` plus its `default` namespace Service names (Kubernetes). Add `--name`
+once per name to replace that list, for example for another namespace. The CA private
+key is not kept, so regenerate the whole set to issue more; it expires after 30 days
+(`--days`). `demo-data/` is git-ignored: never commit the `*-key.pem` files. Use a real
+PKI outside simulations.
+
+### Mutual TLS with Docker Compose
+
+`deploy/compose.tls.yaml` layers on top of `deploy/compose.yaml`. It switches the gate to
+mutual TLS, mounts `demo-data/tls` read-only and makes the container health check
+present the probe certificate. Prometheus and Grafana are unchanged: metrics are plain
+HTTP on the Compose network and host loopback, separate from the gRPC listener.
+
+```powershell
+docker compose -f deploy/compose.yaml -f deploy/compose.tls.yaml up -d
+docker compose -f deploy/compose.yaml -f deploy/compose.tls.yaml ps
+.\.venv\Scripts\python.exe -m cranelock_gate.demo state --directory demo-data --target 127.0.0.1:50051 --tls-ca demo-data/tls/ca.pem --tls-cert demo-data/tls/client.pem --tls-key demo-data/tls/client-key.pem
+```
+
+Pass both `-f` files to every `docker compose` command, including `restart`, `logs` and
+`exec`; a command with only `compose.yaml` recreates the gate as a plaintext listener.
+`demo run` and `demo state` accept the same TLS options, plus `--server-name` when the
+dialled address is not in the certificate. On a Linux host, make the key files
+readable by UID 10001.
+
+### Persistence check
+
+The gate must keep authority across restarts and must never resume old permissions.
+With either Compose configuration running, read state, restart, then read it again:
+
+```powershell
+.\.venv\Scripts\python.exe -m cranelock_gate.demo state --directory demo-data --target 127.0.0.1:50051 <TLS options>
+docker compose -f deploy/compose.yaml -f deploy/compose.tls.yaml restart gate
+.\.venv\Scripts\python.exe -m cranelock_gate.demo state --directory demo-data --target 127.0.0.1:50051 <TLS options>
+```
+
+Expected: `epoch`, `revision`, `holder` and `mode` are unchanged; `lane_state` is
+`UNKNOWN`, `grant` is `null` and `session_id` is new. `export-events` shows one extra
+`Restart` event. `tests/test_gate_deployment.py` automates this against the real `serve`
+process over mutual TLS, using a hard kill rather than a graceful restart.
+
+### Mutual TLS on Kubernetes
+
+A kubelet native gRPC probe cannot present the client certificate this listener
+requires. `deploy/kubernetes/gate-tls-patch.yaml` therefore switches the Deployment to TLS
+arguments, replaces both probes with the bundled health check (probe identity), and
+mounts a `cranelock-gate-tls` Secret at `/tls` (mode 0440, group 10001):
+
+```powershell
+kubectl create secret generic cranelock-gate-tls --from-file=demo-data/tls
+kubectl patch deployment cranelock-gate --patch-file deploy/kubernetes/gate-tls-patch.yaml
+kubectl rollout status deployment/cranelock-gate
+```
+
+To check the patch without a cluster, run `kubectl patch --local -f <deployment file>
+--patch-file deploy/kubernetes/gate-tls-patch.yaml -o yaml`. In-cluster clients dial
+`cranelock-gate:50051`, a name in the default certificate. Use `--name` when generating
+certificates for another namespace. The unpatched manifest targets the isolated
+plaintext simulation. Do not deploy it unchanged as an authenticated-network
 configuration.
 
 Configuration is bound to the database with a digest of public keys, identities and
