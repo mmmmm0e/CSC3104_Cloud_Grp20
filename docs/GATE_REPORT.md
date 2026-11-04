@@ -61,7 +61,8 @@ development simulations.
 
 An in-process lock serialises state-changing operations. SQLite transactions commit
 authority, grant, occupancy, request-cache and audit changes together before returning
-success. A process-level database lease prevents a second process from concurrently
+success. The database runs in write-ahead-log mode with full synchronous commits, so
+read-only audit exports never block decisions. A process-level database lease prevents a second process from concurrently
 using the same state file. Concurrent grant requests therefore cannot independently
 observe CLEAR and both create accepted reservations. Durable grant and entry checks
 also prevent multiple admissions through reordered requests.
@@ -96,6 +97,10 @@ storage, a single active replica and health checks. Local Docker execution and r
 persistence were validated; Kubernetes execution must be validated in the team's cluster.
 
 ## Evidence and remaining integration
+
+[SAFETY_PROOF.md](SAFETY_PROOF.md) maps each safety claim (exclusive access, stale-permission
+fencing, fallback, mid-transfer failures and occupied-lane recovery) to its tests,
+including a randomised failure model check and a mutation check of the tests themselves.
 
 The automated standalone suite tests certificate quorum/signature failures, normal
 handoff fencing, concurrent grants and entries, expiry, missing/delayed observations,

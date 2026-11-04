@@ -272,6 +272,39 @@ def test_commit_failure_never_returns_success(h, monkeypatch):
     assert h.state["grant"] is None
 
 
+def test_read_only_export_does_not_block_commits(h):
+    for _ in range(50):
+        h.gate.db.execute("INSERT INTO events(value) VALUES('{}')")
+    reader = sqlite3.connect(h.path.resolve().as_uri() + "?mode=ro", uri=True)
+    try:
+        cursor = reader.execute("SELECT value FROM events ORDER BY event_id")
+        cursor.fetchone()  # Export paused mid-scan, still holding its read snapshot.
+        h.ready()
+        assert not h.gate.failed
+    finally:
+        reader.close()
+
+
+def test_failed_rollback_still_fails_closed(h, monkeypatch):
+    real = h.gate.db
+
+    class BrokenDisk:
+        def execute(self, sql, *args):
+            if sql == "BEGIN IMMEDIATE":
+                raise sqlite3.OperationalError("disk I/O error")
+            return real.execute(sql, *args)
+
+        def rollback(self):
+            raise sqlite3.OperationalError("disk I/O error")
+
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+    monkeypatch.setattr(h.gate, "db", BrokenDisk())
+    assert h.gate.get_state()["reason"] == "STORAGE_UNAVAILABLE"
+    assert h.gate.failed
+
+
 def test_missing_corrupt_and_duplicate_gate(h, tmp_path):
     with pytest.raises(RuntimeError, match="Another gate"):
         Gate(h.path, h.config, h.clock)

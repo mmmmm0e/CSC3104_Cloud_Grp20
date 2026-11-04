@@ -38,6 +38,10 @@ View saved experiments with `python -m cranelock_sim.dashboard`, then open
 `http://127.0.0.1:8765`. The local dashboard includes model charts, run filters,
 recorded lane playback and evidence downloads. See [dashboard instructions](docs/EVALUATION.md#open-the-dashboard).
 
+Gate safety evidence (exclusive access under failures) is in
+[docs/SAFETY_PROOF.md](docs/SAFETY_PROOF.md); mutual-TLS deployment is in
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#mutual-tls-outside-isolated-development).
+
 Both demos default to port 50051. Run them separately or configure distinct ports
 when running them together.
 

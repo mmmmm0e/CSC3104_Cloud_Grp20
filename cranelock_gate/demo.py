@@ -88,14 +88,33 @@ def scenario(client):
     return results
 
 
+def open_channel(target, tls_ca=None, tls_cert=None, tls_key=None, server_name=None):
+    """Plaintext for development, or mutual TLS when all three TLS files are given."""
+    if not any([tls_ca, tls_cert, tls_key]):
+        return grpc.insecure_channel(target)
+    if not all([tls_ca, tls_cert, tls_key]):
+        raise ValueError("Provide --tls-ca, --tls-cert and --tls-key together for mutual TLS")
+    credentials = grpc.ssl_channel_credentials(
+        root_certificates=Path(tls_ca).read_bytes(), private_key=Path(tls_key).read_bytes(),
+        certificate_chain=Path(tls_cert).read_bytes())
+    options = [("grpc.ssl_target_name_override", server_name)] if server_name else []
+    return grpc.secure_channel(target, credentials, options=options)
+
+
 def main():
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="action", required=True)
     setup = sub.add_parser("setup")
     setup.add_argument("--directory", default="demo-data")
-    run = sub.add_parser("run")
-    run.add_argument("--directory", default="demo-data")
-    run.add_argument("--target", help="Use an already running DEVELOPMENT gRPC server")
+    for name in ("run", "state"):
+        command = sub.add_parser(name)
+        command.add_argument("--directory", default="demo-data")
+        command.add_argument("--target", required=name == "state",
+                             help="Use an already running gate instead of an in-process one")
+        command.add_argument("--tls-ca")
+        command.add_argument("--tls-cert")
+        command.add_argument("--tls-key")
+        command.add_argument("--server-name", help="Expected name in the gate's server certificate")
     args = parser.parse_args()
     directory = Path(args.directory)
     if args.action == "setup":
@@ -104,7 +123,7 @@ def main():
         print("Development keys/config/database created. Private keys are simulation fixtures only.")
         return
     config = Config.load(directory / "config.json")
-    keys = load_keys(directory / "private-keys.json")
+    keys = load_keys(directory / "private-keys.json") if args.action == "run" else {}
     server = None
     if not args.target:
         server = RunningServer(Gate(directory / "gate.sqlite", config), "127.0.0.1:0")
@@ -112,10 +131,13 @@ def main():
     else:
         target = args.target
     try:
-        with grpc.insecure_channel(target) as channel:
+        with open_channel(target, args.tls_ca, args.tls_cert, args.tls_key, args.server_name) as channel:
             grpc.channel_ready_future(channel).result(timeout=5)
             client = Client(channel, config, keys)
-            print(json.dumps(scenario(client), indent=2))
+            if args.action == "state":
+                print(json.dumps(client.state(), indent=2, sort_keys=True))
+            else:
+                print(json.dumps(scenario(client), indent=2))
     finally:
         if server:
             server.close()
