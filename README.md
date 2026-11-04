@@ -6,6 +6,8 @@ gate-based restart reconciliation are now available in opt-in gate mode.
 See [agent/gate integration and exact local demo](docs/AGENT_GATE.md) for setup,
 authority rules, failure behavior, validation and team integration decisions.
 The separate protobuf services and original standalone baseline are preserved.
+For per-agent recovery credentials, optional controller-probe adapters and Arif's
+startup requirements, see [standalone agent launcher](docs/AGENT_LAUNCHER.md).
 
 Install both components and test dependencies with `python -m pip install -e ".[dev]"`
 (or `python -m pip install -r requirements.txt`), then run `python -m pytest -q`.
