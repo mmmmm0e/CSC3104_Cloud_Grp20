@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import ipaddress
 import time
 import uuid
 from collections.abc import Mapping
@@ -120,6 +121,7 @@ class CentralController:
         self.config = config
         self.private_key = private_key
         self.client = Client(channel, config, {config.controller_id: private_key})
+        self._heartbeat_server = None
 
     def get_state(self):
         # Returns the latest state reported by this gate.
@@ -174,6 +176,58 @@ class CentralController:
                 return result
         return result
 
+    def restore_central(self, *, max_attempts=3):
+        # Restore CENTRAL on the latest gate holder without replacing newer authority.
+        if type(max_attempts) is not int or max_attempts < 1:
+            raise ValueError("max_attempts must be a positive integer")
+        for _ in range(max_attempts):
+            state = self.get_state()
+            epoch, revision, holder, mode = (
+                state.get("epoch"), state.get("revision"),
+                state.get("holder"), state.get("mode"))
+            if (type(epoch) is not int or epoch < 0
+                    or type(revision) is not int or revision < 0
+                    or holder not in self.config.members
+                    or mode not in {"CENTRAL", "LOCAL"}):
+                raise ControllerError("Gate has no valid installed authority to restore")
+            if mode == "CENTRAL":
+                return state
+            result = self.install_central(holder, max_attempts=1)
+            if result["allowed"]:
+                return result["state"]
+            if result["reason"] not in {"STALE_EPOCH", "STALE_REVISION"}:
+                raise ControllerError(
+                    f"Gate rejected CENTRAL restoration: {result['reason']}")
+        raise ControllerError("Gate authority kept changing during CENTRAL restoration")
+
+    async def start_heartbeat_server(self, address="127.0.0.1:0", *, credentials=None):
+        # Successful heartbeats reconcile the gate to CENTRAL.
+        if self._heartbeat_server is not None:
+            raise RuntimeError("Controller heartbeat server is already running")
+        if not credentials:
+            host = address.rsplit(":", 1)[0].strip("[]")
+            try:
+                loopback = ipaddress.ip_address(host).is_loopback
+            except ValueError:
+                loopback = host.lower() == "localhost"
+            if not loopback:
+                raise ValueError("Non-loopback controller listeners require TLS credentials")
+        server = grpc.aio.server()
+        agent_rpc.add_CraneControllerServicer_to_server(
+            ControllerHeartbeatServicer(self), server)
+        port = (server.add_secure_port(address, credentials) if credentials
+                else server.add_insecure_port(address))
+        if not port:
+            raise RuntimeError("Cannot bind controller heartbeat address")
+        await server.start()
+        self._heartbeat_server = server
+        return port
+
+    async def stop_heartbeat_server(self):
+        if self._heartbeat_server is not None:
+            server, self._heartbeat_server = self._heartbeat_server, None
+            await server.stop(0)
+
     async def reconcile_agents(self, agents):
         # Reconciles supplied agents from the gate's currently accepted authority.
         if not isinstance(agents, Mapping):
@@ -194,7 +248,11 @@ class CentralController:
 
         mode = Mode[mode_name]
         for agent in agents.values():
-            await agent.reconcile(epoch, holder, mode)
+            if agent.gate:
+                if not await agent.reconcile_from_gate():
+                    raise ControllerError("Agent could not reconcile from its gate")
+            else:
+                await agent.reconcile(epoch, holder, mode, revision=state["revision"])
         return state
 
 
@@ -227,6 +285,65 @@ class CentralControllerFleet:
             return self.controllers[lane_id]
         except KeyError:
             raise ValueError(f"No gate is configured for lane {lane_id!r}") from None
+
+
+class ControllerHeartbeatServicer(agent_rpc.CraneControllerServicer):
+    def __init__(self, controller):
+        self.controller = controller
+        self._restore_lock = asyncio.Lock()
+
+    async def Heartbeat(self, request, context):
+        if request.agent_id not in self.controller.config.members:
+            await context.abort(grpc.StatusCode.PERMISSION_DENIED, "Unknown agent")
+        async with self._restore_lock:
+            try:
+                state = await asyncio.to_thread(self.controller.restore_central)
+            except ControllerError as error:
+                await context.abort(grpc.StatusCode.UNAVAILABLE, str(error))
+            except grpc.RpcError as error:
+                await context.abort(grpc.StatusCode.UNAVAILABLE, error.details() or str(error))
+            except RuntimeError as error:
+                await context.abort(grpc.StatusCode.UNAVAILABLE, str(error))
+        return agent_pb.ControllerHeartbeatResponse(
+            available=True,
+            controller_id=self.controller.config.controller_id,
+            epoch=state["epoch"],
+            revision=state["revision"],
+            holder=state["holder"],
+            mode=state["mode"],
+        )
+
+
+class ControllerHeartbeatClient:
+    def __init__(self, address, agent_id, controller_id, *, timeout=1.0, credentials=None):
+        if not address or not agent_id or not controller_id or timeout <= 0:
+            raise ValueError("Address, identities and positive timeout are required")
+        self.agent_id = agent_id
+        self.controller_id = controller_id
+        self.timeout = timeout
+        self.credentials = credentials
+        self.channel = (grpc.aio.secure_channel(address, credentials) if credentials
+                        else grpc.aio.insecure_channel(address))
+        self.stub = agent_rpc.CraneControllerStub(self.channel)
+
+    async def reconnect(self, address, *, credentials=None):
+        if credentials is not None:
+            self.credentials = credentials
+        old_channel = self.channel
+        self.channel = (grpc.aio.secure_channel(address, self.credentials) if self.credentials
+                        else grpc.aio.insecure_channel(address))
+        self.stub = agent_rpc.CraneControllerStub(self.channel)
+        await old_channel.close()
+
+    async def probe(self):
+        response = await self.stub.Heartbeat(
+            agent_pb.ControllerHeartbeatRequest(agent_id=self.agent_id),
+            timeout=self.timeout)
+        return (response.available and response.controller_id == self.controller_id
+                and response.mode == "CENTRAL" and bool(response.holder))
+
+    async def close(self):
+        await self.channel.close()
 
 
 def main():
