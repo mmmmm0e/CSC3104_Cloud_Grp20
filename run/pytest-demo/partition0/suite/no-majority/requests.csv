@@ -1,0 +1,2 @@
+request_id,crane,requested_at,entered_at,exited_at,status
+old-holder,crane-1,0.17863459989894181,,,isolated-before-entry

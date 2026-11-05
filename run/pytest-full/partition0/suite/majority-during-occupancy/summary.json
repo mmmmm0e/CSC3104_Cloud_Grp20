@@ -1,0 +1,50 @@
+{
+  "model": "peer-network-partition",
+  "scenario": "during-occupancy",
+  "fault": "majority-partition",
+  "detection_timeout_seconds": 0.5,
+  "clearance_delay_seconds": 0.05,
+  "crossing_time_seconds": 0.01,
+  "time_basis": "host_monotonic_seconds",
+  "passed": true,
+  "recovered": true,
+  "checks_passed": [
+    "all_agents_still_running",
+    "partition_blocks_token_requests_and_transfers",
+    "survivors_detected_holder_failure",
+    "two_survivors_signed_recovery",
+    "replacement_authority_installed",
+    "old_permissions_fenced",
+    "isolated_live_holder_fenced_and_cannot_recover",
+    "occupied_lane_blocks_replacement",
+    "physical_clearance_confirmed",
+    "replacement_completed_safe_crossing"
+  ],
+  "failed_holder": null,
+  "isolated_holder": "crane-1",
+  "replacement_holder": "crane-2",
+  "final_holder": "crane-2",
+  "recovered_epoch": 1,
+  "restarted": false,
+  "completed_rejoined_crossings": 0,
+  "restart_ready_to_reconciled_seconds": null,
+  "restart_ready_to_safe_entry_seconds": null,
+  "certificate_signers": [
+    "crane-2",
+    "crane-3"
+  ],
+  "failure_detection_seconds": 0.5336760000791401,
+  "detection_seconds_by_agent": {
+    "crane-2": 0.5336760000791401,
+    "crane-3": 0.5337098999880254
+  },
+  "authority_recovery_seconds": 0.04385019978508353,
+  "recovery_latency_seconds": 0.2616586999502033,
+  "failure_to_safe_entry_seconds": 0.7953347000293434,
+  "blocked_until_clearance_seconds": 0.09885259997099638,
+  "completed_replacement_crossings": 1,
+  "safety_violations": 0,
+  "final_lane_state": "CLEAR",
+  "blocked_peer_rpcs": 55,
+  "limitations": "Single-process peer RPC partition; management/gate reachable; stale old token remains fenced."
+}

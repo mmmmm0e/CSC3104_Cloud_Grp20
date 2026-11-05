@@ -1,0 +1,4 @@
+request_id,crane,requested_at,entered_at,exited_at,status
+request-1,crane-3,0.0,0.08525310014374554,0.23237460013478994,completed
+request-2,crane-3,0.0,0.3087172000668943,0.4379418999888003,completed
+request-3,crane-2,0.0,0.537506400141865,0.6515083000995219,completed

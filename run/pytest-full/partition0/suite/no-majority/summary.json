@@ -1,0 +1,31 @@
+{
+  "model": "peer-network-partition",
+  "scenario": "before-entry",
+  "fault": "no-majority",
+  "detection_timeout_seconds": 0.5,
+  "clearance_delay_seconds": 0.05,
+  "crossing_time_seconds": 0.01,
+  "time_basis": "host_monotonic_seconds",
+  "passed": true,
+  "checks_passed": [
+    "all_agents_still_running",
+    "partition_blocks_token_requests_and_transfers",
+    "survivors_detected_holder_failure",
+    "isolated_members_cannot_form_quorum",
+    "gate_rejects_minority_certificate",
+    "nonholders_denied_lane_access",
+    "authority_unchanged_without_quorum"
+  ],
+  "recovered": false,
+  "recovered_epoch": null,
+  "final_epoch": 0,
+  "final_holder": "crane-1",
+  "certificate_signers": [],
+  "completed_replacement_crossings": 0,
+  "safety_violations": 0,
+  "failure_detection_seconds": 0.5013407999649644,
+  "recovery_latency_seconds": null,
+  "blocked_peer_rpcs": 66,
+  "final_lane_state": "RESERVED",
+  "limitations": "Peer RPC partition in one process; existing original authority remains valid; no OS network rules."
+}

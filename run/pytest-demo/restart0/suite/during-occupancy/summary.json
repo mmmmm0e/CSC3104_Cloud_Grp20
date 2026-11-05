@@ -1,0 +1,53 @@
+{
+  "model": "holder-restart-rejoin",
+  "scenario": "during-occupancy",
+  "fault": "service-stop",
+  "detection_timeout_seconds": 0.5,
+  "clearance_delay_seconds": 0.01,
+  "crossing_time_seconds": 0.01,
+  "time_basis": "host_monotonic_seconds",
+  "passed": true,
+  "recovered": true,
+  "checks_passed": [
+    "holder_rpc_unavailable",
+    "survivors_detected_holder_failure",
+    "two_survivors_signed_recovery",
+    "replacement_authority_installed",
+    "old_permissions_fenced",
+    "occupied_lane_blocks_replacement",
+    "physical_clearance_confirmed",
+    "replacement_completed_safe_crossing",
+    "restart_loads_old_state_but_blocks_ownership",
+    "rejoining_blocks_requests_transfers_and_votes",
+    "heartbeats_and_old_permissions_cannot_reactivate_agent",
+    "gate_reconciliation_rejoins_without_granting_token",
+    "rejoined_agent_completes_new_authorized_crossing"
+  ],
+  "failed_holder": "crane-1",
+  "isolated_holder": null,
+  "replacement_holder": "crane-2",
+  "final_holder": "crane-1",
+  "recovered_epoch": 1,
+  "restarted": true,
+  "completed_rejoined_crossings": 1,
+  "restart_ready_to_reconciled_seconds": 0.10908019996713847,
+  "restart_ready_to_safe_entry_seconds": 0.2560041999677196,
+  "certificate_signers": [
+    "crane-2",
+    "crane-3"
+  ],
+  "failure_detection_seconds": 0.5347541000228375,
+  "detection_seconds_by_agent": {
+    "crane-2": 0.5347541000228375,
+    "crane-3": 0.5348452000180259
+  },
+  "authority_recovery_seconds": 0.5704505000030622,
+  "recovery_latency_seconds": 0.723859200021252,
+  "failure_to_safe_entry_seconds": 1.2586133000440896,
+  "blocked_until_clearance_seconds": 0.03514519997406751,
+  "completed_replacement_crossings": 1,
+  "safety_violations": 0,
+  "final_lane_state": "CLEAR",
+  "blocked_peer_rpcs": null,
+  "limitations": "Single-process service restart; trusted adapter reconciliation; no OS kill or baselines."
+}

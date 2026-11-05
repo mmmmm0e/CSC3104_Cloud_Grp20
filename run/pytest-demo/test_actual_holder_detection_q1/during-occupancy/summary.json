@@ -1,0 +1,48 @@
+{
+  "model": "holder-service-stop-recovery",
+  "scenario": "during-occupancy",
+  "fault": "service-stop",
+  "detection_timeout_seconds": 0.5,
+  "clearance_delay_seconds": 0.05,
+  "crossing_time_seconds": 0.01,
+  "time_basis": "host_monotonic_seconds",
+  "passed": true,
+  "recovered": true,
+  "checks_passed": [
+    "holder_rpc_unavailable",
+    "survivors_detected_holder_failure",
+    "two_survivors_signed_recovery",
+    "replacement_authority_installed",
+    "old_permissions_fenced",
+    "occupied_lane_blocks_replacement",
+    "physical_clearance_confirmed",
+    "replacement_completed_safe_crossing"
+  ],
+  "failed_holder": "crane-1",
+  "isolated_holder": null,
+  "replacement_holder": "crane-2",
+  "final_holder": "crane-2",
+  "recovered_epoch": 1,
+  "restarted": false,
+  "completed_rejoined_crossings": 0,
+  "restart_ready_to_reconciled_seconds": null,
+  "restart_ready_to_safe_entry_seconds": null,
+  "certificate_signers": [
+    "crane-2",
+    "crane-3"
+  ],
+  "failure_detection_seconds": 0.472513800021261,
+  "detection_seconds_by_agent": {
+    "crane-2": 0.472513800021261,
+    "crane-3": 0.4725848000962287
+  },
+  "authority_recovery_seconds": 0.5829936000518501,
+  "recovery_latency_seconds": 0.8320271000266075,
+  "failure_to_safe_entry_seconds": 1.3045409000478685,
+  "blocked_until_clearance_seconds": 0.11964170006103814,
+  "completed_replacement_crossings": 1,
+  "safety_violations": 0,
+  "final_lane_state": "CLEAR",
+  "blocked_peer_rpcs": null,
+  "limitations": "Single-process service stop; explicit simulator removal during occupancy; no OS kill or baselines."
+}

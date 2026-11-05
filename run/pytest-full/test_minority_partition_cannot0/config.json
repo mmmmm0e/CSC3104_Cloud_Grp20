@@ -1,0 +1,20 @@
+{
+  "lane_id": "lane-1",
+  "membership_id": "group20-demo-v1",
+  "members": {
+    "crane-1": "a4987b30350a01ed7e1215a780aeb7eea6a9673d64639475d0a341628a544c18",
+    "crane-2": "d864a8a488b21bf7f820931568c8cccd34ff414a29cbfc04eac137af58ad21ea",
+    "crane-3": "4fe861ba150f5c00969f2566cdc22705668d2e8e9aa8cde1f3afab8f21401ac1"
+  },
+  "controller_id": "controller",
+  "simulator_id": "simulator",
+  "operator_id": "operator",
+  "service_keys": {
+    "controller": "c4b94aa217f540346c620d5bcd90f264420af586b712bb815416c40cd8b46736",
+    "simulator": "fecee534cabdbf2fb7283429c3084baea7ec8bfd647b253ef22a6b12ae638a36",
+    "operator": "335b80f9f4bbfb82ffe7149feb3f81eca9288a7ac9d4d3d25426fc3b5b81c202"
+  },
+  "grant_ttl_seconds": 5.0,
+  "observation_timeout_seconds": 2.0,
+  "future_skew_seconds": 0.25
+}

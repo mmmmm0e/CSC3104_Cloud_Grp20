@@ -12,6 +12,7 @@ from .agent import Agent, Mode
 from . import recovery
 from . import protocol_pb2 as pb
 from . import protocol_pb2_grpc as rpc
+from .controller import ControllerHeartbeatClient
 
 
 def load_recovery_key(path, agent_id, config):
@@ -151,6 +152,8 @@ async def main(argv=None):
         await asyncio.Event().wait()
     finally:
         await agent.close()
+        if controller_probe:
+            await controller_probe.close()
 
 
 if __name__ == "__main__":

@@ -1,0 +1,15 @@
+{
+  "model": "cranelock",
+  "scenario": "controller-outage",
+  "seed": 7,
+  "evaluation": "benefits-v1",
+  "measurement_policy": "fixed_window",
+  "arrival_pattern": "scheduled",
+  "safety_timeout_seconds": null,
+  "duration_seconds": 3.6,
+  "crossing_time_seconds": 1.5,
+  "detection_timeout_seconds": 0.2,
+  "workload_sha256": "9ca9cba285caf2a874c6618630306c76b48ebf6c257cbebae03991b90a53d0a9",
+  "time_basis": "host_monotonic_seconds",
+  "limitations": "Experimental reference controller and adapter-driven fallback, not teammate controller integration. Three agents, one host, common trusted gate. Load varies request count, not crane count. RPC attempts count instrumented peer, controller and gate calls; excludes management snapshots and gate internal maintenance. Not packet/byte counts or production benchmarks. Holder-failure reuses the LOCAL recovery experiment; its RPC overhead is not measured."
+}
