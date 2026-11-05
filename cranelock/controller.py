@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import ipaddress
+import math
 import time
 import uuid
 from collections.abc import Mapping
@@ -111,7 +112,9 @@ def format_snapshot(snapshot, phase):
 class CentralController:
     # Coordinates central authority for a configured gate.
 
-    def __init__(self, config, private_key, channel):
+    def __init__(self, config, private_key, channel, *, timeout=3):
+        if not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError("Gate timeout must be finite and positive")
         if not isinstance(private_key, Ed25519PrivateKey):
             raise TypeError("Controller signing key must be an Ed25519 private key")
         expected_key = bytes.fromhex(config.service_keys[config.controller_id])
@@ -120,7 +123,7 @@ class CentralController:
             raise ValueError("Controller private key does not match configured identity")
         self.config = config
         self.private_key = private_key
-        self.client = Client(channel, config, {config.controller_id: private_key})
+        self.client = Client(channel, config, {config.controller_id: private_key}, timeout)
         self._heartbeat_server = None
 
     def get_state(self):
@@ -139,42 +142,46 @@ class CentralController:
 
         for attempt in range(max_attempts):
             state = self.get_state()
-            epoch = state.get("epoch")
-            revision = state.get("revision")
-            if type(epoch) is not int or epoch < -1 or type(revision) is not int or revision < 0:
-                raise ControllerError("Gate returned invalid authority state")
-            if epoch == -1 and revision != 0:
-                raise ControllerError("Uninitialized gate has an unexpected revision")
-
-            payload = dict(
-                version=1,
-                lane_id=self.config.lane_id,
-                membership_id=self.config.membership_id,
-                epoch=0 if epoch == -1 else epoch,
-                mode="CENTRAL",
-                holder=holder,
-                expected_epoch=epoch,
-                expected_revision=revision,
-            )
-            certificate = dict(
-                payload=payload,
-                signatures=[dict(
-                    signer_id=self.config.controller_id,
-                    signature=encode_signature(
-                        self.private_key.sign(CERTIFICATE_DOMAIN + canonical(payload))),
-                )],
-            )
-            result = self.client.call(
-                self.config.controller_id,
-                "InstallAuthority",
-                request_id=request_id if attempt == 0 and request_id else str(uuid.uuid4()),
-                certificate=certificate,
-                expected_epoch=epoch,
-                expected_revision=revision,
-            )
+            result = self._install_central_snapshot(
+                state, holder,
+                request_id=request_id if attempt == 0 else None)
             if result["allowed"] or result["reason"] not in {"STALE_EPOCH", "STALE_REVISION"}:
                 return result
         return result
+
+    def _install_central_snapshot(self, state, holder, *, request_id=None):
+        """Bind the holder decision and certificate to one gate snapshot."""
+        epoch, revision = state.get("epoch"), state.get("revision")
+        if type(epoch) is not int or epoch < -1 or type(revision) is not int or revision < 0:
+            raise ControllerError("Gate returned invalid authority state")
+        if epoch == -1 and revision != 0:
+            raise ControllerError("Uninitialized gate has an unexpected revision")
+        payload = dict(
+            version=1,
+            lane_id=self.config.lane_id,
+            membership_id=self.config.membership_id,
+            epoch=0 if epoch == -1 else epoch,
+            mode="CENTRAL",
+            holder=holder,
+            expected_epoch=epoch,
+            expected_revision=revision,
+        )
+        certificate = dict(
+            payload=payload,
+            signatures=[dict(
+                signer_id=self.config.controller_id,
+                signature=encode_signature(
+                    self.private_key.sign(CERTIFICATE_DOMAIN + canonical(payload))),
+            )],
+        )
+        return self.client.call(
+            self.config.controller_id,
+            "InstallAuthority",
+            request_id=request_id or str(uuid.uuid4()),
+            certificate=certificate,
+            expected_epoch=epoch,
+            expected_revision=revision,
+        )
 
     def restore_central(self, *, max_attempts=3):
         # Restore CENTRAL on the latest gate holder without replacing newer authority.
@@ -192,7 +199,7 @@ class CentralController:
                 raise ControllerError("Gate has no valid installed authority to restore")
             if mode == "CENTRAL":
                 return state
-            result = self.install_central(holder, max_attempts=1)
+            result = self._install_central_snapshot(state, holder)
             if result["allowed"]:
                 return result["state"]
             if result["reason"] not in {"STALE_EPOCH", "STALE_REVISION"}:
@@ -336,9 +343,17 @@ class ControllerHeartbeatClient:
         await old_channel.close()
 
     async def probe(self):
-        response = await self.stub.Heartbeat(
-            agent_pb.ControllerHeartbeatRequest(agent_id=self.agent_id),
-            timeout=self.timeout)
+        channel = self.channel
+        try:
+            response = await self.stub.Heartbeat(
+                agent_pb.ControllerHeartbeatRequest(agent_id=self.agent_id),
+                timeout=self.timeout)
+        except asyncio.CancelledError:
+            # Replacing a channel cancels its RPCs, not the watcher task.
+            # Explicit task cancellation must still propagate on shutdown.
+            if channel is not self.channel and not asyncio.current_task().cancelling():
+                return False
+            raise
         return (response.available and response.controller_id == self.controller_id
                 and response.mode == "CENTRAL" and bool(response.holder))
 

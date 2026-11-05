@@ -93,6 +93,7 @@ class Agent(rpc.CraneAgentServicer):
         self.server = None
         self.controller_probe = controller_probe
         self.controller_suspected = False
+        self.controller_return_pending = False
         self.last_controller_seen = clock()
         self.persist()
 
@@ -423,6 +424,36 @@ class Agent(rpc.CraneAgentServicer):
                     self.state.request_queue.clear()
                 return True
 
+    async def reconcile_controller_return(self):
+        """Adopt fresh CENTRAL authority only after local handoffs are resolved."""
+        async with self.lock:
+            if self.pending or self.gate_attempt:
+                self.emit("CONTROLLER_RECONCILIATION_DEFERRED",
+                          reason="LOCAL_TRANSFER_IN_PROGRESS")
+                return False
+            if self.authority_lock.locked():
+                self.emit("CONTROLLER_RECONCILIATION_DEFERRED",
+                          reason="AUTHORITY_UPDATE_IN_PROGRESS")
+                return False
+        async with self.authority_lock:
+            async with self.lock:
+                if self.pending or self.gate_attempt:
+                    self.emit("CONTROLLER_RECONCILIATION_DEFERRED",
+                              reason="LOCAL_TRANSFER_IN_PROGRESS")
+                    return False
+            authority = await self.query_gate()
+            if authority is None:
+                return False
+            async with self.lock:
+                old = (self.state.current_epoch, self.state.revision,
+                       self.state.token_holder)
+                if not self.adopt_gate_state(authority):
+                    return False
+                if old != (self.state.current_epoch, self.state.revision,
+                           self.state.token_holder):
+                    self.state.request_queue.clear()
+                return self.state.mode == Mode.CENTRAL
+
     async def receive_gate_transfer(self, request):
         async with self.authority_lock:
             async with self.lock:
@@ -694,7 +725,7 @@ class Agent(rpc.CraneAgentServicer):
             return
         while True:
             try:
-                async with asyncio.timeout(self.interval):
+                async with asyncio.timeout(self.timeout):
                     available = await self.controller_probe()
             except Exception as error:
                 # Timeouts and probe errors are failed observations, not worker
@@ -705,13 +736,20 @@ class Agent(rpc.CraneAgentServicer):
                 if available:
                     self.last_controller_seen = self.clock()
                     if self.controller_suspected:
-                        self.emit("CONTROLLER_RESTORED")
+                        self.controller_return_pending = True
                     self.controller_suspected = False
                     self.emit("CONTROLLER_HEARTBEAT_RECEIVED")
                 elif self.clock() - self.last_controller_seen > self.timeout and not self.controller_suspected:
                     self.controller_suspected = True
                     self.emit("CONTROLLER_SUSPECTED",
                         detection_latency_seconds=self.clock() - self.last_controller_seen)
+            # Liveness cancels fallback even while recovery holds authority_lock.
+            # Ownership comes only from a fresh gate read after handoffs settle.
+            if available and (not self.gate or await self.reconcile_controller_return()):
+                async with self.lock:
+                    if self.controller_return_pending:
+                        self.controller_return_pending = False
+                        self.emit("CONTROLLER_RESTORED")
             await asyncio.sleep(self.interval)
 
     async def start(self, address, auto_transfer=True, *, interceptors=()):

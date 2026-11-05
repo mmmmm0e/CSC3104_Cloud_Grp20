@@ -58,8 +58,13 @@ async def main(argv=None):
     run.add_argument("--gate-tls-key")
     run.add_argument("--recovery-config", help="Existing gate Config JSON; requires gate integration")
     run.add_argument("--recovery-key", help="JSON file containing only this agent's hex Ed25519 private key")
-    run.add_argument("--controller-probe", metavar="MODULE:ASYNC_FUNCTION",
-                     help="Installed async controller probe returning availability; requires gate and recovery")
+    controller = run.add_mutually_exclusive_group()
+    controller.add_argument("--controller-probe", metavar="MODULE:ASYNC_FUNCTION",
+                            help="Installed async controller probe; requires gate and recovery")
+    controller.add_argument("--controller-address", help="CraneController heartbeat gRPC endpoint")
+    run.add_argument("--controller-tls-ca")
+    run.add_argument("--controller-tls-cert")
+    run.add_argument("--controller-tls-key")
     state = commands.add_parser("state")
     state.add_argument("address")
     args = parser.parse_args(argv)
@@ -96,13 +101,29 @@ async def main(argv=None):
             recovery_key = load_recovery_key(args.recovery_key, args.id, recovery_config)
         except (OSError, ValueError, TypeError, KeyError, AttributeError):
             parser.error("Recovery key is unreadable, invalid, not agent-only or does not match its public key")
-    if args.controller_probe:
+    if args.controller_probe or args.controller_address:
         if recovery_config is None:
-            parser.error("--controller-probe requires gate integration and recovery configuration")
+            parser.error("Controller monitoring requires gate integration and recovery configuration")
+    if args.controller_probe:
         try:
             controller_probe = load_controller_probe(args.controller_probe)
         except Exception:
             parser.error("Controller probe must identify an importable async function with no required arguments")
+    controller_credentials = None
+    controller_tls = [args.controller_tls_ca, args.controller_tls_cert, args.controller_tls_key]
+    if any(controller_tls):
+        if not args.controller_address or not all(controller_tls):
+            parser.error("Provide --controller-address and all --controller-tls-* files together")
+        try:
+            controller_credentials = grpc.ssl_channel_credentials(
+                Path(args.controller_tls_ca).read_bytes(),
+                Path(args.controller_tls_key).read_bytes(),
+                Path(args.controller_tls_cert).read_bytes())
+        except (OSError, ValueError):
+            parser.error("Controller TLS files are invalid or unreadable")
+    elif args.controller_address and args.controller_address.rsplit(":", 1)[0] not in {
+            "127.0.0.1", "localhost", "[::1]"}:
+        parser.error("Controller connections outside loopback require mutual TLS")
     gate = None
     if any([args.gate_tls_ca, args.gate_tls_cert, args.gate_tls_key]) and not args.gate_address:
         parser.error("Gate TLS options require --gate-address")
@@ -134,12 +155,20 @@ async def main(argv=None):
         if recovery_config is not None and recovery_config != gate.client.config:
             await gate.close()
             parser.error("Recovery and gate configuration must match")
+    heartbeat_client = None
+    if args.controller_address:
+        heartbeat_client = ControllerHeartbeatClient(
+            args.controller_address, args.id, gate.client.config.controller_id,
+            timeout=args.timeout * .8, credentials=controller_credentials)
+        controller_probe = heartbeat_client.probe
     try:
         agent = Agent(args.id, peers, args.holder, epoch=args.epoch, mode=Mode[args.mode],
                       interval=args.interval, timeout=args.timeout, state_file=args.state_file, gate=gate,
                       recovery_config=recovery_config, recovery_private_key=recovery_key,
                       controller_probe=controller_probe)
     except (OSError, ValueError, TypeError, KeyError):
+        if heartbeat_client:
+            await heartbeat_client.close()
         if gate:
             await gate.close()
         parser.error("Agent state or startup configuration is invalid or unreadable")
@@ -151,9 +180,11 @@ async def main(argv=None):
             agent.emit("TOKEN_REQUEST_RESULT", accepted=reply.accepted, reason=reply.reason)
         await asyncio.Event().wait()
     finally:
-        await agent.close()
-        if controller_probe:
-            await controller_probe.close()
+        try:
+            await agent.close()
+        finally:
+            if heartbeat_client:
+                await heartbeat_client.close()
 
 
 if __name__ == "__main__":
