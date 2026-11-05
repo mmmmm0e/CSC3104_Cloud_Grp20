@@ -1,0 +1,4 @@
+request_id,crane,requested_at,entered_at,exited_at,status
+old-holder,crane-1,0.20034129999112338,0.2129074000986293,1.45581460010726,removed-after-crash
+replacement-holder,crane-2,0.7632412000093609,1.4869398000882939,1.5384984000120312,completed
+rejoined-holder,crane-1,1.8589398000622168,2.0058626000536606,2.05369180010166,completed

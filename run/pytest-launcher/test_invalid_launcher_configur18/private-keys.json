@@ -1,0 +1,8 @@
+{
+  "crane-1": "d513f2cb4346567983d007c2d74755959bd8de4698fbd06da08bda56bb0328ad",
+  "crane-2": "a087ca54d0f26bffab09a84debce8e1a98bedaa8b7fd2c8bcdb8cdadedba5460",
+  "crane-3": "ee982bdef959e97fd232ec6088dadfc0792ee3a9686d07dc2817998336932bbb",
+  "controller": "e4fb3fc272c54320fc71938ee89443303eeeb0fa8d465e4f41dcca55e763d881",
+  "simulator": "428dae3327e79771cfdfbe982c0e0809f39914f16fee6d22678081dfae89bbb5",
+  "operator": "9f921755e82432ae9462868e133a9cd80fccf6e853fb89d6a2fd919fcb792ff2"
+}

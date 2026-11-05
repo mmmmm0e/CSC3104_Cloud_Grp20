@@ -1,0 +1,5 @@
+request_id,crane,requested_at,submitted_at,entered_at,exited_at,status
+request-1,crane-3,0.5146906177700269,0.5233259999658912,,,waiting
+request-2,crane-2,0.5748819422719832,0.5859753999393433,,,waiting
+request-3,crane-3,0.6784621783599551,0.6798923999303952,,,waiting
+request-4,crane-2,0.6792297571308905,0.6802766999462619,,,waiting

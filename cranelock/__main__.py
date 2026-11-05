@@ -7,6 +7,7 @@ from google.protobuf.json_format import MessageToDict
 from .agent import Agent, Mode
 from . import protocol_pb2 as pb
 from . import protocol_pb2_grpc as rpc
+from .controller import ControllerHeartbeatClient
 
 
 async def main():
@@ -74,6 +75,8 @@ async def main():
         await asyncio.Event().wait()
     finally:
         await agent.close()
+        if controller_probe:
+            await controller_probe.close()
 
 
 if __name__ == "__main__":

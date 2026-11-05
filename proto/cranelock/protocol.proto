@@ -75,3 +75,6 @@ service CraneAgent {
   rpc VoteRecovery(RecoveryProposal) returns (RecoveryVote);
   rpc GetAgentState(Empty) returns (AgentState);
 }
+service CraneController {
+  rpc Heartbeat(ControllerHeartbeatRequest) returns (ControllerHeartbeatResponse);
+}

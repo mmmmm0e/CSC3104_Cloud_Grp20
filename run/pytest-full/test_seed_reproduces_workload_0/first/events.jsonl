@@ -1,0 +1,61 @@
+{"time": 0.5901586481599354, "event": "request", "request_id": "request-1", "crane": "crane-3"}
+{"time": 0.5901586481599354, "event": "physical_entry", "request_id": "request-1", "crane": "crane-3", "epoch": 0, "revision": 2}
+{"time": 0.9763982614321965, "event": "request", "request_id": "request-2", "crane": "crane-1"}
+{"time": 1.051616246656443, "event": "request", "request_id": "request-3", "crane": "crane-3"}
+{"time": 1.0901586481599352, "event": "physical_exit", "request_id": "request-1", "crane": "crane-3"}
+{"time": 1.0901586481599352, "event": "physical_entry", "request_id": "request-2", "crane": "crane-1", "epoch": 0, "revision": 3}
+{"time": 1.5247988759353683, "event": "request", "request_id": "request-4", "crane": "crane-1"}
+{"time": 1.5901586481599352, "event": "physical_exit", "request_id": "request-2", "crane": "crane-1"}
+{"time": 1.5901586481599352, "event": "physical_entry", "request_id": "request-3", "crane": "crane-3", "epoch": 0, "revision": 4}
+{"time": 2.038984896323882, "event": "request", "request_id": "request-5", "crane": "crane-3"}
+{"time": 2.0901586481599352, "event": "physical_exit", "request_id": "request-3", "crane": "crane-3"}
+{"time": 2.0901586481599352, "event": "physical_entry", "request_id": "request-4", "crane": "crane-1", "epoch": 0, "revision": 5}
+{"time": 2.5901586481599352, "event": "physical_exit", "request_id": "request-4", "crane": "crane-1"}
+{"time": 2.5901586481599352, "event": "physical_entry", "request_id": "request-5", "crane": "crane-3", "epoch": 0, "revision": 6}
+{"time": 2.6285886941164422, "event": "request", "request_id": "request-6", "crane": "crane-1"}
+{"time": 2.761143079337635, "event": "request", "request_id": "request-7", "crane": "crane-1"}
+{"time": 2.788387006630163, "event": "request", "request_id": "request-8", "crane": "crane-2"}
+{"time": 2.949193324199275, "event": "request", "request_id": "request-9", "crane": "crane-3"}
+{"time": 3.0901586481599352, "event": "physical_exit", "request_id": "request-5", "crane": "crane-3"}
+{"time": 3.0901586481599352, "event": "physical_entry", "request_id": "request-6", "crane": "crane-1", "epoch": 0, "revision": 7}
+{"time": 3.098380338962763, "event": "request", "request_id": "request-10", "crane": "crane-1"}
+{"time": 3.1541087817712254, "event": "request", "request_id": "request-11", "crane": "crane-3"}
+{"time": 3.5901586481599352, "event": "physical_exit", "request_id": "request-6", "crane": "crane-1"}
+{"time": 3.5901586481599352, "event": "physical_entry", "request_id": "request-7", "crane": "crane-1", "epoch": 0, "revision": 7}
+{"time": 3.7523342951585903, "event": "request", "request_id": "request-12", "crane": "crane-2"}
+{"time": 3.851984418963673, "event": "request", "request_id": "request-13", "crane": "crane-1"}
+{"time": 4.090158648159935, "event": "physical_exit", "request_id": "request-7", "crane": "crane-1"}
+{"time": 4.090158648159935, "event": "physical_entry", "request_id": "request-8", "crane": "crane-2", "epoch": 0, "revision": 8}
+{"time": 4.0989873903137255, "event": "request", "request_id": "request-14", "crane": "crane-2"}
+{"time": 4.228757705332575, "event": "request", "request_id": "request-15", "crane": "crane-1"}
+{"time": 4.441623469559793, "event": "request", "request_id": "request-16", "crane": "crane-1"}
+{"time": 4.497977547050213, "event": "request", "request_id": "request-17", "crane": "crane-1"}
+{"time": 4.550762005791561, "event": "request", "request_id": "request-18", "crane": "crane-3"}
+{"time": 4.590158648159935, "event": "physical_exit", "request_id": "request-8", "crane": "crane-2"}
+{"time": 4.590158648159935, "event": "physical_entry", "request_id": "request-9", "crane": "crane-3", "epoch": 0, "revision": 9}
+{"time": 4.912199062870029, "event": "request", "request_id": "request-19", "crane": "crane-2"}
+{"time": 5.090158648159935, "event": "physical_exit", "request_id": "request-9", "crane": "crane-3"}
+{"time": 5.090158648159935, "event": "physical_entry", "request_id": "request-10", "crane": "crane-1", "epoch": 0, "revision": 10}
+{"time": 5.205196349175812, "event": "request", "request_id": "request-20", "crane": "crane-1"}
+{"time": 5.449709325032991, "event": "request", "request_id": "request-21", "crane": "crane-1"}
+{"time": 5.52755051828279, "event": "request", "request_id": "request-22", "crane": "crane-1"}
+{"time": 5.590158648159935, "event": "physical_exit", "request_id": "request-10", "crane": "crane-1"}
+{"time": 5.590158648159935, "event": "physical_entry", "request_id": "request-11", "crane": "crane-3", "epoch": 0, "revision": 11}
+{"time": 6.017499164262358, "event": "request", "request_id": "request-23", "crane": "crane-1"}
+{"time": 6.090158648159935, "event": "physical_exit", "request_id": "request-11", "crane": "crane-3"}
+{"time": 6.090158648159935, "event": "physical_entry", "request_id": "request-12", "crane": "crane-2", "epoch": 0, "revision": 12}
+{"time": 6.230787716293617, "event": "request", "request_id": "request-24", "crane": "crane-1"}
+{"time": 6.234053982435945, "event": "request", "request_id": "request-25", "crane": "crane-3"}
+{"time": 6.474423539485053, "event": "request", "request_id": "request-26", "crane": "crane-2"}
+{"time": 6.511221697363122, "event": "request", "request_id": "request-27", "crane": "crane-3"}
+{"time": 6.590158648159935, "event": "physical_exit", "request_id": "request-12", "crane": "crane-2"}
+{"time": 6.590158648159935, "event": "physical_entry", "request_id": "request-13", "crane": "crane-1", "epoch": 0, "revision": 13}
+{"time": 6.613536462448812, "event": "request", "request_id": "request-28", "crane": "crane-3"}
+{"time": 6.761811499715913, "event": "request", "request_id": "request-29", "crane": "crane-1"}
+{"time": 7.090158648159935, "event": "physical_exit", "request_id": "request-13", "crane": "crane-1"}
+{"time": 7.090158648159935, "event": "physical_entry", "request_id": "request-14", "crane": "crane-2", "epoch": 0, "revision": 14}
+{"time": 7.400955894423714, "event": "request", "request_id": "request-30", "crane": "crane-2"}
+{"time": 7.590158648159935, "event": "physical_exit", "request_id": "request-14", "crane": "crane-2"}
+{"time": 7.590158648159935, "event": "physical_entry", "request_id": "request-15", "crane": "crane-1", "epoch": 0, "revision": 15}
+{"time": 7.603763697391927, "event": "request", "request_id": "request-31", "crane": "crane-2"}
+{"time": 7.6463807560713475, "event": "request", "request_id": "request-32", "crane": "crane-2"}

@@ -1,0 +1,30 @@
+{"event": "AGENT_STARTED", "timestamp": 1793086498.001275, "monotonic": 538524.4061138, "agent_id": "crane-2", "peer_id": null, "epoch": 0, "revision": 0, "holder": "crane-1", "mode": "REJOINING"}
+{"event": "GATE_STATE_QUERIED", "timestamp": 1793086498.009137, "monotonic": 538524.4139756, "agent_id": "crane-2", "peer_id": null, "epoch": 0, "revision": 0, "holder": "crane-1", "result": "OK", "authoritative_state": {"epoch": 0, "revision": 1, "holder": "crane-1"}}
+{"event": "GATE_STATE_RECONCILED", "timestamp": 1793086498.0115497, "monotonic": 538524.4163885, "agent_id": "crane-2", "peer_id": null, "epoch": 0, "revision": 1, "holder": "crane-1", "result": "OK"}
+{"event": "AUTHORITY_UPDATED", "timestamp": 1793086498.0115917, "monotonic": 538524.4164299, "agent_id": "crane-2", "peer_id": null, "epoch": 0, "revision": 1, "holder": "crane-1"}
+{"event": "TOKEN_HOLDER_CHANGED", "timestamp": 1793086498.0117202, "monotonic": 538524.4165583, "agent_id": "crane-2", "peer_id": null, "epoch": 0, "revision": 1, "holder": "crane-1"}
+{"event": "MODE_CHANGED", "timestamp": 1793086498.01174, "monotonic": 538524.4165782, "agent_id": "crane-2", "peer_id": null, "epoch": 0, "revision": 1, "holder": "crane-1", "mode": "LOCAL"}
+{"event": "HEARTBEAT_SENT", "timestamp": 1793086498.0140066, "monotonic": 538524.4188448, "agent_id": "crane-2", "peer_id": "crane-1", "epoch": 0, "revision": 1, "holder": "crane-1"}
+{"event": "HEARTBEAT_SENT", "timestamp": 1793086498.2318213, "monotonic": 538524.6366596, "agent_id": "crane-2", "peer_id": "crane-1", "epoch": 0, "revision": 1, "holder": "crane-1"}
+{"event": "HEARTBEAT_SENT", "timestamp": 1793086498.4504297, "monotonic": 538524.8552679, "agent_id": "crane-2", "peer_id": "crane-1", "epoch": 0, "revision": 1, "holder": "crane-1"}
+{"event": "HEARTBEAT_RECEIVED", "timestamp": 1793086498.5746143, "monotonic": 538524.9794527, "agent_id": "crane-2", "peer_id": "crane-1", "epoch": 0, "revision": 1, "holder": "crane-1"}
+{"event": "HEARTBEAT_SENT", "timestamp": 1793086498.6693223, "monotonic": 538525.0741608, "agent_id": "crane-2", "peer_id": "crane-1", "epoch": 0, "revision": 1, "holder": "crane-1"}
+{"event": "HEARTBEAT_RECEIVED", "timestamp": 1793086498.7894206, "monotonic": 538525.194259, "agent_id": "crane-2", "peer_id": "crane-1", "epoch": 0, "revision": 1, "holder": "crane-1"}
+{"event": "HEARTBEAT_SENT", "timestamp": 1793086498.8866985, "monotonic": 538525.2915368, "agent_id": "crane-2", "peer_id": "crane-1", "epoch": 0, "revision": 1, "holder": "crane-1"}
+{"event": "PEER_SUSPECTED", "timestamp": 1793086498.9928381, "monotonic": 538525.3976766, "agent_id": "crane-2", "peer_id": "crane-3", "epoch": 0, "revision": 1, "holder": "crane-1", "last_seen_monotonic": 538524.3819418, "detection_latency_seconds": 1.0157233000500128, "timeout_seconds": 1.0}
+{"event": "HEARTBEAT_RECEIVED", "timestamp": 1793086499.0037467, "monotonic": 538525.4085849, "agent_id": "crane-2", "peer_id": "crane-1", "epoch": 0, "revision": 1, "holder": "crane-1"}
+{"event": "GATE_STATE_QUERIED", "timestamp": 1793086499.03884, "monotonic": 538525.4436783, "agent_id": "crane-2", "peer_id": null, "epoch": 0, "revision": 1, "holder": "crane-1", "result": "OK", "authoritative_state": {"epoch": 0, "revision": 1, "holder": "crane-1"}}
+{"event": "GATE_STATE_RECONCILED", "timestamp": 1793086499.041535, "monotonic": 538525.4463743, "agent_id": "crane-2", "peer_id": null, "epoch": 0, "revision": 1, "holder": "crane-1", "result": "OK"}
+{"event": "TOKEN_REQUEST_SENT", "timestamp": 1793086499.0416439, "monotonic": 538525.4464819, "agent_id": "crane-2", "peer_id": "crane-1", "epoch": 0, "revision": 1, "holder": "crane-1", "request_id": "a38c32d37c144b3f9b56b616144697b0"}
+{"event": "TOKEN_REQUEST_RESULT", "timestamp": 1793086499.0429418, "monotonic": 538525.4477799, "agent_id": "crane-2", "peer_id": null, "epoch": 0, "revision": 1, "holder": "crane-1", "accepted": true, "reason": ""}
+{"event": "HEARTBEAT_SENT", "timestamp": 1793086499.1037788, "monotonic": 538525.5086172, "agent_id": "crane-2", "peer_id": "crane-1", "epoch": 0, "revision": 1, "holder": "crane-1"}
+{"event": "HEARTBEAT_RECEIVED", "timestamp": 1793086499.2268987, "monotonic": 538525.6317368, "agent_id": "crane-2", "peer_id": "crane-1", "epoch": 0, "revision": 1, "holder": "crane-1"}
+{"event": "HEARTBEAT_SENT", "timestamp": 1793086499.322227, "monotonic": 538525.7270653, "agent_id": "crane-2", "peer_id": "crane-1", "epoch": 0, "revision": 1, "holder": "crane-1"}
+{"event": "HEARTBEAT_RECEIVED", "timestamp": 1793086499.4465818, "monotonic": 538525.85142, "agent_id": "crane-2", "peer_id": "crane-1", "epoch": 0, "revision": 1, "holder": "crane-1"}
+{"event": "HEARTBEAT_SENT", "timestamp": 1793086499.539106, "monotonic": 538525.9439441, "agent_id": "crane-2", "peer_id": "crane-1", "epoch": 0, "revision": 1, "holder": "crane-1"}
+{"event": "GATE_STATE_QUERIED", "timestamp": 1793086499.5786064, "monotonic": 538525.9834446, "agent_id": "crane-2", "peer_id": null, "epoch": 0, "revision": 1, "holder": "crane-1", "result": "OK", "authoritative_state": {"epoch": 0, "revision": 2, "holder": "crane-2"}}
+{"event": "GATE_STATE_RECONCILED", "timestamp": 1793086499.5809817, "monotonic": 538525.9858205, "agent_id": "crane-2", "peer_id": null, "epoch": 0, "revision": 2, "holder": "crane-2", "result": "OK"}
+{"event": "AUTHORITY_UPDATED", "timestamp": 1793086499.581026, "monotonic": 538525.9858642, "agent_id": "crane-2", "peer_id": null, "epoch": 0, "revision": 2, "holder": "crane-2"}
+{"event": "TOKEN_HOLDER_CHANGED", "timestamp": 1793086499.5810413, "monotonic": 538525.9858795, "agent_id": "crane-2", "peer_id": null, "epoch": 0, "revision": 2, "holder": "crane-2"}
+{"event": "TOKEN_TRANSFER_RECEIVED", "timestamp": 1793086499.5810678, "monotonic": 538525.985906, "agent_id": "crane-2", "peer_id": "crane-1", "epoch": 0, "revision": 2, "holder": "crane-2", "transfer_id": "998cc004d84d4873a9f617c4650549e0"}
+{"event": "HEARTBEAT_RECEIVED", "timestamp": 1793086499.6092892, "monotonic": 538526.0141275, "agent_id": "crane-2", "peer_id": "crane-1", "epoch": 0, "revision": 2, "holder": "crane-2"}

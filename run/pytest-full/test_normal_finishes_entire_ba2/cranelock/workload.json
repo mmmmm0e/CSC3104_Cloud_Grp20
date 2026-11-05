@@ -1,0 +1,17 @@
+[
+  {
+    "request_id": "request-1",
+    "crane": "crane-3",
+    "requested_at": 0.0
+  },
+  {
+    "request_id": "request-2",
+    "crane": "crane-3",
+    "requested_at": 0.0
+  },
+  {
+    "request_id": "request-3",
+    "crane": "crane-2",
+    "requested_at": 0.0
+  }
+]

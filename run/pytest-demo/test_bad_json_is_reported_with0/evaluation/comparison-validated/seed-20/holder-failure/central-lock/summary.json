@@ -1,0 +1,1 @@
+{"model": "central-lock", "scenario": "holder-failure", "seed": 20, "completed": 6, "requested": 6, "unfinished_at_horizon": 0, "p95_wait_seconds": 0.8, "recovery_latency_seconds": 0.4, "resumed_within_window": true, "throughput_per_minute": 180, "safety_violations": 0, "limitations": "TEST FIXTURE: reference central scheduler; shared gate."}
