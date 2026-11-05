@@ -1,0 +1,27 @@
+{"event": "AGENT_STARTED", "timestamp": 1792980313.7060926, "monotonic": 432340.4694588, "agent_id": "crane-b", "peer_id": null, "epoch": 1, "revision": 0, "holder": "crane-a", "mode": "LOCAL"}
+{"event": "HEARTBEAT_RECEIVED", "timestamp": 1792980313.7080882, "monotonic": 432340.471454, "agent_id": "crane-b", "peer_id": "crane-a", "epoch": 1, "revision": 0, "holder": "crane-a"}
+{"event": "HEARTBEAT_SENT", "timestamp": 1792980313.708522, "monotonic": 432340.4718879, "agent_id": "crane-b", "peer_id": "crane-a", "epoch": 1, "revision": 0, "holder": "crane-a"}
+{"event": "HEARTBEAT_RECEIVED", "timestamp": 1792980313.818687, "monotonic": 432340.5820507, "agent_id": "crane-b", "peer_id": "crane-a", "epoch": 1, "revision": 0, "holder": "crane-a"}
+{"event": "HEARTBEAT_SENT", "timestamp": 1792980313.8195922, "monotonic": 432340.582956, "agent_id": "crane-b", "peer_id": "crane-a", "epoch": 1, "revision": 0, "holder": "crane-a"}
+{"event": "HEARTBEAT_RECEIVED", "timestamp": 1792980313.9224784, "monotonic": 432340.6858402, "agent_id": "crane-b", "peer_id": "crane-a", "epoch": 1, "revision": 0, "holder": "crane-a"}
+{"event": "HEARTBEAT_SENT", "timestamp": 1792980313.922909, "monotonic": 432340.6862707, "agent_id": "crane-b", "peer_id": "crane-a", "epoch": 1, "revision": 0, "holder": "crane-a"}
+{"event": "HEARTBEAT_RECEIVED", "timestamp": 1792980314.0326836, "monotonic": 432340.7960433, "agent_id": "crane-b", "peer_id": "crane-a", "epoch": 1, "revision": 0, "holder": "crane-a"}
+{"event": "HEARTBEAT_SENT", "timestamp": 1792980314.0336633, "monotonic": 432340.797023, "agent_id": "crane-b", "peer_id": "crane-a", "epoch": 1, "revision": 0, "holder": "crane-a"}
+{"event": "HEARTBEAT_RECEIVED", "timestamp": 1792980314.1428342, "monotonic": 432340.9061918, "agent_id": "crane-b", "peer_id": "crane-a", "epoch": 1, "revision": 0, "holder": "crane-a"}
+{"event": "HEARTBEAT_SENT", "timestamp": 1792980314.1440697, "monotonic": 432340.9074272, "agent_id": "crane-b", "peer_id": "crane-a", "epoch": 1, "revision": 0, "holder": "crane-a"}
+{"event": "HEARTBEAT_RECEIVED", "timestamp": 1792980314.2501972, "monotonic": 432341.0135525, "agent_id": "crane-b", "peer_id": "crane-a", "epoch": 1, "revision": 0, "holder": "crane-a"}
+{"event": "HEARTBEAT_SENT", "timestamp": 1792980314.2506123, "monotonic": 432341.0139675, "agent_id": "crane-b", "peer_id": "crane-a", "epoch": 1, "revision": 0, "holder": "crane-a"}
+{"event": "HEARTBEAT_RECEIVED", "timestamp": 1792980314.358144, "monotonic": 432341.1214971, "agent_id": "crane-b", "peer_id": "crane-a", "epoch": 1, "revision": 0, "holder": "crane-a"}
+{"event": "HEARTBEAT_SENT", "timestamp": 1792980314.3585362, "monotonic": 432341.1218892, "agent_id": "crane-b", "peer_id": "crane-a", "epoch": 1, "revision": 0, "holder": "crane-a"}
+{"event": "HEARTBEAT_RECEIVED", "timestamp": 1792980314.46793, "monotonic": 432341.2312812, "agent_id": "crane-b", "peer_id": "crane-a", "epoch": 1, "revision": 0, "holder": "crane-a"}
+{"event": "HEARTBEAT_SENT", "timestamp": 1792980314.4738553, "monotonic": 432341.237206, "agent_id": "crane-b", "peer_id": "crane-a", "epoch": 1, "revision": 0, "holder": "crane-a"}
+{"event": "HEARTBEAT_RECEIVED", "timestamp": 1792980314.575208, "monotonic": 432341.3385568, "agent_id": "crane-b", "peer_id": "crane-a", "epoch": 1, "revision": 0, "holder": "crane-a"}
+{"event": "HEARTBEAT_SENT", "timestamp": 1792980314.5758805, "monotonic": 432341.3392293, "agent_id": "crane-b", "peer_id": "crane-a", "epoch": 1, "revision": 0, "holder": "crane-a"}
+{"event": "HEARTBEAT_RECEIVED", "timestamp": 1792980314.6841974, "monotonic": 432341.4475441, "agent_id": "crane-b", "peer_id": "crane-a", "epoch": 1, "revision": 0, "holder": "crane-a"}
+{"event": "HEARTBEAT_SENT", "timestamp": 1792980314.6847928, "monotonic": 432341.4481396, "agent_id": "crane-b", "peer_id": "crane-a", "epoch": 1, "revision": 0, "holder": "crane-a"}
+{"event": "TOKEN_REQUEST_SENT", "timestamp": 1792980314.7139335, "monotonic": 432341.4772798, "agent_id": "crane-b", "peer_id": "crane-a", "epoch": 1, "revision": 0, "holder": "crane-a", "request_id": "ddff29c665274b5292f8edfa24eaab5d"}
+{"event": "TOKEN_REQUEST_RESULT", "timestamp": 1792980314.716027, "monotonic": 432341.4793735, "agent_id": "crane-b", "peer_id": null, "epoch": 1, "revision": 0, "holder": "crane-a", "accepted": true, "reason": ""}
+{"event": "TOKEN_TRANSFER_RECEIVED", "timestamp": 1792980314.7970283, "monotonic": 432341.5603734, "agent_id": "crane-b", "peer_id": "crane-a", "epoch": 1, "revision": 0, "holder": "crane-b", "transfer_id": "e76f72ed49eb4ff582e71bb05165dbcc"}
+{"event": "TOKEN_HOLDER_CHANGED", "timestamp": 1792980314.7970805, "monotonic": 432341.560425, "agent_id": "crane-b", "peer_id": null, "epoch": 1, "revision": 0, "holder": "crane-b"}
+{"event": "HEARTBEAT_RECEIVED", "timestamp": 1792980314.7973387, "monotonic": 432341.5606831, "agent_id": "crane-b", "peer_id": "crane-a", "epoch": 1, "revision": 0, "holder": "crane-b"}
+{"event": "HEARTBEAT_SENT", "timestamp": 1792980314.797508, "monotonic": 432341.5608527, "agent_id": "crane-b", "peer_id": "crane-a", "epoch": 1, "revision": 0, "holder": "crane-b"}

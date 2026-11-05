@@ -1,0 +1,9 @@
+{
+  "model": "peer-network-partition",
+  "scenario": "during-occupancy",
+  "fault": "majority-partition",
+  "detection_timeout_seconds": 0.5,
+  "clearance_delay_seconds": 0.05,
+  "crossing_time_seconds": 0.01,
+  "time_basis": "host_monotonic_seconds"
+}

@@ -1,0 +1,5 @@
+{"event": "AGENT_STARTED", "timestamp": 1793086500.106255, "monotonic": 538526.5110936, "agent_id": "crane-2", "peer_id": null, "epoch": 0, "revision": 2, "holder": "crane-2", "mode": "REJOINING"}
+{"event": "GATE_STATE_QUERIED", "timestamp": 1793086500.1180947, "monotonic": 538526.5229332, "agent_id": "crane-2", "peer_id": null, "epoch": 0, "revision": 2, "holder": "crane-2", "result": "OK", "authoritative_state": {"epoch": 0, "revision": 2, "holder": "crane-2"}}
+{"event": "GATE_STATE_RECONCILED", "timestamp": 1793086500.121487, "monotonic": 538526.5263261, "agent_id": "crane-2", "peer_id": null, "epoch": 0, "revision": 2, "holder": "crane-2", "result": "OK"}
+{"event": "MODE_CHANGED", "timestamp": 1793086500.1216943, "monotonic": 538526.5265328, "agent_id": "crane-2", "peer_id": null, "epoch": 0, "revision": 2, "holder": "crane-2", "mode": "LOCAL"}
+{"event": "HEARTBEAT_SENT", "timestamp": 1793086500.1253731, "monotonic": 538526.5302114, "agent_id": "crane-2", "peer_id": "crane-1", "epoch": 0, "revision": 2, "holder": "crane-2"}

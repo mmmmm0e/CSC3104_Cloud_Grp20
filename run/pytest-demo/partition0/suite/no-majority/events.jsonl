@@ -1,0 +1,105 @@
+{"time": 0.13141329993959516, "event": "agent_event", "agent_event": {"event": "AGENT_STARTED", "timestamp": 1793086564.5335078, "monotonic": 538590.9383463, "agent_id": "crane-1", "peer_id": null, "epoch": 0, "revision": 0, "holder": "crane-1", "mode": "LOCAL"}}
+{"time": 0.13271909998729825, "event": "agent_event", "agent_event": {"event": "AGENT_STARTED", "timestamp": 1793086564.5348177, "monotonic": 538590.9396561, "agent_id": "crane-2", "peer_id": null, "epoch": 0, "revision": 0, "holder": "crane-1", "mode": "LOCAL"}}
+{"time": 0.13362109998706728, "event": "agent_event", "agent_event": {"event": "AGENT_STARTED", "timestamp": 1793086564.5357165, "monotonic": 538590.9405552, "agent_id": "crane-3", "peer_id": null, "epoch": 0, "revision": 0, "holder": "crane-1", "mode": "LOCAL"}}
+{"time": 0.13681880000513047, "event": "cluster_started", "addresses": {"crane-1": "127.0.0.1:56324", "crane-2": "127.0.0.1:56325", "crane-3": "127.0.0.1:56326"}}
+{"time": 0.14073349989484996, "event": "agent_event", "agent_event": {"event": "HEARTBEAT_RECEIVED", "timestamp": 1793086564.5428293, "monotonic": 538590.9476678, "agent_id": "crane-3", "peer_id": "crane-2", "epoch": 0, "revision": 0, "holder": "crane-1"}}
+{"time": 0.14106549997814, "event": "agent_event", "agent_event": {"event": "HEARTBEAT_RECEIVED", "timestamp": 1793086564.5431647, "monotonic": 538590.948003, "agent_id": "crane-2", "peer_id": "crane-3", "epoch": 0, "revision": 0, "holder": "crane-1"}}
+{"time": 0.14173099992331117, "event": "agent_event", "agent_event": {"event": "HEARTBEAT_RECEIVED", "timestamp": 1793086564.5438185, "monotonic": 538590.9486568, "agent_id": "crane-1", "peer_id": "crane-2", "epoch": 0, "revision": 0, "holder": "crane-1"}}
+{"time": 0.14214679994620383, "event": "agent_event", "agent_event": {"event": "HEARTBEAT_RECEIVED", "timestamp": 1793086564.5442457, "monotonic": 538590.9490842, "agent_id": "crane-3", "peer_id": "crane-1", "epoch": 0, "revision": 0, "holder": "crane-1"}}
+{"time": 0.14290669991169125, "event": "agent_event", "agent_event": {"event": "HEARTBEAT_SENT", "timestamp": 1793086564.5450046, "monotonic": 538590.9498429, "agent_id": "crane-2", "peer_id": "crane-3", "epoch": 0, "revision": 0, "holder": "crane-1"}}
+{"time": 0.14315779996104538, "event": "agent_event", "agent_event": {"event": "HEARTBEAT_SENT", "timestamp": 1793086564.5452578, "monotonic": 538590.9500961, "agent_id": "crane-3", "peer_id": "crane-2", "epoch": 0, "revision": 0, "holder": "crane-1"}}
+{"time": 0.14320970000699162, "event": "agent_event", "agent_event": {"event": "HEARTBEAT_RECEIVED", "timestamp": 1793086564.5453105, "monotonic": 538590.9501488, "agent_id": "crane-2", "peer_id": "crane-1", "epoch": 0, "revision": 0, "holder": "crane-1"}}
+{"time": 0.14374559989664704, "event": "agent_event", "agent_event": {"event": "HEARTBEAT_SENT", "timestamp": 1793086564.5458424, "monotonic": 538590.9506808, "agent_id": "crane-2", "peer_id": "crane-1", "epoch": 0, "revision": 0, "holder": "crane-1"}}
+{"time": 0.14404009992722422, "event": "agent_event", "agent_event": {"event": "HEARTBEAT_SENT", "timestamp": 1793086564.54614, "monotonic": 538590.9509782, "agent_id": "crane-1", "peer_id": "crane-3", "epoch": 0, "revision": 0, "holder": "crane-1"}}
+{"time": 0.14409709989558905, "event": "agent_event", "agent_event": {"event": "HEARTBEAT_RECEIVED", "timestamp": 1793086564.5461977, "monotonic": 538590.951036, "agent_id": "crane-1", "peer_id": "crane-3", "epoch": 0, "revision": 0, "holder": "crane-1"}}
+{"time": 0.1447650999762118, "event": "agent_event", "agent_event": {"event": "HEARTBEAT_SENT", "timestamp": 1793086564.5468626, "monotonic": 538590.9517011, "agent_id": "crane-1", "peer_id": "crane-2", "epoch": 0, "revision": 0, "holder": "crane-1"}}
+{"time": 0.1450866999803111, "event": "agent_event", "agent_event": {"event": "HEARTBEAT_SENT", "timestamp": 1793086564.547186, "monotonic": 538590.9520243, "agent_id": "crane-3", "peer_id": "crane-1", "epoch": 0, "revision": 0, "holder": "crane-1"}}
+{"time": 0.17864519997965544, "event": "grant_issued", "request_id": "old-holder", "crane": "crane-1", "grant_id": "614a3509-970f-4ab6-82ab-4f0c561060cf", "epoch": 0, "revision": 1}
+{"time": 0.18420479993801564, "event": "agent_snapshot", "stage": "before_crash", "owner": "crane-1", "authority_epoch": 0, "agents": {"crane-1": {"has_token": true, "holder": "crane-1", "epoch": 0, "mode": "LOCAL", "queue": [], "pending_transfer": ""}, "crane-2": {"has_token": false, "holder": "crane-1", "epoch": 0, "mode": "LOCAL", "queue": [], "pending_transfer": ""}, "crane-3": {"has_token": false, "holder": "crane-1", "epoch": 0, "mode": "LOCAL", "queue": [], "pending_transfer": ""}}}
+{"time": 0.18426279991399497, "event": "network_partitioned", "groups": [["crane-1"], ["crane-2"], ["crane-3"]]}
+{"time": 0.18426739994902164, "event": "holder_isolated", "crane": "crane-1"}
+{"time": 0.18973089999053627, "event": "check_passed", "check": "all_agents_still_running"}
+{"time": 0.1898083999985829, "event": "agent_event", "agent_event": {"event": "TOKEN_REQUEST_SENT", "timestamp": 1793086564.5919027, "monotonic": 538590.9967413, "agent_id": "crane-2", "peer_id": "crane-1", "epoch": 0, "revision": 0, "holder": "crane-1", "request_id": "4d92b9ddff004848a97cf9dd7d02f25d"}}
+{"time": 0.19084239995572716, "event": "peer_rpc_blocked", "sender": "crane-2", "receiver": "crane-1", "method": "TokenRequest"}
+{"time": 0.19248899992089719, "event": "peer_rpc_blocked", "sender": "crane-2", "receiver": "crane-1", "method": "TokenTransfer"}
+{"time": 0.19306520000100136, "event": "check_passed", "check": "partition_blocks_token_requests_and_transfers"}
+{"time": 0.20194189995527267, "event": "peer_rpc_blocked", "sender": "crane-2", "receiver": "crane-1", "method": "Heartbeat"}
+{"time": 0.20221469993703067, "event": "peer_rpc_blocked", "sender": "crane-2", "receiver": "crane-3", "method": "Heartbeat"}
+{"time": 0.2030757999746129, "event": "peer_rpc_blocked", "sender": "crane-1", "receiver": "crane-2", "method": "Heartbeat"}
+{"time": 0.20439599989913404, "event": "peer_rpc_blocked", "sender": "crane-3", "receiver": "crane-1", "method": "Heartbeat"}
+{"time": 0.20469439995940775, "event": "peer_rpc_blocked", "sender": "crane-1", "receiver": "crane-3", "method": "Heartbeat"}
+{"time": 0.2053095999872312, "event": "peer_rpc_blocked", "sender": "crane-3", "receiver": "crane-2", "method": "Heartbeat"}
+{"time": 0.2670540999388322, "event": "peer_rpc_blocked", "sender": "crane-2", "receiver": "crane-1", "method": "Heartbeat"}
+{"time": 0.26795199990738183, "event": "peer_rpc_blocked", "sender": "crane-2", "receiver": "crane-3", "method": "Heartbeat"}
+{"time": 0.2687138000037521, "event": "peer_rpc_blocked", "sender": "crane-1", "receiver": "crane-2", "method": "Heartbeat"}
+{"time": 0.26886309997644275, "event": "peer_rpc_blocked", "sender": "crane-3", "receiver": "crane-1", "method": "Heartbeat"}
+{"time": 0.26941599999554455, "event": "peer_rpc_blocked", "sender": "crane-1", "receiver": "crane-3", "method": "Heartbeat"}
+{"time": 0.2698214999400079, "event": "peer_rpc_blocked", "sender": "crane-3", "receiver": "crane-2", "method": "Heartbeat"}
+{"time": 0.33054739993531257, "event": "peer_rpc_blocked", "sender": "crane-2", "receiver": "crane-1", "method": "Heartbeat"}
+{"time": 0.33224429993424565, "event": "peer_rpc_blocked", "sender": "crane-2", "receiver": "crane-3", "method": "Heartbeat"}
+{"time": 0.3330022000009194, "event": "peer_rpc_blocked", "sender": "crane-1", "receiver": "crane-2", "method": "Heartbeat"}
+{"time": 0.33323549991473556, "event": "peer_rpc_blocked", "sender": "crane-3", "receiver": "crane-1", "method": "Heartbeat"}
+{"time": 0.3336593999993056, "event": "peer_rpc_blocked", "sender": "crane-1", "receiver": "crane-3", "method": "Heartbeat"}
+{"time": 0.33646899997256696, "event": "peer_rpc_blocked", "sender": "crane-3", "receiver": "crane-2", "method": "Heartbeat"}
+{"time": 0.4038122999481857, "event": "peer_rpc_blocked", "sender": "crane-2", "receiver": "crane-1", "method": "Heartbeat"}
+{"time": 0.40569939999841154, "event": "peer_rpc_blocked", "sender": "crane-2", "receiver": "crane-3", "method": "Heartbeat"}
+{"time": 0.40621619997546077, "event": "peer_rpc_blocked", "sender": "crane-1", "receiver": "crane-2", "method": "Heartbeat"}
+{"time": 0.40690729999914765, "event": "peer_rpc_blocked", "sender": "crane-3", "receiver": "crane-1", "method": "Heartbeat"}
+{"time": 0.40715859993360937, "event": "peer_rpc_blocked", "sender": "crane-1", "receiver": "crane-3", "method": "Heartbeat"}
+{"time": 0.4119846998946741, "event": "peer_rpc_blocked", "sender": "crane-3", "receiver": "crane-2", "method": "Heartbeat"}
+{"time": 0.46665289998054504, "event": "peer_rpc_blocked", "sender": "crane-2", "receiver": "crane-1", "method": "Heartbeat"}
+{"time": 0.46699629991780967, "event": "peer_rpc_blocked", "sender": "crane-2", "receiver": "crane-3", "method": "Heartbeat"}
+{"time": 0.46957539999857545, "event": "peer_rpc_blocked", "sender": "crane-1", "receiver": "crane-2", "method": "Heartbeat"}
+{"time": 0.47046149999368936, "event": "peer_rpc_blocked", "sender": "crane-1", "receiver": "crane-3", "method": "Heartbeat"}
+{"time": 0.47068809997290373, "event": "peer_rpc_blocked", "sender": "crane-3", "receiver": "crane-1", "method": "Heartbeat"}
+{"time": 0.470829900004901, "event": "peer_rpc_blocked", "sender": "crane-3", "receiver": "crane-2", "method": "Heartbeat"}
+{"time": 0.5290417999494821, "event": "peer_rpc_blocked", "sender": "crane-2", "receiver": "crane-1", "method": "Heartbeat"}
+{"time": 0.5293985999887809, "event": "peer_rpc_blocked", "sender": "crane-1", "receiver": "crane-2", "method": "Heartbeat"}
+{"time": 0.529576399945654, "event": "peer_rpc_blocked", "sender": "crane-2", "receiver": "crane-3", "method": "Heartbeat"}
+{"time": 0.5299914999632165, "event": "peer_rpc_blocked", "sender": "crane-3", "receiver": "crane-1", "method": "Heartbeat"}
+{"time": 0.5303947000065818, "event": "peer_rpc_blocked", "sender": "crane-3", "receiver": "crane-2", "method": "Heartbeat"}
+{"time": 0.5307181999087334, "event": "peer_rpc_blocked", "sender": "crane-1", "receiver": "crane-3", "method": "Heartbeat"}
+{"time": 0.5958823999390006, "event": "peer_rpc_blocked", "sender": "crane-2", "receiver": "crane-1", "method": "Heartbeat"}
+{"time": 0.5964791999431327, "event": "peer_rpc_blocked", "sender": "crane-2", "receiver": "crane-3", "method": "Heartbeat"}
+{"time": 0.5974819998955354, "event": "peer_rpc_blocked", "sender": "crane-1", "receiver": "crane-2", "method": "Heartbeat"}
+{"time": 0.6013168999925256, "event": "peer_rpc_blocked", "sender": "crane-3", "receiver": "crane-1", "method": "Heartbeat"}
+{"time": 0.601639200001955, "event": "peer_rpc_blocked", "sender": "crane-1", "receiver": "crane-3", "method": "Heartbeat"}
+{"time": 0.6018226000014693, "event": "peer_rpc_blocked", "sender": "crane-3", "receiver": "crane-2", "method": "Heartbeat"}
+{"time": 0.6684691999107599, "event": "agent_event", "agent_event": {"event": "PEER_SUSPECTED", "timestamp": 1793086565.0705595, "monotonic": 538591.4753981, "agent_id": "crane-1", "peer_id": "crane-2", "epoch": 0, "revision": 0, "holder": "crane-1", "last_seen_monotonic": 538590.9486522, "detection_latency_seconds": 0.5267374999821186, "timeout_seconds": 0.5}}
+{"time": 0.6684900999534875, "event": "agent_event", "agent_event": {"event": "PEER_SUSPECTED", "timestamp": 1793086565.0705903, "monotonic": 538591.4754285, "agent_id": "crane-1", "peer_id": "crane-3", "epoch": 0, "revision": 0, "holder": "crane-1", "last_seen_monotonic": 538590.9510333, "detection_latency_seconds": 0.5243925999384373, "timeout_seconds": 0.5}}
+{"time": 0.668535599950701, "event": "agent_event", "agent_event": {"event": "PEER_SUSPECTED", "timestamp": 1793086565.0706363, "monotonic": 538591.4754745, "agent_id": "crane-2", "peer_id": "crane-1", "epoch": 0, "revision": 0, "holder": "crane-1", "last_seen_monotonic": 538590.9501458, "detection_latency_seconds": 0.5253262999467552, "timeout_seconds": 0.5}}
+{"time": 0.6685465999180451, "event": "agent_event", "agent_event": {"event": "TOKEN_HOLDER_SUSPECTED", "timestamp": 1793086565.0706484, "monotonic": 538591.4754865, "agent_id": "crane-2", "peer_id": "crane-1", "epoch": 0, "revision": 0, "holder": "crane-1", "detection_latency_seconds": 0.5253262999467552}}
+{"time": 0.6685564999934286, "event": "agent_event", "agent_event": {"event": "PEER_SUSPECTED", "timestamp": 1793086565.0706577, "monotonic": 538591.4754961, "agent_id": "crane-2", "peer_id": "crane-3", "epoch": 0, "revision": 0, "holder": "crane-1", "last_seen_monotonic": 538590.9479997, "detection_latency_seconds": 0.5274949000449851, "timeout_seconds": 0.5}}
+{"time": 0.6685933999251574, "event": "agent_event", "agent_event": {"event": "PEER_SUSPECTED", "timestamp": 1793086565.0706837, "monotonic": 538591.475522, "agent_id": "crane-3", "peer_id": "crane-1", "epoch": 0, "revision": 0, "holder": "crane-1", "last_seen_monotonic": 538590.9490807, "detection_latency_seconds": 0.5264394999248907, "timeout_seconds": 0.5}}
+{"time": 0.668601099983789, "event": "agent_event", "agent_event": {"event": "TOKEN_HOLDER_SUSPECTED", "timestamp": 1793086565.070703, "monotonic": 538591.4755412, "agent_id": "crane-3", "peer_id": "crane-1", "epoch": 0, "revision": 0, "holder": "crane-1", "detection_latency_seconds": 0.5264394999248907}}
+{"time": 0.6686090999282897, "event": "agent_event", "agent_event": {"event": "PEER_SUSPECTED", "timestamp": 1793086565.07071, "monotonic": 538591.4755484, "agent_id": "crane-3", "peer_id": "crane-2", "epoch": 0, "revision": 0, "holder": "crane-1", "last_seen_monotonic": 538590.9476624, "detection_latency_seconds": 0.5278847999870777, "timeout_seconds": 0.5}}
+{"time": 0.6710369999054819, "event": "peer_rpc_blocked", "sender": "crane-2", "receiver": "crane-3", "method": "Heartbeat"}
+{"time": 0.6714946998981759, "event": "peer_rpc_blocked", "sender": "crane-1", "receiver": "crane-2", "method": "Heartbeat"}
+{"time": 0.6717434999300167, "event": "peer_rpc_blocked", "sender": "crane-2", "receiver": "crane-1", "method": "Heartbeat"}
+{"time": 0.6737393999937922, "event": "peer_rpc_blocked", "sender": "crane-1", "receiver": "crane-3", "method": "Heartbeat"}
+{"time": 0.6739802999654785, "event": "peer_rpc_blocked", "sender": "crane-3", "receiver": "crane-2", "method": "Heartbeat"}
+{"time": 0.6741210999898612, "event": "peer_rpc_blocked", "sender": "crane-3", "receiver": "crane-1", "method": "Heartbeat"}
+{"time": 0.6810276999603957, "event": "check_passed", "check": "survivors_detected_holder_failure"}
+{"time": 0.7195214999374002, "event": "peer_rpc_blocked", "sender": "crane-2", "receiver": "crane-1", "method": "VoteRecovery"}
+{"time": 0.7198074999032542, "event": "peer_rpc_blocked", "sender": "crane-2", "receiver": "crane-3", "method": "VoteRecovery"}
+{"time": 0.7207615999504924, "event": "agent_event", "agent_event": {"event": "RECOVERY_NO_QUORUM", "timestamp": 1793086565.1228592, "monotonic": 538591.5276975, "agent_id": "crane-2", "peer_id": null, "epoch": 0, "revision": 0, "holder": "crane-1", "target_epoch": 1, "votes": 1, "required": 2}}
+{"time": 0.739563399925828, "event": "peer_rpc_blocked", "sender": "crane-2", "receiver": "crane-1", "method": "Heartbeat"}
+{"time": 0.7400716999545693, "event": "peer_rpc_blocked", "sender": "crane-2", "receiver": "crane-3", "method": "Heartbeat"}
+{"time": 0.7444629999808967, "event": "peer_rpc_blocked", "sender": "crane-1", "receiver": "crane-2", "method": "Heartbeat"}
+{"time": 0.7453553999075666, "event": "peer_rpc_blocked", "sender": "crane-3", "receiver": "crane-1", "method": "Heartbeat"}
+{"time": 0.7458706999896094, "event": "peer_rpc_blocked", "sender": "crane-1", "receiver": "crane-3", "method": "Heartbeat"}
+{"time": 0.7471771999262273, "event": "peer_rpc_blocked", "sender": "crane-3", "receiver": "crane-1", "method": "VoteRecovery"}
+{"time": 0.748107299907133, "event": "peer_rpc_blocked", "sender": "crane-3", "receiver": "crane-2", "method": "Heartbeat"}
+{"time": 0.7482233999762684, "event": "peer_rpc_blocked", "sender": "crane-3", "receiver": "crane-2", "method": "VoteRecovery"}
+{"time": 0.7508372999727726, "event": "agent_event", "agent_event": {"event": "RECOVERY_NO_QUORUM", "timestamp": 1793086565.1529312, "monotonic": 538591.5577696, "agent_id": "crane-3", "peer_id": null, "epoch": 0, "revision": 0, "holder": "crane-1", "target_epoch": 1, "votes": 1, "required": 2}}
+{"time": 0.7508684999775141, "event": "check_passed", "check": "isolated_members_cannot_form_quorum"}
+{"time": 0.7788695999188349, "event": "check_passed", "check": "gate_rejects_minority_certificate", "reason": "NO_QUORUM"}
+{"time": 0.8097542999312282, "event": "peer_rpc_blocked", "sender": "crane-2", "receiver": "crane-3", "method": "Heartbeat"}
+{"time": 0.8107326999306679, "event": "check_passed", "check": "nonholders_denied_lane_access"}
+{"time": 0.8126848998945206, "event": "peer_rpc_blocked", "sender": "crane-2", "receiver": "crane-1", "method": "Heartbeat"}
+{"time": 0.8136138999834657, "event": "peer_rpc_blocked", "sender": "crane-1", "receiver": "crane-3", "method": "Heartbeat"}
+{"time": 0.8144869999960065, "event": "peer_rpc_blocked", "sender": "crane-1", "receiver": "crane-2", "method": "Heartbeat"}
+{"time": 0.8162898999871686, "event": "peer_rpc_blocked", "sender": "crane-3", "receiver": "crane-1", "method": "Heartbeat"}
+{"time": 0.8209828999824822, "event": "peer_rpc_blocked", "sender": "crane-3", "receiver": "crane-2", "method": "Heartbeat"}
+{"time": 0.8237785999663174, "event": "agent_snapshot", "stage": "no_quorum", "owner": "crane-1", "authority_epoch": 0, "agents": {"crane-1": {"has_token": true, "holder": "crane-1", "epoch": 0, "mode": "LOCAL", "queue": [], "pending_transfer": ""}, "crane-2": {"has_token": false, "holder": "crane-1", "epoch": 0, "mode": "LOCAL", "queue": [], "pending_transfer": ""}, "crane-3": {"has_token": false, "holder": "crane-1", "epoch": 0, "mode": "LOCAL", "queue": [], "pending_transfer": ""}}}
+{"time": 0.8392908999230713, "event": "check_passed", "check": "authority_unchanged_without_quorum"}

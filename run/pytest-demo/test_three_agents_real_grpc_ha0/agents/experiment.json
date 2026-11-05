@@ -1,0 +1,6 @@
+{
+  "model": "three-agent-grpc-normal-handoff",
+  "rounds": 2,
+  "crossing_time": 0.01,
+  "time_basis": "host_monotonic_seconds"
+}

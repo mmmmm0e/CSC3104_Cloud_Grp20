@@ -1,0 +1,28 @@
+{
+  "model": "local-gate-normal-traffic",
+  "time_basis": "logical_seconds",
+  "cranes": 3,
+  "duration": 1,
+  "arrival_rate": 10,
+  "crossing_time": 5,
+  "seed": 20,
+  "requested": 5,
+  "accepted": 1,
+  "completed": 0,
+  "waiting": 4,
+  "occupied": 1,
+  "throughput_per_minute": 0.0,
+  "mean_wait_seconds": 0.0,
+  "p95_wait_seconds": 0.0,
+  "p99_wait_seconds": 0.0,
+  "completed_by_crane": {
+    "crane-1": 0,
+    "crane-2": 0,
+    "crane-3": 0
+  },
+  "jain_fairness": null,
+  "signed_gate_commands": 6,
+  "safety_violations": 0,
+  "recovery_latency_seconds": null,
+  "limitations": "Logical FIFO scheduler; no distributed agents, recovery, network or baselines."
+}

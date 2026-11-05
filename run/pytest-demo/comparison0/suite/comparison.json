@@ -1,0 +1,11 @@
+{
+  "seeds": [
+    20
+  ],
+  "requests": 4,
+  "duration_seconds": 3,
+  "crossing_time_seconds": 0.01,
+  "detection_timeout_seconds": 0.2,
+  "scenario": "all",
+  "limitations": "Reference central scheduler; token handoffs paced by test adapter; common gate/fencing for all models; one host process; no controller outage or production performance claim."
+}

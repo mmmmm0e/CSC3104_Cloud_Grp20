@@ -1,0 +1,22 @@
+{
+  "payload": {
+    "version": 1,
+    "lane_id": "lane-1",
+    "membership_id": "group20-evaluation-v1",
+    "epoch": 1,
+    "mode": "LOCAL",
+    "holder": "crane-2",
+    "expected_epoch": 0,
+    "expected_revision": 1
+  },
+  "signatures": [
+    {
+      "signer_id": "crane-2",
+      "signature": "xYEeTa74KKSwdSVkQbXMJgn9mMQ81HDAjU1gCWNG7CPD0FeXrbkY28gr8HCJYs7qbriojwp01prnrxpbCmI5Dg=="
+    },
+    {
+      "signer_id": "crane-3",
+      "signature": "v4WorjBii+fcMSI/550kA/VZ4BrndIrv/+UxONJp0XgdC83N243m/79uwmPjNtTIRspuBC7Mhhg1L8W1/qkuBQ=="
+    }
+  ]
+}
