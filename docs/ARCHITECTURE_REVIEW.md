@@ -8,8 +8,23 @@ merges and verification are recorded separately below.
 
 Fetched the current teammate branches and merged `origin/main` snapshot `21fac92`
 into `darius`, preserving the team-controller comparison adapter and all local
-review notes. The combined code passed **373 tests in 186.12 seconds**. This replaces
-the earlier 235-test merge result as the latest full-suite verification.
+review notes. The merged code passed 373 tests. After adding the independent
+comparison runner and its checks, the full suite passed **378 tests in 355.59
+seconds**. This is the latest full-suite verification.
+
+Dashboard comparison evidence was regenerated as `benefits-autonomous-validated`:
+54 independent-process cases covering three systems, three scenarios, three seeds
+and two request counts. All healthy batches finished; all 12 CraneLock failure
+cases resumed with agent-originated majority recovery. Request CSV totals, gate
+audits, persisted votes and independent occupancy events were checked. Real-browser
+checks passed for all scenario charts, controller-stop playback, LOCAL recovery
+and mobile layout. Sixteen obsolete saved sets and four temporary experiment
+folders were removed after verification. The layout and styling were preserved.
+
+One attempted case was invalidated when the host wall clock moved backwards by
+about 1.25 seconds. The gate correctly failed closed. The case was repeated without
+disabling that check; no clock rollback appears in the accepted 54-case dataset.
+The matrix export/compatibility subset also passed four checks after extraction.
 
 Important progress since the 3 November checklist:
 
@@ -30,18 +45,21 @@ Remaining boundaries after these changes:
 2. The generated container validation is five agents plus gate, with shared network
    namespace. It does not demonstrate the complete controller + agents + gate +
    occupancy-workload deployment across independent network endpoints/machines.
-3. The existing dashboard/evaluation path remains adapter-driven: `AgentCluster`
-   omits gate integration/automatic recovery workers, while `benefits.py` and
-   `failures.py` invoke recovery and reconciliation explicitly. The new autonomous
-   process tests are different evidence, not a relabeling of the old comparison runs.
+3. The dashboard's new `benefits-v4` path now launches separate gate, controller
+   and crane processes. Agent workers perform recovery and LOCAL token handoff;
+   the runner supplies demand, physical observations and process failures.
+   CENTRAL assignment still uses the test-only transport around the team's core.
+   Legacy `failures.py`/`comparison.py` modes remain harness-orchestrated safety
+   fixtures, distinct from the autonomous comparisons. Old saved dashboard sets
+   were removed after validating the fresh process-based matrix.
 4. The checked Kubernetes deployment still covers the gate, now with an optional
    TLS patch; no end-to-end crane/controller Kubernetes deployment is established.
 5. Actual edge-network placement, independent failure boundaries and participant
    scalability must still be demonstrated if retained as claims. The new process
    tests accurately report loopback peer transport and mutual TLS to gate/controller.
 
-Future comparison runs record controller source `21fac92`. Existing saved runs keep
-their original source identity and timing values. The preserved 3 November review
+New comparison runs record controller source `21fac92` and identify automatic
+agent recovery explicitly; changing code never upgrades an old saved measurement. The preserved 3 November review
 below is historical: do not treat its launcher/controller missing-work entries as
 the current state.
 

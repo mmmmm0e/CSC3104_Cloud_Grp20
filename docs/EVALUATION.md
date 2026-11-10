@@ -13,7 +13,7 @@ Open **http://127.0.0.1:8765**. The viewer reads `run/evaluation`; it does not s
 experiments or control cranes. Use **Refresh results** after generating results
 and **Ctrl + F5** after changing the interface. Stop the server with Ctrl+C.
 
-The recommended set is `benefits-team-controller-validated` when available. Select a scenario in the
+The recommended set is `benefits-autonomous-validated` when available. Select a scenario in the
 main dropdown. Request count and sequence filters are inside **Test settings and
 saved experiments**. A sequence (seed) repeats the same requests; it is not a crane.
 
@@ -66,19 +66,22 @@ retains the earlier fixed-window healthy/holder-failure comparison.
 | Basic token | Cranes pass one token | Continues locally; no controller recovery needed | Stalls because it cannot replace the missing token |
 | CraneLock | Starts centrally in the benefits experiment | Detects missing heartbeats, obtains majority votes and installs LOCAL authority | Can replace the token with majority-approved recovery |
 
-Central authority now uses `cranelock/controller.py`, merged from the team's
-`main` snapshot `21fac92`, including gate-aware reconciliation and controller lifecycle
-support. Previously saved team-controller runs retain their original source commit;
-new runs record `21fac92`.
-The benefits harness supplies a small gRPC
-Heartbeat/Assign service around `CentralController.install_central`; it contains
-no substitute signing or assignment algorithm. The outage test stops this service
-during demand while the cranes and gate remain running. Holder-failure comparison
-also calls the team's controller for the central baseline, through its Python API.
-The harness still schedules requests and initiates majority recovery. This does
-not establish autonomous deployment or the controller CLI's availability: the
-teammate's CLI is a state monitor, not this test-only service. Separate-device and
-cloud/container integration remain to be tested.
+Central authority uses `cranelock/controller.py`, merged from the team's main
+snapshot `21fac92`. The new `benefits-v4` runner starts five independent processes:
+a controller, a gate and three crane agents. Agents use the supported CLI with
+gate integration, their own signing keys and automatic recovery enabled for CraneLock.
+
+The controller process exposes the real controller heartbeat service. A small
+Assign transport wraps `CentralController.install_central` for workload scheduling.
+The test runner submits demand, models lane occupancy and kills the controller or
+token-holder process. Agent workers detect failure, collect signed majority votes,
+install replacement authority and pass the LOCAL token; the runner does not call
+recovery or token-transfer methods. Only initial LOCAL bootstrap uses a fixture
+certificate. The independent gate still validates every physical entry.
+
+These are separate processes on **one computer using loopback gRPC**. The physical
+cranes and lane remain simulated. This evaluation does not demonstrate Docker,
+Kubernetes, a remote network or actual Tuas port hardware.
 
 ## Read the measurements
 
@@ -86,7 +89,7 @@ cloud/container integration remain to be tested.
 finishes. Total completion time excludes setup and teardown. Average waiting
 includes every request's request-to-entry delay. Lower values are better. A
 separate watchdog fails a stalled batch; it never reports partial work as a fast
-successful completion. New team-controller runs use `benefits-v3` and
+successful completion. New autonomous runs use `benefits-v4` and
 `measurement_policy=complete_all_requests`.
 
 **Failure tests** keep requests arriving over a fixed observation window (five
@@ -98,24 +101,20 @@ permission agreement and waiting for demand or clearance. A system that never
 resumes has no successful recovery time. Basic token needs no controller-failure
 recovery because it is already local.
 
-Older fixed-window healthy results can exclude a request that exits just after
-the cutoff. Such a late completion is not a failed request. Compare models within
-the same request sequence, count, workload hash and measurement policy. Do not
-compare batch waiting directly with steady-stream waiting or mix old and new
-healthy measurements. RPC counts, where recorded, count instrumented attempts;
-they are not network packet or byte totals. Holder-failure RPC cost is unmeasured.
+Compare only identical request sequences, counts, workload hashes and timing
+parameters. Pairing also requires the same evaluation version, recovery driver,
+execution mode and controller revision. RPC counts are unmeasured in the independent
+process runner and are not presented as a performance benefit.
 
-New team-controller results use `benefits-v3` and record
-`controller_implementation` and `controller_source_commit`. Pairing rejects
-different implementations or controller revisions. Generate a fresh full matrix:
+Generate a fresh full matrix (the directory must not already exist):
 
 ```powershell
-.\.venv\Scripts\python.exe -m cranelock_sim --mode benefits --duration 5 --output run/evaluation/benefits-team-controller-validated
+.\.venv\Scripts\python.exe -m cranelock_sim --mode benefits --duration 5 --output run/evaluation/benefits-autonomous-validated --no-plots
 ```
 
-The directory must not already exist. Older `benefits-completion-validated` and
-`benefits-validated` results retain their original reference-controller evidence
-and labels; changing the code does not upgrade previously saved measurements.
+Old saved comparison sets have been removed after validating their replacement.
+Running pytest verifies behavior; it does not populate the dashboard. Teammates
+must run the experiment command to generate their own local results.
 
 ## Other safety tests
 
@@ -149,26 +148,28 @@ these runs. State databases and private keys must not be published.
 | --- | --- |
 | `cranelock_sim/__main__.py` | Command entry point for all simulator modes |
 | `experiment.py`, `agents.py`, `failures.py` | Workload, live-agent and failure scenarios |
-| `comparison.py`, `benefits.py` | Paired baseline and benefits experiments |
+| `autonomous.py`, `benefits.py` | Independent service processes, measured automatic recovery and paired results |
+| `comparison.py` | Earlier focused comparison adapter and shared export helpers |
 | `lane.py`, `network.py`, `controller.py` | Shared physical lane, network faults and test transport for the team controller |
 | `dashboard.py` | Local results server |
 | `web/index.html`, `web/style.css`, `web/app.js` | Page structure, appearance and interaction |
 | `tests/test_*.py` | Checks grouped by the behavior they test |
 
-These experiments use three agents on one host, a common trusted gate and fixed
-membership. The team's authority implementation is integrated locally through a
-test adapter; deployment and autonomous recovery orchestration remain pending. Physical occupancy is
-modeled independently of digital authority: changing holder or epoch never clears
-the lane. Zero detected safety violations is a bounded observation, not a proof
-of safety for every failure or a production port performance benchmark.
+The benefits matrix uses three agents and fixed membership. Physical occupancy
+is modeled independently of digital authority: changing holder or epoch never
+clears the lane. Zero detected safety violations is a bounded observation, not a
+proof of safety for every failure or a production performance benchmark.
+
+Legacy focused modes (`recovery`, `partition`, `restart`, `compare`) remain useful
+protocol/safety fixtures. They use harness orchestration and are distinct from the
+autonomous `benefits-v4` measurements. They are not evidence of deployed recovery.
+
+Independent runs retain raw service logs, per-agent durable votes, the gate audit,
+process IDs and endpoints. The browser serves only allowlisted evidence; private
+keys and SQLite state must stay local. No replacement certificate is fabricated
+by the runner for an output artifact.
 
 ## Verify changes
-
-The local handoff adapter retries the same holder announcement up to three times
-using the configured control RPC timeout. It confirms every agent's reported holder
-before updating the gate. Persistent delivery failure stops the experiment and
-retains diagnostic events; retries never restore ownership or invent a transfer.
-Instrumented retries contribute to the actual RPC counts and elapsed measurements.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q

@@ -241,12 +241,14 @@ unless explicitly enabled for an isolated simulation.
 
 For the evaluation role, [benefits and costs](docs/EVALUATION.md#read-the-measurements) compares actual
 team-controller adapter outage, lost-token recovery and healthy-operation overhead.
-Run `python -m cranelock_sim --mode benefits --duration 5 --output run/evaluation/benefits-team-controller-validated`,
+Run `python -m cranelock_sim --mode benefits --duration 5 --output run/evaluation/benefits-autonomous-validated`,
 then `python -m cranelock_sim.dashboard`. The dashboard explains paired gains and
-costs. Central permissions use `cranelock.controller.CentralController`; the harness
-provides gRPC transport, workload scheduling and recovery initiation. Autonomous
-deployed orchestration remains an outstanding integration boundary. Older saved
-reference-controller results remain historical evidence.
+costs. Central permissions use `cranelock.controller.CentralController`. The v4
+runner starts independent gate, controller and crane processes; crane workers
+perform automatic recovery and LOCAL token handoff. The harness submits demand,
+injects process failures and models physical lane occupancy. CENTRAL assignment
+uses a test transport. This is a one-host loopback evaluation; container/cloud
+deployment and actual port networking need separate runtime evidence.
 
 - [Contract and signing format](docs/CONTRACT.md): Member 1's proposed shared proto,
   Member 2's certificate format, and Member 4/5 integration rules.

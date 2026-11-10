@@ -432,3 +432,32 @@ def test_controller_visibly_stops_and_stays_offline_during_local_fallback(browse
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     assert not errors
     page.close()
+
+
+
+def test_autonomous_results_are_preferred_and_explain_process_scope(browser, dashboard_server):
+    import json
+    from test_dashboard import save
+    url, root = dashboard_server
+    for scenario in ("normal", "controller-outage", "holder-failure"):
+        for model in ("central-lock", "basic-token", "cranelock"):
+            path = root / "benefits-autonomous-validated" / scenario / model
+            settings = dict(model=model, scenario=scenario, seed=20,
+                controller_implementation="cranelock.controller.CentralController", controller_source_commit="21fac92",
+                recovery_driver="agent_workers", execution_mode="independent_processes", evaluation="benefits-v4")
+            save(path, "experiment.json", settings)
+            save(path, "summary.json", dict(**settings, requested=6, completed=6, accepted=6,
+                mean_wait_seconds=.2, safety_violations=0, workload_sha256="same", duration_seconds=5,
+                crossing_time_seconds=.03, detection_timeout_seconds=.25, post_fault_new_entries=4,
+                resumed_within_window=True, outage_to_entry_seconds=.3))
+            (path / "events.jsonl").write_text(json.dumps(dict(time=0, event="workload_started", requests=6)))
+    page = browser.new_page()
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.goto(url)
+    playwright.expect(page.locator("#collection")).to_have_value("benefits-autonomous-validated")
+    playwright.expect(page.locator("#benefit-scope")).to_contain_text("Agents perform recovery")
+    playwright.expect(page.locator("#benefit-scope")).to_contain_text("loopback gRPC")
+    assert "recovery initiation are supplied by the local harness" not in page.locator("#benefit-scope").inner_text()
+    assert not errors
+    page.close()

@@ -30,7 +30,7 @@ class Lane:
                     sequence=state["observation_sequence"] + 1,
                     observed_at_ms=round(self.clock() * 1000),
                     lane_state="CLEAR" if self.occupant is None else "OCCUPIED")
-                if result["allowed"] or result["reason"] != "STALE_OBSERVATION":
+                if result["allowed"] or result["reason"] not in {"STALE_OBSERVATION", "STALE_SESSION"}:
                     return result
                 # Maintenance may have changed the observation phase between
                 # GetState and ReportLaneState. Read again and take a NEW sample

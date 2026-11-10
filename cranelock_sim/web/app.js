@@ -10,7 +10,8 @@ const title = text => String(text??"").replaceAll("_"," ").replaceAll("-"," ").r
 const label = m => names[m] || title(m);
 const usesTeamController=r=>r?.summary?.controller_implementation==="cranelock.controller.CentralController";
 const controllerLabel=r=>usesTeamController(r)?"Team controller":"Reference controller";
-const controllerScope=r=>usesTeamController(r)?"Central permissions use the team's CentralController through a test adapter. Scheduling, heartbeats and recovery initiation are supplied by the local harness; this is not a deployed controller service.":"Historical reference-controller results; these saved runs do not exercise the teammate controller.";
+const usesAutonomous=r=>r?.summary?.evaluation==="benefits-v4"&&r.summary.recovery_driver==="agent_workers"&&r.summary.execution_mode==="independent_processes";
+const controllerScope=r=>usesAutonomous(r)?"Crane agents, the team's controller and the gate run in separate processes on one computer. Agents perform recovery and LOCAL token handoff themselves over loopback gRPC. The runner supplies demand, process failures and simulated lane observations. CENTRAL scheduling uses a test adapter. This does not test Docker, a remote network or physical cranes.":usesTeamController(r)?"Central permissions use the team's CentralController through a test adapter. Scheduling, heartbeats and recovery initiation are supplied by the local harness; this is not a deployed controller service.":"Historical reference-controller results; these saved runs do not exercise the teammate controller.";
 let catalog={runs:[],collections:[],warnings:[]}, visible=[], selected=null, detail=null, trace=[], eventRows=[];
 let playing=false, frame=0, lastFrame=0, generation=0, currentTime=0, lastActive=-1;
 let steps=[], currentOrder=-1, holdElapsed=0;
@@ -20,7 +21,7 @@ const situation=s=>situationNames[s]||title(s);
 const familyNames={comparison:"Compare the three systems",agents:"Normal token handoff",logical:"Generated lane traffic",recovery:"Crash and majority recovery",partition:"Lost communication / network split",restart:"Restart and safe rejoin",other:"Other saved experiments"};
 function describe(r){
   const s=r?.summary||{},f=r?.family||"other",scenario=r?.scenario||"normal";
-  if(f==="comparison"&&scenario==="controller-outage")return {what:`The ${usesTeamController(r)?"team controller service adapter":"reference controller service"} is stopped one-third through a steady stream of identical requests. All three cranes and the gate stay running.`,expected:"Central lock loses its coordinator. CraneLock starts centrally, detects missing controller heartbeats, obtains real majority votes and installs LOCAL authority. Basic token is already local and needs no switch. Existing occupancy must remain protected."};
+  if(f==="comparison"&&scenario==="controller-outage")return {what:`The ${usesAutonomous(r)?"independent team-controller process":usesTeamController(r)?"team controller service adapter":"reference controller service"} is stopped one-third through a steady stream of identical requests. All three cranes and the gate stay running.`,expected:"Central lock loses its coordinator. CraneLock starts centrally, detects missing controller heartbeats, obtains real majority votes and installs LOCAL authority. Basic token is already local and needs no switch. Existing occupancy must remain protected."};
   if(f==="comparison")return {
     what:scenario==="holder-failure"?"Crane A starts with the token, then its software is stopped before entry. The same requests from B and C are sent to each system.":"The same requests are sent to three systems while all cranes are healthy. This measures how they coordinate access to one shared lane.",
     expected:scenario==="holder-failure"?"Basic token should stall because it cannot replace a lost token. CraneLock should recover with B and C's approval. The central controller can also reassign because its coordinator remains available.":"Each system should let one authorised crane enter at a time and complete the requests. A recovery advantage is not expected when nothing has failed."};
@@ -46,9 +47,9 @@ function populateCollections(previous){
   let choices=catalog.collections;
   if(!$("all-collections").checked){
     const families=[...new Set(choices.map(c=>c.family))];
-    choices=families.map(f=>choices.find(c=>c.family===f&&catalog.runs.some(r=>r.collection===c.id&&r.summary.evaluation==="benefits-v3"&&r.status==="passed"))||choices.find(c=>c.family===f&&c.id==="benefits-completion-validated")||choices.find(c=>c.family===f&&c.id==="benefits-validated")||choices.find(c=>c.family===f&&c.id.includes("validated"))||choices.find(c=>c.family===f&&!c.id.includes("development"))||choices.find(c=>c.family===f));
+    choices=families.map(f=>choices.find(c=>c.family===f&&catalog.runs.some(r=>r.collection===c.id&&usesAutonomous(r)&&r.status==="passed"))||choices.find(c=>c.family===f&&catalog.runs.some(r=>r.collection===c.id&&["benefits-v4","benefits-v3"].includes(r.summary.evaluation)&&r.status==="passed"))||choices.find(c=>c.family===f&&c.id==="benefits-completion-validated")||choices.find(c=>c.family===f&&c.id==="benefits-validated")||choices.find(c=>c.family===f&&c.id.includes("validated"))||choices.find(c=>c.family===f&&!c.id.includes("development"))||choices.find(c=>c.family===f));
   }
-  const preferred=choices.find(c=>catalog.runs.some(r=>r.collection===c.id&&r.summary.evaluation==="benefits-v3"&&r.status==="passed"))||choices.find(c=>c.id==="benefits-completion-validated")||choices.find(c=>c.id==="benefits-validated")||choices.find(c=>c.id==="comparison-validated")||choices.find(c=>c.family==="comparison")||choices[0];
+  const preferred=choices.find(c=>catalog.runs.some(r=>r.collection===c.id&&usesAutonomous(r)&&r.status==="passed"))||choices.find(c=>catalog.runs.some(r=>r.collection===c.id&&["benefits-v4","benefits-v3"].includes(r.summary.evaluation)&&r.status==="passed"))||choices.find(c=>c.id==="benefits-completion-validated")||choices.find(c=>c.id==="benefits-validated")||choices.find(c=>c.id==="comparison-validated")||choices.find(c=>c.family==="comparison")||choices[0];
   setOptions($("collection"),choices.map(c=>[c.id,`${familyNames[c.family]||"Saved results"} · ${c.count} runs${$("all-collections").checked?` · ${c.id}`:""}`]),choices.some(c=>c.id===previous)?previous:preferred?.id);
 }
 function renderExplanation(){
@@ -130,8 +131,8 @@ function filter(){
 }
 function pairDifferences(rows,scenario,baseline,metric){
   const fields=["seed","requested","workload_sha256","duration_seconds","crossing_time_seconds","detection_timeout_seconds","evaluation"];
-  const key=r=>JSON.stringify([...fields.map(f=>r.summary[f]),r.summary.measurement_policy||"fixed_window",r.summary.controller_implementation,r.summary.controller_source_commit]);
-  const valid=r=>r.status==="passed"&&["benefits-v1","benefits-v2","benefits-v3"].includes(r.summary.evaluation)&&(r.summary.evaluation!=="benefits-v3"||(usesTeamController(r)&&typeof r.summary.controller_source_commit==="string"))&&typeof r.summary.workload_sha256==="string"&&fields.every(f=>r.summary[f]!==undefined);
+  const key=r=>JSON.stringify([...fields.map(f=>r.summary[f]),r.summary.measurement_policy||"fixed_window",r.summary.controller_implementation,r.summary.controller_source_commit,r.summary.recovery_driver,r.summary.execution_mode]);
+  const valid=r=>r.status==="passed"&&["benefits-v1","benefits-v2","benefits-v3","benefits-v4"].includes(r.summary.evaluation)&&(!["benefits-v3","benefits-v4"].includes(r.summary.evaluation)||(usesTeamController(r)&&typeof r.summary.controller_source_commit==="string"))&&(r.summary.evaluation!=="benefits-v4"||usesAutonomous(r))&&typeof r.summary.workload_sha256==="string"&&fields.every(f=>r.summary[f]!==undefined);
   const refs=rows.filter(r=>valid(r)&&r.scenario===scenario&&r.model===baseline);
   return rows.filter(r=>valid(r)&&r.scenario===scenario&&r.model==="cranelock").flatMap(r=>{const matches=refs.filter(other=>key(other)===key(r));if(matches.length!==1)return [];const other=matches[0];return finite(r.summary[metric])&&finite(other.summary[metric])?[r.summary[metric]-other.summary[metric]]:[];});
 }
@@ -418,6 +419,7 @@ function explainEvent(e){
     entry_denied:["The gate denies entry",`Reason: ${e.reason||"recorded denial"}. No physical movement is applied for this attempt.`],
     entry_uncertain:["Entry permission is uncertain","The response was unavailable or lost. The simulator makes no movement and requires reconciliation rather than assuming success."],
     experiment_failed:["The experiment stops on a failed check",e.detail||"Read the retained failure evidence; this run must not be treated as successful."],
+    recovery_installed:["Agents restored token authority","The surviving agent workers obtained majority votes and installed a new epoch at the gate. The test runner only observed this change."],
     agent_snapshot:["A recorded state check",e.stage?.includes("restarted")?"This snapshot checks whether restarted A is blocked or safely reconciled. It does not itself grant permission.":"The test reads the agents' reported ownership and compares it with accepted authority."],
   };
   if(stories[e.event])return stories[e.event];
@@ -496,7 +498,7 @@ function renderPlayback(time,order=null){
     if(e.event==="controller_stopped")controllerStopped=true;
     if(e.event==="agent_event"&&e.agent_event?.event==="CONTROLLER_SUSPECTED")controllerDetected=true;
     if(e.event==="grant_issued"){owner=e.crane;epoch=e.epoch;}
-    if(e.event==="controller_fallback_installed"){owner=e.holder;epoch=e.epoch;coordinationMode="LOCAL";}
+    if(e.event==="controller_fallback_installed"||e.event==="recovery_installed"){owner=e.holder;epoch=e.epoch;coordinationMode="LOCAL";}
     if(e.event==="agent_snapshot"){owner=e.owner;epoch=e.authority_epoch??Object.values(e.agents||{})[0]?.epoch??null;agentStates=Object.fromEntries(Object.entries(e.agents||{}).map(([id,state])=>[id,{...state}]));}
     if(e.event==="agent_event"&&["MODE_CHANGED","AGENT_STARTED"].includes(e.agent_event?.event)){agentStates[e.agent_event.agent_id]={...agentStates[e.agent_event.agent_id],mode:e.agent_event.mode};}
     if(e.event==="agent_event"&&e.agent_event?.event==="TOKEN_TRANSFER_STARTED")owner=null;

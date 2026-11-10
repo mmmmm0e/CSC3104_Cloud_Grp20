@@ -59,12 +59,10 @@ def test_complete_batch_pairing_does_not_mix_fixed_window_results():
 
 @pytest.mark.parametrize("model", ["central-lock", "basic-token", "cranelock"])
 def test_normal_finishes_entire_batch_beyond_former_cutoff(tmp_path, model, monkeypatch):
-    calls = []
-    original = CentralController.install_central
-    def install(self, holder, **options):
-        calls.append(holder)
-        return original(self, holder, **options)
-    monkeypatch.setattr(CentralController, "install_central", install)
+    # In-process recovery must never be used by this runner.
+    def forbidden(*args, **kwargs):
+        raise AssertionError("test harness attempted recovery")
+    monkeypatch.setattr(Agent, "propose_recovery", forbidden)
     rows=[dict(row,requested_at=0.0) for row in make_workload(7,3,.1)]
     output=tmp_path / model
     result=asyncio.run(run_case(output,model,"normal",rows,seed=7,duration=.1,
@@ -76,10 +74,12 @@ def test_normal_finishes_entire_batch_beyond_former_cutoff(tmp_path, model, monk
     assert result["total_completion_seconds"]>.1
     assert result["mean_wait_seconds"]>=0
     assert result["unfinished_at_horizon"] is None
-    assert result["rpc_per_completed"]>0
-    assert result["evaluation"] == "benefits-v3"
+    assert result["rpc_per_completed"] is None
+    assert result["evaluation"] == "benefits-v4"
+    assert result["recovery_driver"] == "agent_workers"
+    assert len(set(result["process_ids"].values())) == 5
     assert result["controller_implementation"] == CONTROLLER_IMPLEMENTATION
-    assert calls == ([] if model == "basic-token" else ["crane-1"] + [r["crane"] for r in rows])
+    assert result["execution_mode"] == "independent_processes"
     import csv
     with (output / "requests.csv").open() as stream:
         requests=list(csv.DictReader(stream))
@@ -87,15 +87,15 @@ def test_normal_finishes_entire_batch_beyond_former_cutoff(tmp_path, model, monk
     assert result["total_completion_seconds"]>=max(float(row["exited_at"]) for row in requests)
 
 
-def test_controller_errors_do_not_fall_back_to_reference_logic(tmp_path, monkeypatch):
-    def unavailable(self, holder, **options):
-        raise RuntimeError("injected team controller failure")
-    monkeypatch.setattr(CentralController, "install_central", unavailable)
-    with pytest.raises(Exception, match="injected team controller failure"):
-        asyncio.run(run_case(tmp_path / "failed", "central-lock", "normal",
-            [dict(r, requested_at=0.0) for r in make_workload(7, 3, 1)], seed=7,
-            duration=1, crossing_time=.03, detection_timeout=.2))
-    assert (tmp_path / "failed/failure.json").is_file()
+def test_controller_errors_do_not_fall_back_to_reference_logic(monkeypatch):
+    from cranelock_sim.controller import TeamControllerService
+    service = object.__new__(TeamControllerService)
+    class BrokenController:
+        def install_central(self, holder):
+            raise RuntimeError("injected team controller failure")
+    service.controller = BrokenController()
+    with pytest.raises(RuntimeError, match="injected team controller failure"):
+        service.assign({"holder": "crane-2"}, None)
 
 
 def test_team_results_are_not_paired_with_reference_or_different_controller_versions():
@@ -112,13 +112,16 @@ def test_team_results_are_not_paired_with_reference_or_different_controller_vers
 
 
 @pytest.mark.parametrize("model", ["central-lock", "basic-token", "cranelock"])
-def test_real_controller_outage_comparison(tmp_path, model):
+def test_real_controller_outage_comparison(tmp_path, model, monkeypatch):
+    def forbidden(*args, **kwargs):
+        raise AssertionError("host runner must not propose recovery")
+    monkeypatch.setattr(Agent, "propose_recovery", forbidden)
     output = tmp_path / model
-    result = asyncio.run(run_case(output, model, "controller-outage", make_workload(7, 6, 2.4),
-        seed=7, duration=2.4, crossing_time=.03, detection_timeout=.2))
+    result = asyncio.run(run_case(output, model, "controller-outage", make_workload(7, 6, 5),
+        seed=7, duration=5, crossing_time=.03, detection_timeout=.2))
     events = [json.loads(line) for line in (output / "events.jsonl").read_text().splitlines()]
     assert any(event["event"] == "controller_rpc_unavailable" for event in events)
-    assert result["rpc_attempts"] > 0 and result["safety_violations"] == 0
+    assert result["rpc_attempts"] is None and result["safety_violations"] == 0
     assert not any(event["event"] == "holder_stopped" for event in events)
     if model == "central-lock":
         assert result["post_fault_new_entries"] == 0
@@ -131,13 +134,19 @@ def test_real_controller_outage_comparison(tmp_path, model):
         assert result["final_mode"] == "LOCAL"
     if model == "cranelock":
         assert result["initial_mode"] == "CENTRAL"
-        cert = json.loads((output / "recovery-certificate.json").read_text())
-        assert len({signature["signer_id"] for signature in cert["signatures"]}) >= 2
-        assert cert["payload"]["epoch"] == 1
-        assert result["rpc_by_method"]["peer.VoteRecovery"] >= 2
+        formed = [e["agent_event"] for e in events
+                  if e.get("agent_event", {}).get("event") == "RECOVERY_CERTIFICATE_FORMED"]
+        assert formed and all(e["target_epoch"] >= 1 for e in formed)
+        # Inspect independently persisted agent votes and the gate's own audit,
+        # rather than a certificate manufactured by the experiment runner.
+        voters = [json.loads((output / f"crane-{i}.json").read_text()) for i in (1,2,3)]
+        assert sum(bool(v["vote_state"]) for v in voters) >= 2
+        audit = [json.loads(line) for line in (output / "gate-events.jsonl").read_text().splitlines()]
+        assert any(e["operation"] == "InstallAuthority" and e["allowed"] and e["epoch"] >= 1 for e in audit)
         assert result["failure_detection_seconds"] > 0
-        assert any(event["event"] == "stale_central_authority_rejected" and event["reason"] == "STALE_EPOCH" for event in events)
-        assert sum(event.get("agent_event", {}).get("event") == "CONTROLLER_SUSPECTED" for event in events) == 3
+        assert any(e.get("agent_event", {}).get("event") == "CONTROLLER_SUSPECTED" for e in events)
+        assert len([e for e in events if e["event"] == "request"]) == 6
+
 
 
 def test_switch_preserves_an_occupied_lane(tmp_path):
@@ -219,3 +228,37 @@ def test_matrix_exports_mixed_scenario_metrics_without_dropping_fields(tmp_path,
     assert "rpc_attempts" in rows[0] and "authority_recovery_seconds" in rows[0]
     assert all(row["rpc_attempts"] == "" for row in rows if row["scenario"] == "holder-failure")
     assert json.loads((output / "summary.json").read_text())["passed"]
+
+
+@pytest.mark.parametrize("model", ["central-lock", "basic-token", "cranelock"])
+def test_independent_holder_failure_observes_real_agent_recovery(tmp_path, model):
+    output = tmp_path / model
+    result = asyncio.run(run_case(output, model, "holder-failure", make_workload(7, 6, 5),
+        seed=7, duration=5, crossing_time=.03, detection_timeout=.25))
+    events = [json.loads(line) for line in (output / "events.jsonl").read_text().splitlines()]
+    assert result["safety_violations"] == 0
+    assert len([e for e in events if e["event"] == "request"]) == 6
+    assert any(e["event"] == "holder_stopped" for e in events)
+    if model == "basic-token":
+        assert result["accepted"] == result["completed"] == 0
+        assert result["outage_to_entry_seconds"] is None
+    else:
+        assert result["completed"] > 0 and result["resumed_within_window"]
+    if model == "cranelock":
+        assert result["final_mode"] == "LOCAL"
+        assert any(e["event"] == "recovery_installed" for e in events)
+        assert sum(bool(json.loads((output / f"crane-{i}.json").read_text())["vote_state"])
+                   for i in (2, 3)) == 2
+
+
+def test_pairing_does_not_mix_autonomous_and_harness_recovery():
+    base = dict(seed=7, requested=6, workload_sha256="same", duration_seconds=5,
+        crossing_time_seconds=.03, detection_timeout_seconds=.25,
+        evaluation="benefits-v4", scenario="controller-outage", mean_wait_seconds=.1,
+        controller_implementation=CONTROLLER_IMPLEMENTATION, controller_source_commit=CONTROLLER_SOURCE,
+        recovery_driver="agent_workers", execution_mode="independent_processes")
+    central = dict(base, model="central-lock")
+    crane = dict(base, model="cranelock", mean_wait_seconds=.2)
+    assert paired([central, crane], "controller-outage", "central-lock", "mean_wait_seconds")["median"] == pytest.approx(.1)
+    for change in (dict(evaluation="benefits-v3"), dict(recovery_driver="harness"), dict(execution_mode="in_process")):
+        assert paired([dict(central, **change), crane], "controller-outage", "central-lock", "mean_wait_seconds")["median"] is None
