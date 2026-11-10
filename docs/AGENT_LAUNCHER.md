@@ -181,3 +181,36 @@ Missing, malformed or mismatched configuration exits with an argparse error
 (status 2), before serving agent RPCs. A gate client created during validation is
 closed on a later validation failure. The existing one-vote-per-target-epoch
 rule and stale-snapshot availability limitation are unchanged.
+
+## Process lifecycle integration test
+
+`tests/test_controller_process.py` starts the real Trusted Gate, real controller
+launcher and all three agent launchers as independent OS processes. It uses
+temporary Ed25519 identities, one recovery key/state file per agent, isolated
+ports, and mutual TLS for gate/controller connections. Peer RPCs retain the current
+loopback transport. The driver submits workload through the existing TokenRequest
+RPC and signs physical lane observations; actual agent processes perform holder
+transfers, peer token delivery, voting and fallback installation.
+
+The cases kill the controller with all three agents alive, kill it with only two
+agents surviving, and verify refusal to install LOCAL with only one survivor.
+They restart the real controller, verify holder-preserving CENTRAL restoration,
+reject stale epochs/revisions/holders and delayed certificates/token transfers,
+preserve occupied-lane blocking, and admit a valid new entry after trusted exit
+confirmation. All child processes are stopped and reaped, including on failure.
+
+Run with a fresh Windows-local pytest directory:
+
+```powershell
+$testTemp = Join-Path $PWD ("run/pytest-controller-process-" + [guid]::NewGuid().ToString("N"))
+.\.venv\Scripts\python.exe -B -m pytest tests/test_controller_process.py --basetemp $testTemp -q
+```
+
+Each case records `controller-process-results.json`, individual service logs and
+`gate-audit.jsonl` under its pytest temporary directory. The JSON records per-agent
+failure detection, observed LOCAL installation, controller restart-to-CENTRAL and
+restart-to-agent-convergence latency, authority snapshots, vote/handoff evidence,
+PIDs and exit codes. Detection uses the same host's monotonic clocks; gate phase
+times are observed through RPC polling, and restoration includes process startup.
+These are local observations rather than production latency guarantees. Credentials
+and runtime artifacts stay in temporary directories and must not be committed.
