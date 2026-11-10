@@ -1,7 +1,0 @@
-{
-  "cranes": 3,
-  "duration": 1,
-  "arrival_rate": 10,
-  "crossing_time": 5,
-  "seed": 20
-}

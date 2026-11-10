@@ -125,6 +125,8 @@ async def main(argv=None):
             "127.0.0.1", "localhost", "[::1]"}:
         parser.error("Controller connections outside loopback require mutual TLS")
     gate = None
+    if args.enable_recovery and not args.gate_address:
+        parser.error("--enable-recovery requires the signed gate configuration")
     if any([args.gate_tls_ca, args.gate_tls_cert, args.gate_tls_key]) and not args.gate_address:
         parser.error("Gate TLS options require --gate-address")
     if any([args.gate_address, args.gate_config, args.gate_keys]):

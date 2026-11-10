@@ -1,5 +1,0 @@
-{"time": 0.1, "event": "holder_stopped", "crane": "crane-1"}
-{"time": 0.2, "event": "agent_event", "agent_event": {"event": "HEARTBEAT_SENT", "agent_id": "crane-2"}}
-{"time": 0.4, "event": "agent_snapshot", "owner": "crane-2", "authority_epoch": 1, "agents": {"crane-2": {"has_token": true, "epoch": 1, "mode": "LOCAL"}}}
-{"time": 0.5, "event": "physical_entry", "crane": "crane-2", "request_id": "r1"}
-{"time": 0.7, "event": "physical_exit", "crane": "crane-2", "request_id": "r1"}

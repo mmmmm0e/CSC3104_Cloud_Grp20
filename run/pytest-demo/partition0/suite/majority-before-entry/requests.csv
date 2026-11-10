@@ -1,3 +1,0 @@
-request_id,crane,requested_at,entered_at,exited_at,status
-old-holder,crane-1,0.18354239990003407,,,isolated-before-entry
-replacement-holder,crane-2,0.6798572998959571,0.9383844999829307,0.9981419999385253,completed

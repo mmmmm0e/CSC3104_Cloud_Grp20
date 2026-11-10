@@ -1,1 +1,0 @@
-{"model": "basic-token", "scenario": "holder-failure", "seed": 7, "completed": 0, "requested": 6, "unfinished_at_horizon": 6, "p95_wait_seconds": null, "recovery_latency_seconds": null, "resumed_within_window": false, "throughput_per_minute": 0, "safety_violations": 0, "limitations": "TEST FIXTURE: reference central scheduler; shared gate."}

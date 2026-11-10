@@ -1,9 +1,0 @@
-{
-  "model": "holder-service-stop-recovery",
-  "scenario": "before-entry",
-  "fault": "service-stop",
-  "detection_timeout_seconds": 0.5,
-  "clearance_delay_seconds": 0.1,
-  "crossing_time_seconds": 0.05,
-  "time_basis": "host_monotonic_seconds"
-}

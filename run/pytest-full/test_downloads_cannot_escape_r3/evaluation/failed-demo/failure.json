@@ -1,1 +1,0 @@
-{"error": "RuntimeError", "detail": "<img src=x onerror=\"alert(1)\"> test failure"}

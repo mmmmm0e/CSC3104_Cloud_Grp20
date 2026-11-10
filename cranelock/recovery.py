@@ -72,6 +72,41 @@ def record_vote(vote_state, payload):
     vote_state[target] = digest
 
 
+# explains why a changed proposal cannot replace a durable vote
+def retry_block(vote_state, proposals, payload):
+    target = str(payload["epoch"])
+    previous = vote_state.get(target)
+    if previous is None or previous == hashlib.sha256(canonical(payload)).hexdigest():
+        return None
+    saved = proposals.get(target)
+    if saved and saved["expected_revision"] != payload["expected_revision"]:
+        return "STALE_VOTE_REVISION"
+    return "CONFLICTING_VOTE"
+
+
+# retains the exact proposal alongside its immutable digest
+def remember_proposal(vote_state, proposals, payload):
+    record_vote(vote_state, payload)
+    proposals[str(payload["epoch"])] = json.loads(canonical(payload))
+
+
+# checks saved proposal metadata without changing legacy digest-only votes
+def validate_saved(config, vote_state, proposals):
+    if type(vote_state) is not dict or type(proposals) is not dict:
+        raise ValueError("Invalid durable recovery state")
+    for target, digest in vote_state.items():
+        if (type(target) is not str or not target.isascii() or not target.isdecimal()
+                or len(target) > 19 or str(int(target)) != target or int(target) > MAX_INTEGER
+                or type(digest) is not str or len(digest) != 64
+                or any(character not in "0123456789abcdef" for character in digest)):
+            raise ValueError("Invalid durable recovery vote")
+    for target, payload in proposals.items():
+        parse_proposal(canonical(payload), config)
+        if (target != str(payload["epoch"]) or vote_state.get(target) !=
+                hashlib.sha256(canonical(payload)).hexdigest()):
+            raise ValueError("Durable recovery proposal does not match its vote")
+
+
 # builds the gate certificate
 def certificate(payload, signatures):
     return dict(payload=payload, signatures=[
