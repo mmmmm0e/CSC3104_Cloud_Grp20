@@ -267,3 +267,75 @@ class CraneAgent:
             timeout,
             metadata,
             _registered_method=True)
+
+
+class CraneControllerStub:
+    """Missing associated documentation comment in .proto file."""
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.Heartbeat = channel.unary_unary(
+                '/cranelock.v1.CraneController/Heartbeat',
+                request_serializer=cranelock_dot_protocol__pb2.ControllerHeartbeatRequest.SerializeToString,
+                response_deserializer=cranelock_dot_protocol__pb2.ControllerHeartbeatResponse.FromString,
+                _registered_method=True)
+
+
+class CraneControllerServicer:
+    """Missing associated documentation comment in .proto file."""
+
+    def Heartbeat(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_CraneControllerServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'Heartbeat': grpc.unary_unary_rpc_method_handler(
+                    servicer.Heartbeat,
+                    request_deserializer=cranelock_dot_protocol__pb2.ControllerHeartbeatRequest.FromString,
+                    response_serializer=cranelock_dot_protocol__pb2.ControllerHeartbeatResponse.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'cranelock.v1.CraneController', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('cranelock.v1.CraneController', rpc_method_handlers)
+
+
+ # This class is part of an EXPERIMENTAL API.
+class CraneController:
+    """Missing associated documentation comment in .proto file."""
+
+    @staticmethod
+    def Heartbeat(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/cranelock.v1.CraneController/Heartbeat',
+            cranelock_dot_protocol__pb2.ControllerHeartbeatRequest.SerializeToString,
+            cranelock_dot_protocol__pb2.ControllerHeartbeatResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
