@@ -56,6 +56,8 @@ async def main(argv=None):
     run.add_argument("--gate-tls-ca")
     run.add_argument("--gate-tls-cert")
     run.add_argument("--gate-tls-key")
+    run.add_argument("--enable-recovery", action="store_true",
+                     help="use gate config and this agent's key file for recovery")
     run.add_argument("--recovery-config", help="Existing gate Config JSON; requires gate integration")
     run.add_argument("--recovery-key", help="JSON file containing only this agent's hex Ed25519 private key")
     controller = run.add_mutually_exclusive_group()
@@ -85,6 +87,12 @@ async def main(argv=None):
     if not args.id or args.id in peers or args.holder not in {args.id, *peers}:
         parser.error("Require an ID, peers excluding self and a holder in the membership")
     recovery_config, recovery_key, controller_probe = None, None, None
+    if args.enable_recovery:
+        if args.recovery_config or args.recovery_key:
+            parser.error("Choose --enable-recovery or explicit --recovery-config and --recovery-key")
+        if not all((args.gate_address, args.gate_config, args.gate_keys)):
+            parser.error("--enable-recovery requires --gate-address, --gate-config and --gate-keys")
+        args.recovery_config, args.recovery_key = args.gate_config, args.gate_keys
     if bool(args.recovery_config) != bool(args.recovery_key):
         parser.error("Provide --recovery-config and --recovery-key together")
     if args.recovery_config:
@@ -125,8 +133,6 @@ async def main(argv=None):
             "127.0.0.1", "localhost", "[::1]"}:
         parser.error("Controller connections outside loopback require mutual TLS")
     gate = None
-    if args.enable_recovery and not args.gate_address:
-        parser.error("--enable-recovery requires the signed gate configuration")
     if any([args.gate_tls_ca, args.gate_tls_cert, args.gate_tls_key]) and not args.gate_address:
         parser.error("Gate TLS options require --gate-address")
     if any([args.gate_address, args.gate_config, args.gate_keys]):

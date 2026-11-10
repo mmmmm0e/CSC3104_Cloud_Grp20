@@ -137,9 +137,24 @@ class AgentCluster:
             token_holder=sender.state.token_holder, mode=sender.state.mode,
             has_token=sender.state.has_token, outgoing_transfer_id=sender.last_handoff,
             sent_unix_seconds=wall_clock())
-        await asyncio.gather(*(sender.heartbeat_peer(peer, announcement) for peer in sender.peers))
-        _, states = await self.snapshot("after_handoff_announcement")
-        if any(state.token_holder != expected for state in states.values()):
+        # uses the control rpc budget for the unchanged handoff announcement
+        async def announce(peer):
+            try:
+                await sender.stubs[peer].Heartbeat(announcement, timeout=self.timeout)
+            except grpc.aio.AioRpcError as error:
+                self.emit("handoff_announcement_unavailable", sender=owner, receiver=peer,
+                          reason=error.code().name)
+
+        for attempt in range(3):
+            await asyncio.gather(*(announce(peer) for peer in sender.peers))
+            _, states = await self.snapshot("after_handoff_announcement")
+            if all(state.token_holder == expected for state in states.values()):
+                break
+            if attempt < 2:
+                self.emit("handoff_announcement_retry", sender=owner, holder=expected,
+                          transfer_id=announcement.outgoing_transfer_id, attempt=attempt + 2)
+                await asyncio.sleep(.05)
+        else:
             raise RuntimeError("Holder announcement did not reach every agent")
         require(await asyncio.to_thread(client.call, owner, "TransferHolder",
             epoch=old["epoch"], revision=old["revision"], destination=expected))

@@ -59,13 +59,15 @@ def options(h, tmp_path):
     return base, gate, recovery
 
 
-@pytest.mark.parametrize("features", ["plain", "gate", "recovery", "controller", "heartbeat"])
+@pytest.mark.parametrize("features", ["plain", "gate", "recovery", "controller", "heartbeat", "recovery_alias"])
 def test_launcher_passes_optional_features_and_closes_on_start_failure(
         options, h, monkeypatch, capture_agent, features):
     base, gate, recovery = options
     args = base + (gate if features != "plain" else [])
     if features in {"recovery", "controller", "heartbeat"}:
         args += recovery
+    if features == "recovery_alias":
+        args += ["--enable-recovery"]
     module = ModuleType("launcher_probe_fixture")
 
     async def probe():
@@ -92,7 +94,7 @@ def test_launcher_passes_optional_features_and_closes_on_start_failure(
     agent, = capture_agent
     assert agent.closed
     assert (agent.gate is not None) == (features != "plain")
-    assert (agent.recovery_config is not None) == (features in {"recovery", "controller", "heartbeat"})
+    assert (agent.recovery_config is not None) == (features in {"recovery", "controller", "heartbeat", "recovery_alias"})
     if agent.recovery_config:
         assert agent.recovery_config == h.config
         assert agent.recovery_private_key.public_key().public_bytes_raw().hex() == h.config.members["crane-1"]
@@ -117,6 +119,7 @@ def test_launcher_passes_optional_features_and_closes_on_start_failure(
     "heartbeat_without_recovery", "both_probes", "controller_remote_without_tls",
     "controller_partial_tls", "controller_tls_without_address", "controller_bad_tls",
     "heartbeat_bad_state",
+    "enable_without_gate", "enable_shared_keys", "enable_with_explicit_recovery",
 ])
 def test_invalid_launcher_configuration_never_starts_or_exposes_keys(
         invalid, options, h, tmp_path, monkeypatch, capture_agent, capsys):
@@ -137,8 +140,14 @@ def test_invalid_launcher_configuration_never_starts_or_exposes_keys(
         key_file.write_text(json.dumps({"crane-1": "secret-invalid-material"}))
     elif invalid == "wrong_key":
         key_file.write_text(json.dumps({"crane-1": h.keys["crane-2"].private_bytes_raw().hex()}))
-    elif invalid == "shared_keys":
+    elif invalid in {"shared_keys", "enable_shared_keys"}:
         key_file.write_text(json.dumps({p: k.private_bytes_raw().hex() for p, k in h.keys.items()}))
+        if invalid == "enable_shared_keys":
+            args = base + gate + ["--enable-recovery"]
+    elif invalid == "enable_without_gate":
+        args = base + ["--enable-recovery"]
+    elif invalid == "enable_with_explicit_recovery":
+        args += ["--enable-recovery"]
     elif invalid == "partial_recovery":
         args = base + gate + recovery[:2]
     elif invalid == "no_gate":

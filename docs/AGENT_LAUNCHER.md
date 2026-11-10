@@ -14,6 +14,10 @@ member keys, lane ID, membership ID, service identities/keys and gate settings.
 Point `--recovery-config` and `--gate-config` at the same public config file.
 The launcher rejects different configurations, including different public keys.
 
+Alternatively, `--enable-recovery` uses `--gate-config` and `--gate-keys` as the
+recovery inputs. The key file must still contain only this agent's identity. Choose
+this shorthand or the explicit recovery options; combining both is rejected.
+
 `--id` plus every `--peer ID=HOST:PORT` must exactly match the configured member
 IDs. Include temporarily offline members; do not shrink membership to obtain a
 quorum. The initial `--holder` must be a member. Use the installed gate epoch
