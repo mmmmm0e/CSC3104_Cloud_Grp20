@@ -1,5 +1,9 @@
 # CraneLock
 
+For the integrated Docker deployment, host/container endpoints, development
+credential provisioning, failure controls and shutdown, see
+[the platform handoff](docs/PLATFORM_HANDOFF.md).
+
 Recovery retry review (Moe): see [retry behavior, safety limits and failure tests](docs/RECOVERY_RETRY.md).
 Votes stay immutable across gate revision changes; identical retries are supported.
 The real-container validation harness is available as:

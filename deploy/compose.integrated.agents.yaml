@@ -1,0 +1,195 @@
+services:
+  crane-1:
+    image: cranelock-agent:integrated
+    ports:
+      - "127.0.0.1:50101:50051"
+    command:
+      - run
+      - --metrics-port
+      - "9101"
+      - --metrics-bind
+      - 0.0.0.0
+      - --id
+      - crane-1
+      - --listen
+      - 0.0.0.0:50051
+      - --peer
+      - crane-2=crane-2:50051
+      - --peer
+      - crane-3=crane-3:50051
+      - --holder
+      - crane-1
+      - --epoch
+      - "0"
+      - --state-file
+      - /data/state.json
+      - --gate-address
+      - gate:50051
+      - --gate-config
+      - /config/config.json
+      - --gate-keys
+      - /signing/agent.json
+      - --recovery-config
+      - /config/config.json
+      - --recovery-key
+      - /signing/agent.json
+      - --gate-tls-ca
+      - /gate-tls/ca.pem
+      - --gate-tls-cert
+      - /gate-tls/client.pem
+      - --gate-tls-key
+      - /gate-tls/client-key.pem
+      - --controller-address
+      - controller:50052
+      - --controller-tls-ca
+      - /controller-tls/ca.pem
+      - --controller-tls-cert
+      - /controller-tls/client.pem
+      - --controller-tls-key
+      - /controller-tls/client-key.pem
+    volumes:
+      - crane-1-data:/data
+      - ../demo-data/integrated/config.json:/config/config.json:ro
+      - ../demo-data/integrated/signing/crane-1.json:/signing/agent.json:ro
+      - ../demo-data/integrated/tls/gate/ca.pem:/gate-tls/ca.pem:ro
+      - ../demo-data/integrated/tls/gate/client.pem:/gate-tls/client.pem:ro
+      - ../demo-data/integrated/tls/gate/client-key.pem:/gate-tls/client-key.pem:ro
+      - ../demo-data/integrated/tls/controller/ca.pem:/controller-tls/ca.pem:ro
+      - ../demo-data/integrated/tls/controller/client.pem:/controller-tls/client.pem:ro
+      - ../demo-data/integrated/tls/controller/client-key.pem:/controller-tls/client-key.pem:ro
+    depends_on:
+      gate:
+        condition: service_healthy
+      controller:
+        condition: service_started
+  crane-2:
+    image: cranelock-agent:integrated
+    ports:
+      - "127.0.0.1:50102:50051"
+    command:
+      - run
+      - --metrics-port
+      - "9101"
+      - --metrics-bind
+      - 0.0.0.0
+      - --id
+      - crane-2
+      - --listen
+      - 0.0.0.0:50051
+      - --peer
+      - crane-1=crane-1:50051
+      - --peer
+      - crane-3=crane-3:50051
+      - --holder
+      - crane-1
+      - --epoch
+      - "0"
+      - --state-file
+      - /data/state.json
+      - --gate-address
+      - gate:50051
+      - --gate-config
+      - /config/config.json
+      - --gate-keys
+      - /signing/agent.json
+      - --recovery-config
+      - /config/config.json
+      - --recovery-key
+      - /signing/agent.json
+      - --gate-tls-ca
+      - /gate-tls/ca.pem
+      - --gate-tls-cert
+      - /gate-tls/client.pem
+      - --gate-tls-key
+      - /gate-tls/client-key.pem
+      - --controller-address
+      - controller:50052
+      - --controller-tls-ca
+      - /controller-tls/ca.pem
+      - --controller-tls-cert
+      - /controller-tls/client.pem
+      - --controller-tls-key
+      - /controller-tls/client-key.pem
+    volumes:
+      - crane-2-data:/data
+      - ../demo-data/integrated/config.json:/config/config.json:ro
+      - ../demo-data/integrated/signing/crane-2.json:/signing/agent.json:ro
+      - ../demo-data/integrated/tls/gate/ca.pem:/gate-tls/ca.pem:ro
+      - ../demo-data/integrated/tls/gate/client.pem:/gate-tls/client.pem:ro
+      - ../demo-data/integrated/tls/gate/client-key.pem:/gate-tls/client-key.pem:ro
+      - ../demo-data/integrated/tls/controller/ca.pem:/controller-tls/ca.pem:ro
+      - ../demo-data/integrated/tls/controller/client.pem:/controller-tls/client.pem:ro
+      - ../demo-data/integrated/tls/controller/client-key.pem:/controller-tls/client-key.pem:ro
+    depends_on:
+      gate:
+        condition: service_healthy
+      controller:
+        condition: service_started
+
+  crane-3:
+    image: cranelock-agent:integrated
+    ports:
+      - "127.0.0.1:50103:50051"
+    command:
+      - run
+      - --metrics-port
+      - "9101"
+      - --metrics-bind
+      - 0.0.0.0
+      - --id
+      - crane-3
+      - --listen
+      - 0.0.0.0:50051
+      - --peer
+      - crane-1=crane-1:50051
+      - --peer
+      - crane-2=crane-2:50051
+      - --holder
+      - crane-1
+      - --epoch
+      - "0"
+      - --state-file
+      - /data/state.json
+      - --gate-address
+      - gate:50051
+      - --gate-config
+      - /config/config.json
+      - --gate-keys
+      - /signing/agent.json
+      - --recovery-config
+      - /config/config.json
+      - --recovery-key
+      - /signing/agent.json
+      - --gate-tls-ca
+      - /gate-tls/ca.pem
+      - --gate-tls-cert
+      - /gate-tls/client.pem
+      - --gate-tls-key
+      - /gate-tls/client-key.pem
+      - --controller-address
+      - controller:50052
+      - --controller-tls-ca
+      - /controller-tls/ca.pem
+      - --controller-tls-cert
+      - /controller-tls/client.pem
+      - --controller-tls-key
+      - /controller-tls/client-key.pem
+    volumes:
+      - crane-3-data:/data
+      - ../demo-data/integrated/config.json:/config/config.json:ro
+      - ../demo-data/integrated/signing/crane-3.json:/signing/agent.json:ro
+      - ../demo-data/integrated/tls/gate/ca.pem:/gate-tls/ca.pem:ro
+      - ../demo-data/integrated/tls/gate/client.pem:/gate-tls/client.pem:ro
+      - ../demo-data/integrated/tls/gate/client-key.pem:/gate-tls/client-key.pem:ro
+      - ../demo-data/integrated/tls/controller/ca.pem:/controller-tls/ca.pem:ro
+      - ../demo-data/integrated/tls/controller/client.pem:/controller-tls/client.pem:ro
+      - ../demo-data/integrated/tls/controller/client-key.pem:/controller-tls/client-key.pem:ro
+    depends_on:
+      gate:
+        condition: service_healthy
+      controller:
+        condition: service_started
+volumes:
+  crane-1-data:
+  crane-2-data:
+  crane-3-data:

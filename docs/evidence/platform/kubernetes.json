@@ -1,0 +1,12 @@
+{
+  "scope": "Single local kind node; planned gate maintenance and agent pod replacement, not node-loss resilience",
+  "checks": [
+    "agent_pod_replaced_same_pvc_and_reconciled",
+    "gate_pod_restart_preserved_authority_changed_session_invalidated_clearance",
+    "five_kubernetes_prometheus_targets_up_and_grafana_healthy"
+  ],
+  "passed": true,
+  "final_epoch": 1,
+  "final_revision": 3,
+  "final_holder": "crane-1"
+}

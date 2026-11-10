@@ -66,10 +66,14 @@ def parse_options(argv):
                         help="Controller heartbeat listener; [IPv6]:PORT also accepted")
     parser.add_argument("--gate-timeout", type=float, default=3.0,
                         help="Deadline in seconds for each Trusted Gate RPC (default: 3)")
+    parser.add_argument("--metrics-port", type=int)
+    parser.add_argument("--metrics-bind", default="127.0.0.1")
     for prefix in ("gate-tls", "tls"):
         for name in ("ca", "cert", "key"):
             parser.add_argument(f"--{prefix}-{name}")
     args = parser.parse_args(argv)
+    if args.metrics_port is not None and not 0 <= args.metrics_port <= 65535:
+        parser.error("metrics-port must be between 0 and 65535")
     if not math.isfinite(args.gate_timeout) or args.gate_timeout <= 0:
         parser.error("--gate-timeout must be finite and positive")
     try:
@@ -112,7 +116,7 @@ async def main(argv=None):
                 root_certificates=Path(args.tls_ca).read_bytes(), require_client_auth=True)
         except (OSError, ValueError):
             parser.error("Heartbeat TLS files are invalid or unreadable")
-    channel, controller = None, None
+    channel, controller, telemetry = None, None, None
     handlers = {}
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -153,6 +157,11 @@ async def main(argv=None):
         print(f"Controller active: epoch={state['epoch']} revision={state['revision']} "
               f"holder={state['holder']} mode={state['mode']}", flush=True)
         host = args.listen.rsplit(":", 1)[0]
+        if args.metrics_port is not None:
+            from cranelock.telemetry import ControllerMetrics
+            telemetry = ControllerMetrics()
+            telemetry.start(args.metrics_port, args.metrics_bind)
+            controller.telemetry = telemetry
         print(f"Heartbeat endpoint listening on {host}:{port}", flush=True)
         await stop.wait()
         return 0
@@ -164,6 +173,8 @@ async def main(argv=None):
         try:
             if controller is not None:
                 await controller.stop_heartbeat_server()
+            if telemetry:
+                await telemetry.close()
         finally:
             if channel is not None:
                 channel.close()
