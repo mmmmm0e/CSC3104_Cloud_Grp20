@@ -142,6 +142,12 @@ of safety for every failure or a production port performance benchmark.
 
 ## Verify changes
 
+The local handoff adapter retries the same holder announcement up to three times
+using the configured control RPC timeout. It confirms every agent's reported holder
+before updating the gate. Persistent delivery failure stops the experiment and
+retains diagnostic events; retries never restore ownership or invent a transfer.
+Instrumented retries contribute to the actual RPC counts and elapsed measurements.
+
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
 ```

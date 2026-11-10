@@ -22,10 +22,12 @@ def test_recovery_cli_processes_collect_majority(h, tmp_path):
     processes, streams = [], []
     try:
         for member in addresses:
+            key_file = tmp_path / f"{member}.key.json"
+            key_file.write_text(json.dumps({member: h.keys[member].private_bytes_raw().hex()}))
             args = [sys.executable, "-m", "cranelock", "run", "--id", member, "--listen", addresses[member],
                 "--holder", "crane-1", "--epoch", "0", "--interval", ".1", "--timeout", ".8",
                 "--state-file", str(tmp_path / f"{member}.json"), "--gate-address", f"127.0.0.1:{gate.port}",
-                "--gate-config", str(tmp_path / "config.json"), "--gate-keys", str(tmp_path / "private-keys.json"),
+                "--gate-config", str(tmp_path / "config.json"), "--gate-keys", str(key_file),
                 "--enable-recovery"]
             for peer in h.config.members:
                 if peer != member:
