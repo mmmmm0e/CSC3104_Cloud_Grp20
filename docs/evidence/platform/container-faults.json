@@ -1,0 +1,57 @@
+{
+  "started_at": 1794345150.4107058,
+  "scope": "Local Docker containers; authority/transport and synthetic missing occupancy evidence, no physical crossing workload",
+  "results": {
+    "controller": {
+      "passed": true,
+      "elapsed_seconds": 8.1579697089619,
+      "before_epoch": 95,
+      "local_epoch": 96,
+      "final_epoch": 96,
+      "final_revision": 189,
+      "stable_observation_seconds": 5
+    },
+    "holder": {
+      "passed": true,
+      "elapsed_seconds": 10.443738542031497,
+      "old_holder": "crane-1",
+      "replacement": "crane-2",
+      "old_epoch": 97,
+      "new_epoch": 98,
+      "stale_reason": "STALE_EPOCH",
+      "restarted_holder_blocked": true
+    },
+    "gate": {
+      "passed": true,
+      "elapsed_seconds": 5.525969374983106,
+      "epoch": 100,
+      "holder": "crane-2",
+      "session_changed": true,
+      "lane": "UNKNOWN",
+      "grant_invalidated": true
+    },
+    "monitoring": {
+      "passed": true,
+      "elapsed_seconds": 3.705650667019654,
+      "targets": 5,
+      "dashboard_provisioned": true,
+      "controller_down_observed": true
+    },
+    "network": {
+      "passed": true,
+      "elapsed_seconds": 26.972459791984875,
+      "partition_replacement": "crane-1",
+      "partition_epoch": 104,
+      "packet_delay_ms": 200,
+      "packet_reorder_percent": 25,
+      "cleanup_completed": true
+    },
+    "lost-updates": {
+      "passed": true,
+      "elapsed_seconds": 2.5185459159547463,
+      "missing_updates_blocked_grant": true
+    }
+  },
+  "passed": true,
+  "finished_at": 1794345207.7713652
+}

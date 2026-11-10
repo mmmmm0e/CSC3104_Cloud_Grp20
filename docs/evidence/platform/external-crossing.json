@@ -1,0 +1,45 @@
+{
+  "passed": true,
+  "scope": "One fresh synthetic lane crossing; real external container RPCs, not a general workload benchmark",
+  "old_holder": "crane-1",
+  "new_holder": "crane-2",
+  "epoch": 104,
+  "revision": 205,
+  "completed_crossings": 1,
+  "physical_entries": 1,
+  "physical_exits": 1,
+  "final_lane_state": "UNKNOWN",
+  "events": [
+    {
+      "event": "external_token_request",
+      "timestamp": 1794345532.9522529,
+      "monotonic": 498622.161501541,
+      "old_holder": "crane-1",
+      "requester": "crane-2"
+    },
+    {
+      "event": "external_handoff_verified",
+      "timestamp": 1794345533.161473,
+      "monotonic": 498622.370720333,
+      "holder": "crane-2",
+      "epoch": 104,
+      "revision": 205
+    },
+    {
+      "event": "physical_entry",
+      "timestamp": 1794345533.167775,
+      "monotonic": 498622.377022916,
+      "request_id": "009fed04-6d3b-4841-9e0c-92e287f3f76b",
+      "crane": "crane-2",
+      "epoch": 104,
+      "revision": 205
+    },
+    {
+      "event": "physical_exit",
+      "timestamp": 1794345533.220296,
+      "monotonic": 498622.429544541,
+      "request_id": "009fed04-6d3b-4841-9e0c-92e287f3f76b",
+      "crane": "crane-2"
+    }
+  ]
+}

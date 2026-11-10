@@ -1,0 +1,1837 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "name": "controller",
+    "namespace": "cranelock"
+  },
+  "spec": {
+    "replicas": 1,
+    "strategy": {
+      "type": "Recreate"
+    },
+    "selector": {
+      "matchLabels": {
+        "app": "controller",
+        "part-of": "cranelock"
+      }
+    },
+    "template": {
+      "metadata": {
+        "labels": {
+          "app": "controller",
+          "part-of": "cranelock"
+        }
+      },
+      "spec": {
+        "securityContext": {
+          "runAsNonRoot": true,
+          "runAsUser": 10001,
+          "runAsGroup": 10001,
+          "fsGroup": 10001
+        },
+        "terminationGracePeriodSeconds": 15,
+        "containers": [
+          {
+            "name": "controller",
+            "image": "cranelock-agent:integrated",
+            "imagePullPolicy": "IfNotPresent",
+            "volumeMounts": [
+              {
+                "name": "file-0",
+                "mountPath": "/config/config.json",
+                "subPath": "config.json",
+                "readOnly": true
+              },
+              {
+                "name": "file-1",
+                "mountPath": "/signing/controller.json",
+                "subPath": "file-1",
+                "readOnly": true
+              },
+              {
+                "name": "file-2",
+                "mountPath": "/gate-tls/ca.pem",
+                "subPath": "file-2",
+                "readOnly": true
+              },
+              {
+                "name": "file-3",
+                "mountPath": "/gate-tls/client.pem",
+                "subPath": "file-3",
+                "readOnly": true
+              },
+              {
+                "name": "file-4",
+                "mountPath": "/gate-tls/client-key.pem",
+                "subPath": "file-4",
+                "readOnly": true
+              },
+              {
+                "name": "file-5",
+                "mountPath": "/controller-tls/ca.pem",
+                "subPath": "file-5",
+                "readOnly": true
+              },
+              {
+                "name": "file-6",
+                "mountPath": "/controller-tls/server.pem",
+                "subPath": "file-6",
+                "readOnly": true
+              },
+              {
+                "name": "file-7",
+                "mountPath": "/controller-tls/server-key.pem",
+                "subPath": "file-7",
+                "readOnly": true
+              }
+            ],
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              }
+            },
+            "resources": {
+              "requests": {
+                "cpu": "50m",
+                "memory": "96Mi"
+              },
+              "limits": {
+                "cpu": "1",
+                "memory": "384Mi"
+              }
+            },
+            "command": [
+              "python",
+              "-m",
+              "cranelock.run_controller"
+            ],
+            "args": [
+              "--metrics-port",
+              "9101",
+              "--metrics-bind",
+              "0.0.0.0",
+              "--gate-config",
+              "/config/config.json",
+              "--controller-key",
+              "/signing/controller.json",
+              "--gate-address",
+              "gate:50051",
+              "--listen",
+              "0.0.0.0:50052",
+              "--gate-tls-ca",
+              "/gate-tls/ca.pem",
+              "--gate-tls-cert",
+              "/gate-tls/client.pem",
+              "--gate-tls-key",
+              "/gate-tls/client-key.pem",
+              "--tls-ca",
+              "/controller-tls/ca.pem",
+              "--tls-cert",
+              "/controller-tls/server.pem",
+              "--tls-key",
+              "/controller-tls/server-key.pem"
+            ],
+            "ports": [
+              {
+                "name": "service",
+                "containerPort": 50052
+              },
+              {
+                "name": "metrics",
+                "containerPort": 9101
+              }
+            ],
+            "readinessProbe": {
+              "tcpSocket": {
+                "port": 50052
+              },
+              "periodSeconds": 5,
+              "timeoutSeconds": 3,
+              "failureThreshold": 12
+            },
+            "startupProbe": {
+              "tcpSocket": {
+                "port": 50052
+              },
+              "periodSeconds": 5,
+              "timeoutSeconds": 3,
+              "failureThreshold": 30
+            },
+            "livenessProbe": {
+              "tcpSocket": {
+                "port": 50052
+              },
+              "periodSeconds": 10,
+              "timeoutSeconds": 3,
+              "failureThreshold": 6
+            }
+          }
+        ],
+        "volumes": [
+          {
+            "name": "file-0",
+            "configMap": {
+              "name": "cranelock-public"
+            }
+          },
+          {
+            "name": "file-1",
+            "secret": {
+              "secretName": "controller-files"
+            }
+          },
+          {
+            "name": "file-2",
+            "secret": {
+              "secretName": "controller-files"
+            }
+          },
+          {
+            "name": "file-3",
+            "secret": {
+              "secretName": "controller-files"
+            }
+          },
+          {
+            "name": "file-4",
+            "secret": {
+              "secretName": "controller-files"
+            }
+          },
+          {
+            "name": "file-5",
+            "secret": {
+              "secretName": "controller-files"
+            }
+          },
+          {
+            "name": "file-6",
+            "secret": {
+              "secretName": "controller-files"
+            }
+          },
+          {
+            "name": "file-7",
+            "secret": {
+              "secretName": "controller-files"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "Service",
+  "metadata": {
+    "name": "controller",
+    "namespace": "cranelock"
+  },
+  "spec": {
+    "selector": {
+      "app": "controller",
+      "part-of": "cranelock"
+    },
+    "ports": [
+      {
+        "name": "service",
+        "port": 50052,
+        "targetPort": 50052
+      },
+      {
+        "name": "metrics",
+        "port": 9101,
+        "targetPort": 9101
+      }
+    ]
+  }
+}
+---
+{
+  "apiVersion": "apps/v1",
+  "kind": "StatefulSet",
+  "metadata": {
+    "name": "crane-1",
+    "namespace": "cranelock"
+  },
+  "spec": {
+    "serviceName": "crane-1",
+    "replicas": 1,
+    "selector": {
+      "matchLabels": {
+        "app": "crane-1",
+        "part-of": "cranelock"
+      }
+    },
+    "template": {
+      "metadata": {
+        "labels": {
+          "app": "crane-1",
+          "part-of": "cranelock"
+        }
+      },
+      "spec": {
+        "securityContext": {
+          "runAsNonRoot": true,
+          "runAsUser": 10001,
+          "runAsGroup": 10001,
+          "fsGroup": 10001
+        },
+        "terminationGracePeriodSeconds": 15,
+        "containers": [
+          {
+            "name": "crane-1",
+            "image": "cranelock-agent:integrated",
+            "imagePullPolicy": "IfNotPresent",
+            "volumeMounts": [
+              {
+                "name": "data",
+                "mountPath": "/data"
+              },
+              {
+                "name": "file-1",
+                "mountPath": "/config/config.json",
+                "subPath": "config.json",
+                "readOnly": true
+              },
+              {
+                "name": "file-2",
+                "mountPath": "/signing/agent.json",
+                "subPath": "file-2",
+                "readOnly": true
+              },
+              {
+                "name": "file-3",
+                "mountPath": "/gate-tls/ca.pem",
+                "subPath": "file-3",
+                "readOnly": true
+              },
+              {
+                "name": "file-4",
+                "mountPath": "/gate-tls/client.pem",
+                "subPath": "file-4",
+                "readOnly": true
+              },
+              {
+                "name": "file-5",
+                "mountPath": "/gate-tls/client-key.pem",
+                "subPath": "file-5",
+                "readOnly": true
+              },
+              {
+                "name": "file-6",
+                "mountPath": "/controller-tls/ca.pem",
+                "subPath": "file-6",
+                "readOnly": true
+              },
+              {
+                "name": "file-7",
+                "mountPath": "/controller-tls/client.pem",
+                "subPath": "file-7",
+                "readOnly": true
+              },
+              {
+                "name": "file-8",
+                "mountPath": "/controller-tls/client-key.pem",
+                "subPath": "file-8",
+                "readOnly": true
+              }
+            ],
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              }
+            },
+            "resources": {
+              "requests": {
+                "cpu": "50m",
+                "memory": "96Mi"
+              },
+              "limits": {
+                "cpu": "1",
+                "memory": "384Mi"
+              }
+            },
+            "args": [
+              "run",
+              "--metrics-port",
+              "9101",
+              "--metrics-bind",
+              "0.0.0.0",
+              "--id",
+              "crane-1",
+              "--listen",
+              "0.0.0.0:50051",
+              "--peer",
+              "crane-2=crane-2:50051",
+              "--peer",
+              "crane-3=crane-3:50051",
+              "--holder",
+              "crane-1",
+              "--epoch",
+              "0",
+              "--state-file",
+              "/data/state.json",
+              "--gate-address",
+              "gate:50051",
+              "--gate-config",
+              "/config/config.json",
+              "--gate-keys",
+              "/signing/agent.json",
+              "--recovery-config",
+              "/config/config.json",
+              "--recovery-key",
+              "/signing/agent.json",
+              "--gate-tls-ca",
+              "/gate-tls/ca.pem",
+              "--gate-tls-cert",
+              "/gate-tls/client.pem",
+              "--gate-tls-key",
+              "/gate-tls/client-key.pem",
+              "--controller-address",
+              "controller:50052",
+              "--controller-tls-ca",
+              "/controller-tls/ca.pem",
+              "--controller-tls-cert",
+              "/controller-tls/client.pem",
+              "--controller-tls-key",
+              "/controller-tls/client-key.pem"
+            ],
+            "ports": [
+              {
+                "name": "service",
+                "containerPort": 50051
+              },
+              {
+                "name": "metrics",
+                "containerPort": 9101
+              }
+            ],
+            "readinessProbe": {
+              "exec": {
+                "command": [
+                  "python",
+                  "-m",
+                  "cranelock",
+                  "state",
+                  "127.0.0.1:50051"
+                ]
+              },
+              "periodSeconds": 5,
+              "timeoutSeconds": 3,
+              "failureThreshold": 12
+            },
+            "startupProbe": {
+              "exec": {
+                "command": [
+                  "python",
+                  "-m",
+                  "cranelock",
+                  "state",
+                  "127.0.0.1:50051"
+                ]
+              },
+              "periodSeconds": 5,
+              "timeoutSeconds": 3,
+              "failureThreshold": 30
+            },
+            "livenessProbe": {
+              "exec": {
+                "command": [
+                  "python",
+                  "-m",
+                  "cranelock",
+                  "state",
+                  "127.0.0.1:50051"
+                ]
+              },
+              "periodSeconds": 10,
+              "timeoutSeconds": 3,
+              "failureThreshold": 6
+            },
+            "command": [
+              "python",
+              "-m",
+              "cranelock"
+            ]
+          }
+        ],
+        "volumes": [
+          {
+            "name": "file-1",
+            "configMap": {
+              "name": "cranelock-public"
+            }
+          },
+          {
+            "name": "file-2",
+            "secret": {
+              "secretName": "crane-1-files"
+            }
+          },
+          {
+            "name": "file-3",
+            "secret": {
+              "secretName": "crane-1-files"
+            }
+          },
+          {
+            "name": "file-4",
+            "secret": {
+              "secretName": "crane-1-files"
+            }
+          },
+          {
+            "name": "file-5",
+            "secret": {
+              "secretName": "crane-1-files"
+            }
+          },
+          {
+            "name": "file-6",
+            "secret": {
+              "secretName": "crane-1-files"
+            }
+          },
+          {
+            "name": "file-7",
+            "secret": {
+              "secretName": "crane-1-files"
+            }
+          },
+          {
+            "name": "file-8",
+            "secret": {
+              "secretName": "crane-1-files"
+            }
+          }
+        ]
+      }
+    },
+    "volumeClaimTemplates": [
+      {
+        "metadata": {
+          "name": "data"
+        },
+        "spec": {
+          "accessModes": [
+            "ReadWriteOnce"
+          ],
+          "resources": {
+            "requests": {
+              "storage": "256Mi"
+            }
+          }
+        }
+      }
+    ]
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "Service",
+  "metadata": {
+    "name": "crane-1",
+    "namespace": "cranelock"
+  },
+  "spec": {
+    "selector": {
+      "app": "crane-1",
+      "part-of": "cranelock"
+    },
+    "ports": [
+      {
+        "name": "service",
+        "port": 50051,
+        "targetPort": 50051
+      },
+      {
+        "name": "metrics",
+        "port": 9101,
+        "targetPort": 9101
+      }
+    ],
+    "clusterIP": "None",
+    "publishNotReadyAddresses": true
+  }
+}
+---
+{
+  "apiVersion": "apps/v1",
+  "kind": "StatefulSet",
+  "metadata": {
+    "name": "crane-2",
+    "namespace": "cranelock"
+  },
+  "spec": {
+    "serviceName": "crane-2",
+    "replicas": 1,
+    "selector": {
+      "matchLabels": {
+        "app": "crane-2",
+        "part-of": "cranelock"
+      }
+    },
+    "template": {
+      "metadata": {
+        "labels": {
+          "app": "crane-2",
+          "part-of": "cranelock"
+        }
+      },
+      "spec": {
+        "securityContext": {
+          "runAsNonRoot": true,
+          "runAsUser": 10001,
+          "runAsGroup": 10001,
+          "fsGroup": 10001
+        },
+        "terminationGracePeriodSeconds": 15,
+        "containers": [
+          {
+            "name": "crane-2",
+            "image": "cranelock-agent:integrated",
+            "imagePullPolicy": "IfNotPresent",
+            "volumeMounts": [
+              {
+                "name": "data",
+                "mountPath": "/data"
+              },
+              {
+                "name": "file-1",
+                "mountPath": "/config/config.json",
+                "subPath": "config.json",
+                "readOnly": true
+              },
+              {
+                "name": "file-2",
+                "mountPath": "/signing/agent.json",
+                "subPath": "file-2",
+                "readOnly": true
+              },
+              {
+                "name": "file-3",
+                "mountPath": "/gate-tls/ca.pem",
+                "subPath": "file-3",
+                "readOnly": true
+              },
+              {
+                "name": "file-4",
+                "mountPath": "/gate-tls/client.pem",
+                "subPath": "file-4",
+                "readOnly": true
+              },
+              {
+                "name": "file-5",
+                "mountPath": "/gate-tls/client-key.pem",
+                "subPath": "file-5",
+                "readOnly": true
+              },
+              {
+                "name": "file-6",
+                "mountPath": "/controller-tls/ca.pem",
+                "subPath": "file-6",
+                "readOnly": true
+              },
+              {
+                "name": "file-7",
+                "mountPath": "/controller-tls/client.pem",
+                "subPath": "file-7",
+                "readOnly": true
+              },
+              {
+                "name": "file-8",
+                "mountPath": "/controller-tls/client-key.pem",
+                "subPath": "file-8",
+                "readOnly": true
+              }
+            ],
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              }
+            },
+            "resources": {
+              "requests": {
+                "cpu": "50m",
+                "memory": "96Mi"
+              },
+              "limits": {
+                "cpu": "1",
+                "memory": "384Mi"
+              }
+            },
+            "args": [
+              "run",
+              "--metrics-port",
+              "9101",
+              "--metrics-bind",
+              "0.0.0.0",
+              "--id",
+              "crane-2",
+              "--listen",
+              "0.0.0.0:50051",
+              "--peer",
+              "crane-1=crane-1:50051",
+              "--peer",
+              "crane-3=crane-3:50051",
+              "--holder",
+              "crane-1",
+              "--epoch",
+              "0",
+              "--state-file",
+              "/data/state.json",
+              "--gate-address",
+              "gate:50051",
+              "--gate-config",
+              "/config/config.json",
+              "--gate-keys",
+              "/signing/agent.json",
+              "--recovery-config",
+              "/config/config.json",
+              "--recovery-key",
+              "/signing/agent.json",
+              "--gate-tls-ca",
+              "/gate-tls/ca.pem",
+              "--gate-tls-cert",
+              "/gate-tls/client.pem",
+              "--gate-tls-key",
+              "/gate-tls/client-key.pem",
+              "--controller-address",
+              "controller:50052",
+              "--controller-tls-ca",
+              "/controller-tls/ca.pem",
+              "--controller-tls-cert",
+              "/controller-tls/client.pem",
+              "--controller-tls-key",
+              "/controller-tls/client-key.pem"
+            ],
+            "ports": [
+              {
+                "name": "service",
+                "containerPort": 50051
+              },
+              {
+                "name": "metrics",
+                "containerPort": 9101
+              }
+            ],
+            "readinessProbe": {
+              "exec": {
+                "command": [
+                  "python",
+                  "-m",
+                  "cranelock",
+                  "state",
+                  "127.0.0.1:50051"
+                ]
+              },
+              "periodSeconds": 5,
+              "timeoutSeconds": 3,
+              "failureThreshold": 12
+            },
+            "startupProbe": {
+              "exec": {
+                "command": [
+                  "python",
+                  "-m",
+                  "cranelock",
+                  "state",
+                  "127.0.0.1:50051"
+                ]
+              },
+              "periodSeconds": 5,
+              "timeoutSeconds": 3,
+              "failureThreshold": 30
+            },
+            "livenessProbe": {
+              "exec": {
+                "command": [
+                  "python",
+                  "-m",
+                  "cranelock",
+                  "state",
+                  "127.0.0.1:50051"
+                ]
+              },
+              "periodSeconds": 10,
+              "timeoutSeconds": 3,
+              "failureThreshold": 6
+            },
+            "command": [
+              "python",
+              "-m",
+              "cranelock"
+            ]
+          }
+        ],
+        "volumes": [
+          {
+            "name": "file-1",
+            "configMap": {
+              "name": "cranelock-public"
+            }
+          },
+          {
+            "name": "file-2",
+            "secret": {
+              "secretName": "crane-2-files"
+            }
+          },
+          {
+            "name": "file-3",
+            "secret": {
+              "secretName": "crane-2-files"
+            }
+          },
+          {
+            "name": "file-4",
+            "secret": {
+              "secretName": "crane-2-files"
+            }
+          },
+          {
+            "name": "file-5",
+            "secret": {
+              "secretName": "crane-2-files"
+            }
+          },
+          {
+            "name": "file-6",
+            "secret": {
+              "secretName": "crane-2-files"
+            }
+          },
+          {
+            "name": "file-7",
+            "secret": {
+              "secretName": "crane-2-files"
+            }
+          },
+          {
+            "name": "file-8",
+            "secret": {
+              "secretName": "crane-2-files"
+            }
+          }
+        ]
+      }
+    },
+    "volumeClaimTemplates": [
+      {
+        "metadata": {
+          "name": "data"
+        },
+        "spec": {
+          "accessModes": [
+            "ReadWriteOnce"
+          ],
+          "resources": {
+            "requests": {
+              "storage": "256Mi"
+            }
+          }
+        }
+      }
+    ]
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "Service",
+  "metadata": {
+    "name": "crane-2",
+    "namespace": "cranelock"
+  },
+  "spec": {
+    "selector": {
+      "app": "crane-2",
+      "part-of": "cranelock"
+    },
+    "ports": [
+      {
+        "name": "service",
+        "port": 50051,
+        "targetPort": 50051
+      },
+      {
+        "name": "metrics",
+        "port": 9101,
+        "targetPort": 9101
+      }
+    ],
+    "clusterIP": "None",
+    "publishNotReadyAddresses": true
+  }
+}
+---
+{
+  "apiVersion": "apps/v1",
+  "kind": "StatefulSet",
+  "metadata": {
+    "name": "crane-3",
+    "namespace": "cranelock"
+  },
+  "spec": {
+    "serviceName": "crane-3",
+    "replicas": 1,
+    "selector": {
+      "matchLabels": {
+        "app": "crane-3",
+        "part-of": "cranelock"
+      }
+    },
+    "template": {
+      "metadata": {
+        "labels": {
+          "app": "crane-3",
+          "part-of": "cranelock"
+        }
+      },
+      "spec": {
+        "securityContext": {
+          "runAsNonRoot": true,
+          "runAsUser": 10001,
+          "runAsGroup": 10001,
+          "fsGroup": 10001
+        },
+        "terminationGracePeriodSeconds": 15,
+        "containers": [
+          {
+            "name": "crane-3",
+            "image": "cranelock-agent:integrated",
+            "imagePullPolicy": "IfNotPresent",
+            "volumeMounts": [
+              {
+                "name": "data",
+                "mountPath": "/data"
+              },
+              {
+                "name": "file-1",
+                "mountPath": "/config/config.json",
+                "subPath": "config.json",
+                "readOnly": true
+              },
+              {
+                "name": "file-2",
+                "mountPath": "/signing/agent.json",
+                "subPath": "file-2",
+                "readOnly": true
+              },
+              {
+                "name": "file-3",
+                "mountPath": "/gate-tls/ca.pem",
+                "subPath": "file-3",
+                "readOnly": true
+              },
+              {
+                "name": "file-4",
+                "mountPath": "/gate-tls/client.pem",
+                "subPath": "file-4",
+                "readOnly": true
+              },
+              {
+                "name": "file-5",
+                "mountPath": "/gate-tls/client-key.pem",
+                "subPath": "file-5",
+                "readOnly": true
+              },
+              {
+                "name": "file-6",
+                "mountPath": "/controller-tls/ca.pem",
+                "subPath": "file-6",
+                "readOnly": true
+              },
+              {
+                "name": "file-7",
+                "mountPath": "/controller-tls/client.pem",
+                "subPath": "file-7",
+                "readOnly": true
+              },
+              {
+                "name": "file-8",
+                "mountPath": "/controller-tls/client-key.pem",
+                "subPath": "file-8",
+                "readOnly": true
+              }
+            ],
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              }
+            },
+            "resources": {
+              "requests": {
+                "cpu": "50m",
+                "memory": "96Mi"
+              },
+              "limits": {
+                "cpu": "1",
+                "memory": "384Mi"
+              }
+            },
+            "args": [
+              "run",
+              "--metrics-port",
+              "9101",
+              "--metrics-bind",
+              "0.0.0.0",
+              "--id",
+              "crane-3",
+              "--listen",
+              "0.0.0.0:50051",
+              "--peer",
+              "crane-1=crane-1:50051",
+              "--peer",
+              "crane-2=crane-2:50051",
+              "--holder",
+              "crane-1",
+              "--epoch",
+              "0",
+              "--state-file",
+              "/data/state.json",
+              "--gate-address",
+              "gate:50051",
+              "--gate-config",
+              "/config/config.json",
+              "--gate-keys",
+              "/signing/agent.json",
+              "--recovery-config",
+              "/config/config.json",
+              "--recovery-key",
+              "/signing/agent.json",
+              "--gate-tls-ca",
+              "/gate-tls/ca.pem",
+              "--gate-tls-cert",
+              "/gate-tls/client.pem",
+              "--gate-tls-key",
+              "/gate-tls/client-key.pem",
+              "--controller-address",
+              "controller:50052",
+              "--controller-tls-ca",
+              "/controller-tls/ca.pem",
+              "--controller-tls-cert",
+              "/controller-tls/client.pem",
+              "--controller-tls-key",
+              "/controller-tls/client-key.pem"
+            ],
+            "ports": [
+              {
+                "name": "service",
+                "containerPort": 50051
+              },
+              {
+                "name": "metrics",
+                "containerPort": 9101
+              }
+            ],
+            "readinessProbe": {
+              "exec": {
+                "command": [
+                  "python",
+                  "-m",
+                  "cranelock",
+                  "state",
+                  "127.0.0.1:50051"
+                ]
+              },
+              "periodSeconds": 5,
+              "timeoutSeconds": 3,
+              "failureThreshold": 12
+            },
+            "startupProbe": {
+              "exec": {
+                "command": [
+                  "python",
+                  "-m",
+                  "cranelock",
+                  "state",
+                  "127.0.0.1:50051"
+                ]
+              },
+              "periodSeconds": 5,
+              "timeoutSeconds": 3,
+              "failureThreshold": 30
+            },
+            "livenessProbe": {
+              "exec": {
+                "command": [
+                  "python",
+                  "-m",
+                  "cranelock",
+                  "state",
+                  "127.0.0.1:50051"
+                ]
+              },
+              "periodSeconds": 10,
+              "timeoutSeconds": 3,
+              "failureThreshold": 6
+            },
+            "command": [
+              "python",
+              "-m",
+              "cranelock"
+            ]
+          }
+        ],
+        "volumes": [
+          {
+            "name": "file-1",
+            "configMap": {
+              "name": "cranelock-public"
+            }
+          },
+          {
+            "name": "file-2",
+            "secret": {
+              "secretName": "crane-3-files"
+            }
+          },
+          {
+            "name": "file-3",
+            "secret": {
+              "secretName": "crane-3-files"
+            }
+          },
+          {
+            "name": "file-4",
+            "secret": {
+              "secretName": "crane-3-files"
+            }
+          },
+          {
+            "name": "file-5",
+            "secret": {
+              "secretName": "crane-3-files"
+            }
+          },
+          {
+            "name": "file-6",
+            "secret": {
+              "secretName": "crane-3-files"
+            }
+          },
+          {
+            "name": "file-7",
+            "secret": {
+              "secretName": "crane-3-files"
+            }
+          },
+          {
+            "name": "file-8",
+            "secret": {
+              "secretName": "crane-3-files"
+            }
+          }
+        ]
+      }
+    },
+    "volumeClaimTemplates": [
+      {
+        "metadata": {
+          "name": "data"
+        },
+        "spec": {
+          "accessModes": [
+            "ReadWriteOnce"
+          ],
+          "resources": {
+            "requests": {
+              "storage": "256Mi"
+            }
+          }
+        }
+      }
+    ]
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "Service",
+  "metadata": {
+    "name": "crane-3",
+    "namespace": "cranelock"
+  },
+  "spec": {
+    "selector": {
+      "app": "crane-3",
+      "part-of": "cranelock"
+    },
+    "ports": [
+      {
+        "name": "service",
+        "port": 50051,
+        "targetPort": 50051
+      },
+      {
+        "name": "metrics",
+        "port": 9101,
+        "targetPort": 9101
+      }
+    ],
+    "clusterIP": "None",
+    "publishNotReadyAddresses": true
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "PersistentVolumeClaim",
+  "metadata": {
+    "name": "gate-data",
+    "namespace": "cranelock"
+  },
+  "spec": {
+    "accessModes": [
+      "ReadWriteOnce"
+    ],
+    "resources": {
+      "requests": {
+        "storage": "1Gi"
+      }
+    }
+  }
+}
+---
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "name": "gate",
+    "namespace": "cranelock"
+  },
+  "spec": {
+    "replicas": 1,
+    "strategy": {
+      "type": "Recreate"
+    },
+    "selector": {
+      "matchLabels": {
+        "app": "gate",
+        "part-of": "cranelock"
+      }
+    },
+    "template": {
+      "metadata": {
+        "labels": {
+          "app": "gate",
+          "part-of": "cranelock"
+        }
+      },
+      "spec": {
+        "securityContext": {
+          "runAsNonRoot": true,
+          "runAsUser": 10001,
+          "runAsGroup": 10001,
+          "fsGroup": 10001
+        },
+        "terminationGracePeriodSeconds": 15,
+        "containers": [
+          {
+            "name": "gate",
+            "image": "cranelock-gate:integrated",
+            "imagePullPolicy": "IfNotPresent",
+            "volumeMounts": [
+              {
+                "name": "data",
+                "mountPath": "/data"
+              },
+              {
+                "name": "file-1",
+                "mountPath": "/config/config.json",
+                "subPath": "config.json",
+                "readOnly": true
+              },
+              {
+                "name": "file-2",
+                "mountPath": "/tls/ca.pem",
+                "subPath": "file-2",
+                "readOnly": true
+              },
+              {
+                "name": "file-3",
+                "mountPath": "/tls/server.pem",
+                "subPath": "file-3",
+                "readOnly": true
+              },
+              {
+                "name": "file-4",
+                "mountPath": "/tls/server-key.pem",
+                "subPath": "file-4",
+                "readOnly": true
+              },
+              {
+                "name": "file-5",
+                "mountPath": "/tls/probe.pem",
+                "subPath": "file-5",
+                "readOnly": true
+              },
+              {
+                "name": "file-6",
+                "mountPath": "/tls/probe-key.pem",
+                "subPath": "file-6",
+                "readOnly": true
+              }
+            ],
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              }
+            },
+            "resources": {
+              "requests": {
+                "cpu": "50m",
+                "memory": "96Mi"
+              },
+              "limits": {
+                "cpu": "1",
+                "memory": "384Mi"
+              }
+            },
+            "args": [
+              "serve",
+              "--config",
+              "/config/config.json",
+              "--database",
+              "/data/gate.sqlite",
+              "--bind",
+              "0.0.0.0:50051",
+              "--tls-ca",
+              "/tls/ca.pem",
+              "--tls-cert",
+              "/tls/server.pem",
+              "--tls-key",
+              "/tls/server-key.pem"
+            ],
+            "ports": [
+              {
+                "name": "service",
+                "containerPort": 50051
+              },
+              {
+                "name": "metrics",
+                "containerPort": 9090
+              }
+            ],
+            "readinessProbe": {
+              "exec": {
+                "command": [
+                  "python",
+                  "-m",
+                  "cranelock_gate.healthcheck",
+                  "--tls-ca",
+                  "/tls/ca.pem",
+                  "--tls-cert",
+                  "/tls/probe.pem",
+                  "--tls-key",
+                  "/tls/probe-key.pem"
+                ]
+              },
+              "periodSeconds": 5,
+              "timeoutSeconds": 3,
+              "failureThreshold": 12
+            },
+            "startupProbe": {
+              "exec": {
+                "command": [
+                  "python",
+                  "-m",
+                  "cranelock_gate.healthcheck",
+                  "--tls-ca",
+                  "/tls/ca.pem",
+                  "--tls-cert",
+                  "/tls/probe.pem",
+                  "--tls-key",
+                  "/tls/probe-key.pem"
+                ]
+              },
+              "periodSeconds": 5,
+              "timeoutSeconds": 3,
+              "failureThreshold": 30
+            },
+            "livenessProbe": {
+              "exec": {
+                "command": [
+                  "python",
+                  "-m",
+                  "cranelock_gate.healthcheck",
+                  "--tls-ca",
+                  "/tls/ca.pem",
+                  "--tls-cert",
+                  "/tls/probe.pem",
+                  "--tls-key",
+                  "/tls/probe-key.pem"
+                ]
+              },
+              "periodSeconds": 10,
+              "timeoutSeconds": 3,
+              "failureThreshold": 6
+            }
+          }
+        ],
+        "volumes": [
+          {
+            "name": "file-1",
+            "configMap": {
+              "name": "cranelock-public"
+            }
+          },
+          {
+            "name": "file-2",
+            "secret": {
+              "secretName": "gate-files"
+            }
+          },
+          {
+            "name": "file-3",
+            "secret": {
+              "secretName": "gate-files"
+            }
+          },
+          {
+            "name": "file-4",
+            "secret": {
+              "secretName": "gate-files"
+            }
+          },
+          {
+            "name": "file-5",
+            "secret": {
+              "secretName": "gate-files"
+            }
+          },
+          {
+            "name": "file-6",
+            "secret": {
+              "secretName": "gate-files"
+            }
+          },
+          {
+            "name": "data",
+            "persistentVolumeClaim": {
+              "claimName": "gate-data"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "Service",
+  "metadata": {
+    "name": "gate",
+    "namespace": "cranelock"
+  },
+  "spec": {
+    "selector": {
+      "app": "gate",
+      "part-of": "cranelock"
+    },
+    "ports": [
+      {
+        "name": "service",
+        "port": 50051,
+        "targetPort": 50051
+      },
+      {
+        "name": "metrics",
+        "port": 9090,
+        "targetPort": 9090
+      }
+    ]
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "PersistentVolumeClaim",
+  "metadata": {
+    "name": "grafana-data",
+    "namespace": "cranelock"
+  },
+  "spec": {
+    "accessModes": [
+      "ReadWriteOnce"
+    ],
+    "resources": {
+      "requests": {
+        "storage": "1Gi"
+      }
+    }
+  }
+}
+---
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "name": "grafana",
+    "namespace": "cranelock"
+  },
+  "spec": {
+    "replicas": 1,
+    "strategy": {
+      "type": "Recreate"
+    },
+    "selector": {
+      "matchLabels": {
+        "app": "grafana",
+        "part-of": "cranelock"
+      }
+    },
+    "template": {
+      "metadata": {
+        "labels": {
+          "app": "grafana",
+          "part-of": "cranelock"
+        }
+      },
+      "spec": {
+        "securityContext": {
+          "runAsNonRoot": true,
+          "runAsUser": 472,
+          "runAsGroup": 472,
+          "fsGroup": 472
+        },
+        "terminationGracePeriodSeconds": 15,
+        "containers": [
+          {
+            "name": "grafana",
+            "image": "grafana/grafana:12.2.0",
+            "imagePullPolicy": "IfNotPresent",
+            "volumeMounts": [
+              {
+                "name": "data",
+                "mountPath": "/var/lib/grafana"
+              },
+              {
+                "name": "file-1",
+                "mountPath": "/run/secrets/grafana-password",
+                "subPath": "file-1",
+                "readOnly": true
+              },
+              {
+                "name": "file-2",
+                "mountPath": "/etc/grafana/provisioning/datasources/cranelock.yaml",
+                "subPath": "file-2",
+                "readOnly": true
+              },
+              {
+                "name": "file-3",
+                "mountPath": "/etc/grafana/provisioning/dashboards/cranelock.yaml",
+                "subPath": "file-3",
+                "readOnly": true
+              },
+              {
+                "name": "file-4",
+                "mountPath": "/var/lib/grafana/dashboards/cranelock.json",
+                "subPath": "file-4",
+                "readOnly": true
+              }
+            ],
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              }
+            },
+            "resources": {
+              "requests": {
+                "cpu": "50m",
+                "memory": "96Mi"
+              },
+              "limits": {
+                "cpu": "1",
+                "memory": "384Mi"
+              }
+            },
+            "env": [
+              {
+                "name": "GF_SECURITY_ADMIN_PASSWORD__FILE",
+                "value": "/run/secrets/grafana-password"
+              },
+              {
+                "name": "GF_USERS_ALLOW_SIGN_UP",
+                "value": "false"
+              }
+            ],
+            "ports": [
+              {
+                "name": "service",
+                "containerPort": 3000
+              }
+            ],
+            "readinessProbe": {
+              "httpGet": {
+                "port": 3000,
+                "path": "/api/health"
+              },
+              "periodSeconds": 5,
+              "failureThreshold": 12
+            },
+            "startupProbe": {
+              "httpGet": {
+                "port": 3000,
+                "path": "/api/health"
+              },
+              "periodSeconds": 5,
+              "failureThreshold": 30
+            },
+            "livenessProbe": {
+              "httpGet": {
+                "port": 3000,
+                "path": "/api/health"
+              },
+              "periodSeconds": 10,
+              "failureThreshold": 6
+            }
+          }
+        ],
+        "volumes": [
+          {
+            "name": "file-1",
+            "secret": {
+              "secretName": "grafana-files"
+            }
+          },
+          {
+            "name": "file-2",
+            "configMap": {
+              "name": "grafana-public"
+            }
+          },
+          {
+            "name": "file-3",
+            "configMap": {
+              "name": "grafana-public"
+            }
+          },
+          {
+            "name": "file-4",
+            "configMap": {
+              "name": "grafana-public"
+            }
+          },
+          {
+            "name": "data",
+            "persistentVolumeClaim": {
+              "claimName": "grafana-data"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "Service",
+  "metadata": {
+    "name": "grafana",
+    "namespace": "cranelock"
+  },
+  "spec": {
+    "selector": {
+      "app": "grafana",
+      "part-of": "cranelock"
+    },
+    "ports": [
+      {
+        "name": "service",
+        "port": 3000,
+        "targetPort": 3000
+      }
+    ]
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "PersistentVolumeClaim",
+  "metadata": {
+    "name": "prometheus-data",
+    "namespace": "cranelock"
+  },
+  "spec": {
+    "accessModes": [
+      "ReadWriteOnce"
+    ],
+    "resources": {
+      "requests": {
+        "storage": "1Gi"
+      }
+    }
+  }
+}
+---
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "name": "prometheus",
+    "namespace": "cranelock"
+  },
+  "spec": {
+    "replicas": 1,
+    "strategy": {
+      "type": "Recreate"
+    },
+    "selector": {
+      "matchLabels": {
+        "app": "prometheus",
+        "part-of": "cranelock"
+      }
+    },
+    "template": {
+      "metadata": {
+        "labels": {
+          "app": "prometheus",
+          "part-of": "cranelock"
+        }
+      },
+      "spec": {
+        "securityContext": {
+          "runAsNonRoot": true,
+          "runAsUser": 65534,
+          "runAsGroup": 65534,
+          "fsGroup": 65534
+        },
+        "terminationGracePeriodSeconds": 15,
+        "containers": [
+          {
+            "name": "prometheus",
+            "image": "prom/prometheus:v3.5.0",
+            "imagePullPolicy": "IfNotPresent",
+            "volumeMounts": [
+              {
+                "name": "file-0",
+                "mountPath": "/etc/prometheus/prometheus.yml",
+                "subPath": "file-0",
+                "readOnly": true
+              },
+              {
+                "name": "data",
+                "mountPath": "/prometheus"
+              }
+            ],
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              }
+            },
+            "resources": {
+              "requests": {
+                "cpu": "50m",
+                "memory": "96Mi"
+              },
+              "limits": {
+                "cpu": "1",
+                "memory": "384Mi"
+              }
+            },
+            "args": [
+              "--config.file=/etc/prometheus/prometheus.yml",
+              "--storage.tsdb.retention.time=7d"
+            ],
+            "ports": [
+              {
+                "name": "service",
+                "containerPort": 9090
+              }
+            ],
+            "readinessProbe": {
+              "httpGet": {
+                "port": 9090,
+                "path": "/-/ready"
+              },
+              "periodSeconds": 5,
+              "failureThreshold": 12
+            },
+            "startupProbe": {
+              "httpGet": {
+                "port": 9090,
+                "path": "/-/ready"
+              },
+              "periodSeconds": 5,
+              "failureThreshold": 30
+            },
+            "livenessProbe": {
+              "httpGet": {
+                "port": 9090,
+                "path": "/-/ready"
+              },
+              "periodSeconds": 10,
+              "failureThreshold": 6
+            }
+          }
+        ],
+        "volumes": [
+          {
+            "name": "file-0",
+            "configMap": {
+              "name": "prometheus-public"
+            }
+          },
+          {
+            "name": "data",
+            "persistentVolumeClaim": {
+              "claimName": "prometheus-data"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "Service",
+  "metadata": {
+    "name": "prometheus",
+    "namespace": "cranelock"
+  },
+  "spec": {
+    "selector": {
+      "app": "prometheus",
+      "part-of": "cranelock"
+    },
+    "ports": [
+      {
+        "name": "service",
+        "port": 9090,
+        "targetPort": 9090
+      }
+    ]
+  }
+}

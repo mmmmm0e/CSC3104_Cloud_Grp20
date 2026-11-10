@@ -1,0 +1,23 @@
+services:
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    ports: ["127.0.0.1:9092:9090"]
+    volumes:
+      - ./monitoring/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=7d"]
+  grafana:
+    image: grafana/grafana:12.2.0
+    ports: ["127.0.0.1:3001:3000"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana-password
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ../demo-data/integrated/grafana-password:/run/secrets/grafana-password:ro
+      - ./monitoring/datasource.yaml:/etc/grafana/provisioning/datasources/cranelock.yaml:ro
+      - ./monitoring/provider.yaml:/etc/grafana/provisioning/dashboards/cranelock.yaml:ro
+      - ./monitoring/dashboard.json:/var/lib/grafana/dashboards/cranelock.json:ro
+volumes:
+  prometheus-data:
+  grafana-data:
