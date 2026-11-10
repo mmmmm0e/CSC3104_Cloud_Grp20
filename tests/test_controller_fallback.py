@@ -1,8 +1,11 @@
 import asyncio
 
+import grpc
 import pytest
 
 from cranelock.agent import Agent, Mode
+from cranelock.controller import CentralController, ControllerHeartbeatClient
+from cranelock_gate.server import RunningServer
 from test_auto_recovery import survivors, until
 
 
@@ -31,7 +34,8 @@ def test_controller_outage_automatically_preserves_healthy_holder_and_occupancy(
             healthy = True
             await until(lambda: not any(a.controller_suspected for a in agents.values()))
             assert all(a.state.mode == Mode.LOCAL for a in agents.values())
-            assert h.state["epoch"] == 1  # Controller return belongs to Kirby.
+            assert h.state["epoch"] == 1  # A liveness-only adapter cannot install CENTRAL.
+            assert not any(e["event"] == "CONTROLLER_RESTORED" for e in events)
     asyncio.run(scenario())
 
 
@@ -52,6 +56,172 @@ def test_controller_suspicion_without_majority_cannot_install_local(h, tmp_path,
             assert not agents["crane-2"].state.has_token
             assert set(agents["crane-2"].vote_state) == {"1"}
             assert all(not a.vote_state for identity, a in agents.items() if identity != "crane-2")
+    asyncio.run(scenario())
+
+
+def test_real_controller_heartbeat_restores_latest_gate_authority(h, tmp_path):
+    async def scenario():
+        gate_server = RunningServer(h.gate, "127.0.0.1:0")
+        gate_channel = grpc.insecure_channel(f"127.0.0.1:{gate_server.port}")
+        controller = CentralController(h.config, h.keys["controller"], gate_channel)
+        controller_port = await controller.start_heartbeat_server()
+        heartbeat = ControllerHeartbeatClient(
+            f"127.0.0.1:{controller_port}", "crane-2", h.config.controller_id,
+            timeout=.1)
+        try:
+            async with survivors(
+                    h, tmp_path, ["crane-1", "crane-2"], mode="CENTRAL",
+                    probes={identity: heartbeat.probe
+                            for identity in ("crane-1", "crane-2")}) as (agents, events):
+                assert await heartbeat.probe()
+                await controller.stop_heartbeat_server()
+                await until(lambda: all(
+                    agent.state.mode == Mode.LOCAL and agent.controller_suspected
+                    for agent in agents.values()))
+                local = h.state
+                assert (local["epoch"], local["revision"], local["holder"], local["mode"]) == (
+                    1, 2, "crane-1", "LOCAL")
+                assert h.observe()["allowed"]
+                transfer = h.call("crane-1", "TransferHolder", epoch=1, revision=2,
+                                  destination="crane-2")
+                assert transfer["allowed"]
+                assert (transfer["state"]["epoch"], transfer["state"]["revision"],
+                        transfer["state"]["holder"]) == (1, 3, "crane-2")
+
+                controller_port = await controller.start_heartbeat_server()
+                await heartbeat.reconnect(f"127.0.0.1:{controller_port}")
+                assert await heartbeat.probe()
+                await until(lambda: all(
+                    agent.state.mode == Mode.CENTRAL and not agent.controller_suspected
+                    for agent in agents.values()))
+                restored = h.state
+                assert (restored["epoch"], restored["revision"], restored["holder"],
+                        restored["mode"]) == (1, 4, "crane-2", "CENTRAL")
+                assert all((agent.state.current_epoch, agent.state.revision,
+                            agent.state.token_holder) == (1, 4, "crane-2")
+                           for agent in agents.values())
+                assert all(not agent.state.has_token or agent.state.agent_id == "crane-2"
+                           for agent in agents.values())
+                assert any(event["event"] == "CONTROLLER_RESTORED" for event in events)
+        finally:
+            await heartbeat.close()
+            await controller.stop_heartbeat_server()
+            gate_channel.close()
+            gate_server.close()
+    asyncio.run(scenario())
+
+
+def test_repeated_controller_failures_do_not_replay_stale_authority(h, tmp_path):
+    async def scenario():
+        gate_server = RunningServer(h.gate, "127.0.0.1:0")
+        gate_channel = grpc.insecure_channel(f"127.0.0.1:{gate_server.port}")
+        controller = CentralController(h.config, h.keys["controller"], gate_channel)
+        port = await controller.start_heartbeat_server()
+        heartbeat = ControllerHeartbeatClient(
+            f"127.0.0.1:{port}", "crane-2", h.config.controller_id, timeout=.1)
+        try:
+            async with survivors(
+                    h, tmp_path, ["crane-1", "crane-2"], mode="CENTRAL",
+                    probes={identity: heartbeat.probe
+                            for identity in ("crane-1", "crane-2")}) as (agents, events):
+                for expected_epoch in (1, 2):
+                    await controller.stop_heartbeat_server()
+                    await until(lambda: all(
+                        agent.state.mode == Mode.LOCAL
+                        and agent.state.current_epoch == expected_epoch
+                        and agent.controller_suspected for agent in agents.values()))
+                    await until(lambda: sum(
+                        event["event"] == "CONTROLLER_PROBE_FAILED"
+                        for event in events) >= expected_epoch * 3)
+                    failed_state = h.state
+                    assert (failed_state["epoch"], failed_state["mode"],
+                            failed_state["holder"]) == (
+                                expected_epoch, "LOCAL", "crane-1")
+                    assert all(agent.state.token_holder == "crane-1"
+                               for agent in agents.values())
+
+                    port = await controller.start_heartbeat_server()
+                    await heartbeat.reconnect(f"127.0.0.1:{port}")
+                    assert await heartbeat.probe()
+                    await until(lambda: all(
+                        agent.state.mode == Mode.CENTRAL
+                        and agent.state.current_epoch == expected_epoch
+                        and not agent.controller_suspected
+                        for agent in agents.values()))
+                    restored = h.state
+                    assert (restored["epoch"], restored["revision"], restored["mode"],
+                            restored["holder"]) == (
+                                expected_epoch, expected_epoch * 2 + 1,
+                                "CENTRAL", "crane-1")
+        finally:
+            await heartbeat.close()
+            await controller.stop_heartbeat_server()
+            gate_channel.close()
+            gate_server.close()
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("committed", [False, True])
+def test_controller_return_does_not_overwrite_local_transfer(h, tmp_path, committed):
+    async def scenario():
+        gate_server = RunningServer(h.gate, "127.0.0.1:0")
+        gate_channel = grpc.insecure_channel(f"127.0.0.1:{gate_server.port}")
+        controller = CentralController(h.config, h.keys["controller"], gate_channel)
+        heartbeat_port = await controller.start_heartbeat_server()
+        heartbeat = ControllerHeartbeatClient(
+            f"127.0.0.1:{heartbeat_port}", "crane-2", h.config.controller_id,
+            timeout=.1)
+        try:
+            async with survivors(
+                    h, tmp_path, ["crane-1", "crane-2"], mode="CENTRAL",
+                    probes={identity: heartbeat.probe
+                            for identity in ("crane-1", "crane-2")}) as (agents, events):
+                await controller.stop_heartbeat_server()
+                await until(lambda: all(agent.state.mode == Mode.LOCAL
+                                        for agent in agents.values()))
+                assert h.observe()["allowed"]
+                holder = agents["crane-1"]
+                async with holder.lock:
+                    holder.state.request_queue.append("crane-2")
+                started, release = asyncio.Event(), asyncio.Event()
+                original_transfer = holder.gate.transfer
+
+                async def delayed_transfer(payload):
+                    result = await original_transfer(payload) if committed else None
+                    started.set()
+                    await release.wait()
+                    return result if committed else await original_transfer(payload)
+
+                holder.gate.transfer = delayed_transfer
+                transfer = asyncio.create_task(holder.transfer_next())
+                await asyncio.wait_for(started.wait(), 2)
+                heartbeat_port = await controller.start_heartbeat_server()
+                await heartbeat.reconnect(f"127.0.0.1:{heartbeat_port}")
+                await until(lambda: h.state["mode"] == "CENTRAL")
+                assert holder.gate_attempt is not None
+                assert holder.state.mode == Mode.LOCAL
+                assert not holder.state.has_token
+                await until(lambda: any(e["event"] == "CONTROLLER_RECONCILIATION_DEFERRED"
+                                        for e in events))
+                release.set()
+                assert not await asyncio.wait_for(transfer, 2)
+                if committed:
+                    # The old notification is fenced by the restored revision.
+                    # Resolve it as the normal automatic transfer worker would.
+                    assert holder.pending is not None
+                    assert not await holder.transfer_next()
+                await until(lambda: all(agent.state.mode == Mode.CENTRAL
+                                        for agent in agents.values()))
+                assert (h.state["epoch"], h.state["revision"], h.state["holder"]) == (
+                    1, 4 if committed else 3, "crane-2" if committed else "crane-1")
+                assert holder.state.has_token == (not committed)
+                assert agents["crane-2"].state.has_token == committed
+                assert holder.gate_attempt is None
+        finally:
+            await heartbeat.close()
+            await controller.stop_heartbeat_server()
+            gate_channel.close()
+            gate_server.close()
     asyncio.run(scenario())
 
 

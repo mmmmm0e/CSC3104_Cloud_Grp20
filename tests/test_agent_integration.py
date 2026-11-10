@@ -4,10 +4,11 @@ import json
 from types import SimpleNamespace
 
 import pytest
+import grpc
 
 from cranelock import protocol_pb2 as pb
 from cranelock.agent import Agent
-from cranelock_sim.agents import run_agent_demo, token_owner
+from cranelock_sim.agents import AgentCluster, run_agent_demo, token_owner
 from cranelock_sim.lane import SafetyViolation
 
 
@@ -141,3 +142,47 @@ def test_agent_demo_retains_failure_evidence(tmp_path, monkeypatch):
     from cranelock_gate.storage import ProcessLease
     lease = ProcessLease(output / "gate.sqlite")
     lease.close()
+
+
+# retries a lost announcement and refuses to advance the gate if delivery stays blocked
+@pytest.mark.parametrize("permanent", [False, True])
+def test_handoff_announcement_retry_preserves_gate_checks(tmp_path, monkeypatch, permanent):
+    released = False
+    heartbeat, start = Agent.Heartbeat, AgentCluster.start
+
+    # injects rpc loss without modifying the receiver's authority state
+    async def receive(self, message, context):
+        if (self.state.agent_id == "crane-3" and message.agent_id == "crane-1"
+                and message.outgoing_transfer_id and not released):
+            await context.abort(grpc.StatusCode.UNAVAILABLE, "Injected announcement loss")
+        return await heartbeat(self, message, context)
+
+    # restores delivery only after the adapter records a retry
+    async def setup(self):
+        original_emit = self.emit
+
+        # retains the normal event trail for verification
+        def emit(event, **fields):
+            nonlocal released
+            if event == "handoff_announcement_retry" and not permanent:
+                released = True
+            original_emit(event, **fields)
+
+        self.emit = emit
+        await start(self)
+
+    monkeypatch.setattr(Agent, "Heartbeat", receive)
+    monkeypatch.setattr(AgentCluster, "start", setup)
+    output = tmp_path / "announcement"
+    if permanent:
+        with pytest.raises(RuntimeError, match="Holder announcement did not reach every agent"):
+            asyncio.run(run_agent_demo(output, rounds=1, crossing_time=.01))
+    else:
+        summary = asyncio.run(run_agent_demo(output, rounds=1, crossing_time=.01))
+        assert summary["completed"] == 3 and summary["safety_violations"] == 0
+    events = [json.loads(line) for line in (output / "events.jsonl").read_text().splitlines()]
+    retries = [event for event in events if event["event"] == "handoff_announcement_retry"]
+    assert retries and len({event["transfer_id"] for event in retries}) == 1
+    if permanent:
+        assert len(retries) == 2
+        assert not any(event["event"] == "gate_handoff" for event in events)

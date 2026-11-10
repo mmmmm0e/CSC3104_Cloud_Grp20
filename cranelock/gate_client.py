@@ -4,12 +4,14 @@ The supplied client is synchronous. Only its bounded I/O runs in the default
 executor; all agent state remains on the asyncio event loop.
 """
 import asyncio
+import hashlib
 
 import grpc
 
 from cranelock_gate.client import Client, command
 from cranelock_gate.config import Config
 from cranelock_gate.demo import load_keys
+from cranelock_gate.crypto import canonical
 
 
 class GateClient:
@@ -47,10 +49,12 @@ class GateClient:
         # Reusing an unchanged payload preserves the gate's durable retry contract.
         return await asyncio.to_thread(self.client.send, payload)
 
-    async def install_recovery(self, certificate):
+    async def install_recovery(self, certificate, *, request_id=None):
         payload = certificate["payload"]
+        request_id = request_id or "recovery-" + hashlib.sha256(canonical(dict(
+            actor_id=self.agent_id, certificate=certificate))).hexdigest()
         return await asyncio.to_thread(self.client.call, self.agent_id, "InstallAuthority",
-            certificate=certificate, expected_epoch=payload["expected_epoch"],
+            request_id=request_id, certificate=certificate, expected_epoch=payload["expected_epoch"],
             expected_revision=payload["expected_revision"])
 
     async def close(self):

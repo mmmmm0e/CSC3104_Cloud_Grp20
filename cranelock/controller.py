@@ -1,5 +1,7 @@
 import argparse
 import asyncio
+import ipaddress
+import math
 import time
 import uuid
 from collections.abc import Mapping
@@ -110,7 +112,9 @@ def format_snapshot(snapshot, phase):
 class CentralController:
     # Coordinates central authority for a configured gate.
 
-    def __init__(self, config, private_key, channel):
+    def __init__(self, config, private_key, channel, *, timeout=3):
+        if not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError("Gate timeout must be finite and positive")
         if not isinstance(private_key, Ed25519PrivateKey):
             raise TypeError("Controller signing key must be an Ed25519 private key")
         expected_key = bytes.fromhex(config.service_keys[config.controller_id])
@@ -119,7 +123,8 @@ class CentralController:
             raise ValueError("Controller private key does not match configured identity")
         self.config = config
         self.private_key = private_key
-        self.client = Client(channel, config, {config.controller_id: private_key})
+        self.client = Client(channel, config, {config.controller_id: private_key}, timeout)
+        self._heartbeat_server = None
 
     def get_state(self):
         # Returns the latest state reported by this gate.
@@ -137,42 +142,98 @@ class CentralController:
 
         for attempt in range(max_attempts):
             state = self.get_state()
-            epoch = state.get("epoch")
-            revision = state.get("revision")
-            if type(epoch) is not int or epoch < -1 or type(revision) is not int or revision < 0:
-                raise ControllerError("Gate returned invalid authority state")
-            if epoch == -1 and revision != 0:
-                raise ControllerError("Uninitialized gate has an unexpected revision")
-
-            payload = dict(
-                version=1,
-                lane_id=self.config.lane_id,
-                membership_id=self.config.membership_id,
-                epoch=0 if epoch == -1 else epoch,
-                mode="CENTRAL",
-                holder=holder,
-                expected_epoch=epoch,
-                expected_revision=revision,
-            )
-            certificate = dict(
-                payload=payload,
-                signatures=[dict(
-                    signer_id=self.config.controller_id,
-                    signature=encode_signature(
-                        self.private_key.sign(CERTIFICATE_DOMAIN + canonical(payload))),
-                )],
-            )
-            result = self.client.call(
-                self.config.controller_id,
-                "InstallAuthority",
-                request_id=request_id if attempt == 0 and request_id else str(uuid.uuid4()),
-                certificate=certificate,
-                expected_epoch=epoch,
-                expected_revision=revision,
-            )
+            result = self._install_central_snapshot(
+                state, holder,
+                request_id=request_id if attempt == 0 else None)
             if result["allowed"] or result["reason"] not in {"STALE_EPOCH", "STALE_REVISION"}:
                 return result
         return result
+
+    def _install_central_snapshot(self, state, holder, *, request_id=None):
+        """Bind the holder decision and certificate to one gate snapshot."""
+        epoch, revision = state.get("epoch"), state.get("revision")
+        if type(epoch) is not int or epoch < -1 or type(revision) is not int or revision < 0:
+            raise ControllerError("Gate returned invalid authority state")
+        if epoch == -1 and revision != 0:
+            raise ControllerError("Uninitialized gate has an unexpected revision")
+        payload = dict(
+            version=1,
+            lane_id=self.config.lane_id,
+            membership_id=self.config.membership_id,
+            epoch=0 if epoch == -1 else epoch,
+            mode="CENTRAL",
+            holder=holder,
+            expected_epoch=epoch,
+            expected_revision=revision,
+        )
+        certificate = dict(
+            payload=payload,
+            signatures=[dict(
+                signer_id=self.config.controller_id,
+                signature=encode_signature(
+                    self.private_key.sign(CERTIFICATE_DOMAIN + canonical(payload))),
+            )],
+        )
+        return self.client.call(
+            self.config.controller_id,
+            "InstallAuthority",
+            request_id=request_id or str(uuid.uuid4()),
+            certificate=certificate,
+            expected_epoch=epoch,
+            expected_revision=revision,
+        )
+
+    def restore_central(self, *, max_attempts=3):
+        # Restore CENTRAL on the latest gate holder without replacing newer authority.
+        if type(max_attempts) is not int or max_attempts < 1:
+            raise ValueError("max_attempts must be a positive integer")
+        for _ in range(max_attempts):
+            state = self.get_state()
+            epoch, revision, holder, mode = (
+                state.get("epoch"), state.get("revision"),
+                state.get("holder"), state.get("mode"))
+            if (type(epoch) is not int or epoch < 0
+                    or type(revision) is not int or revision < 0
+                    or holder not in self.config.members
+                    or mode not in {"CENTRAL", "LOCAL"}):
+                raise ControllerError("Gate has no valid installed authority to restore")
+            if mode == "CENTRAL":
+                return state
+            result = self._install_central_snapshot(state, holder)
+            if result["allowed"]:
+                return result["state"]
+            if result["reason"] not in {"STALE_EPOCH", "STALE_REVISION"}:
+                raise ControllerError(
+                    f"Gate rejected CENTRAL restoration: {result['reason']}")
+        raise ControllerError("Gate authority kept changing during CENTRAL restoration")
+
+    async def start_heartbeat_server(self, address="127.0.0.1:0", *, credentials=None):
+        # Successful heartbeats reconcile the gate to CENTRAL.
+        if self._heartbeat_server is not None:
+            raise RuntimeError("Controller heartbeat server is already running")
+        if not credentials:
+            host = address.rsplit(":", 1)[0].strip("[]")
+            try:
+                loopback = ipaddress.ip_address(host).is_loopback
+            except ValueError:
+                loopback = host.lower() == "localhost"
+            if not loopback:
+                raise ValueError("Non-loopback controller listeners require TLS credentials")
+        server = grpc.aio.server()
+        agent_rpc.add_CraneControllerServicer_to_server(
+            ControllerHeartbeatServicer(self), server)
+        port = (server.add_secure_port(address, credentials) if credentials
+                else server.add_insecure_port(address))
+        if not port:
+            raise RuntimeError("Cannot bind controller heartbeat address")
+        await server.start()
+        self._heartbeat_server = server
+        return port
+
+    async def stop_heartbeat_server(self):
+        if self._heartbeat_server is not None:
+            server, self._heartbeat_server = self._heartbeat_server, None
+            await server.stop(0)
 
     async def reconcile_agents(self, agents):
         # Reconciles supplied agents from the gate's currently accepted authority.
@@ -231,6 +292,73 @@ class CentralControllerFleet:
             return self.controllers[lane_id]
         except KeyError:
             raise ValueError(f"No gate is configured for lane {lane_id!r}") from None
+
+
+class ControllerHeartbeatServicer(agent_rpc.CraneControllerServicer):
+    def __init__(self, controller):
+        self.controller = controller
+        self._restore_lock = asyncio.Lock()
+
+    async def Heartbeat(self, request, context):
+        if request.agent_id not in self.controller.config.members:
+            await context.abort(grpc.StatusCode.PERMISSION_DENIED, "Unknown agent")
+        async with self._restore_lock:
+            try:
+                state = await asyncio.to_thread(self.controller.restore_central)
+            except ControllerError as error:
+                await context.abort(grpc.StatusCode.UNAVAILABLE, str(error))
+            except grpc.RpcError as error:
+                await context.abort(grpc.StatusCode.UNAVAILABLE, error.details() or str(error))
+            except RuntimeError as error:
+                await context.abort(grpc.StatusCode.UNAVAILABLE, str(error))
+        return agent_pb.ControllerHeartbeatResponse(
+            available=True,
+            controller_id=self.controller.config.controller_id,
+            epoch=state["epoch"],
+            revision=state["revision"],
+            holder=state["holder"],
+            mode=state["mode"],
+        )
+
+
+class ControllerHeartbeatClient:
+    def __init__(self, address, agent_id, controller_id, *, timeout=1.0, credentials=None):
+        if not address or not agent_id or not controller_id or timeout <= 0:
+            raise ValueError("Address, identities and positive timeout are required")
+        self.agent_id = agent_id
+        self.controller_id = controller_id
+        self.timeout = timeout
+        self.credentials = credentials
+        self.channel = (grpc.aio.secure_channel(address, credentials) if credentials
+                        else grpc.aio.insecure_channel(address))
+        self.stub = agent_rpc.CraneControllerStub(self.channel)
+
+    async def reconnect(self, address, *, credentials=None):
+        if credentials is not None:
+            self.credentials = credentials
+        old_channel = self.channel
+        self.channel = (grpc.aio.secure_channel(address, self.credentials) if self.credentials
+                        else grpc.aio.insecure_channel(address))
+        self.stub = agent_rpc.CraneControllerStub(self.channel)
+        await old_channel.close()
+
+    async def probe(self):
+        channel = self.channel
+        try:
+            response = await self.stub.Heartbeat(
+                agent_pb.ControllerHeartbeatRequest(agent_id=self.agent_id),
+                timeout=self.timeout)
+        except asyncio.CancelledError:
+            # Replacing a channel cancels its RPCs, not the watcher task.
+            # Explicit task cancellation must still propagate on shutdown.
+            if channel is not self.channel and not asyncio.current_task().cancelling():
+                return False
+            raise
+        return (response.available and response.controller_id == self.controller_id
+                and response.mode == "CENTRAL" and bool(response.holder))
+
+    async def close(self):
+        await self.channel.close()
 
 
 def main():

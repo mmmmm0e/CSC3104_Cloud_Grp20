@@ -1,11 +1,24 @@
 # CraneLock
 
+Recovery retry review (Moe): see [retry behavior, safety limits and failure tests](docs/RECOVERY_RETRY.md).
+Votes stay immutable across gate revision changes; identical retries are supported.
+The real-container validation harness is available as:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/validate_recovery_containers.py
+```
+
+This requires Docker. Preparation without runtime validation is available with
+`--prepare-only`; it must not be reported as a passed container experiment.
+
 This repository contains the normal-operation crane agent (`cranelock`) and the
 trusted access gate (`cranelock_gate`). Normal gate-authorized token handoff and
 gate-based restart reconciliation are now available in opt-in gate mode.
 See [agent/gate integration and exact local demo](docs/AGENT_GATE.md) for setup,
 authority rules, failure behavior, validation and team integration decisions.
 The separate protobuf services and original standalone baseline are preserved.
+For per-agent recovery credentials, optional controller-probe adapters and Arif's
+startup requirements, see [standalone agent launcher](docs/AGENT_LAUNCHER.md).
 
 Install both components and test dependencies with `python -m pip install -e ".[dev]"`
 (or `python -m pip install -r requirements.txt`), then run `python -m pytest -q`.
@@ -35,6 +48,10 @@ Install `.[evaluation]` for PNG/SVG graphs. See [baseline comparison scope and m
 View saved experiments with `python -m cranelock_sim.dashboard`, then open
 `http://127.0.0.1:8765`. The local dashboard includes model charts, run filters,
 recorded lane playback and evidence downloads. See [dashboard instructions](docs/EVALUATION.md#open-the-dashboard).
+
+Gate safety evidence (exclusive access under failures) is in
+[docs/SAFETY_PROOF.md](docs/SAFETY_PROOF.md); mutual-TLS deployment is in
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#mutual-tls-outside-isolated-development).
 
 Both demos default to port 50051. Run them separately or configure distinct ports
 when running them together.

@@ -9,12 +9,14 @@ from cranelock.controller import (
     AgentStateMonitor,
     CentralController,
     CentralControllerFleet,
+    ControllerHeartbeatClient,
     format_snapshot,
 )
 from cranelock_gate.config import Config
 from cranelock_gate.core import Gate
 from cranelock_gate.server import RunningServer
 from cranelock_gate.storage import initialize
+from cranelock import protocol_pb2_grpc as rpc
 
 
 def test_controller_bootstraps_central_authority(h):
@@ -36,6 +38,41 @@ def test_controller_bootstraps_central_authority(h):
         server.close()
 
 
+def test_heartbeat_reconnect_preserves_watcher_but_shutdown_cancels():
+    async def scenario():
+        started = asyncio.Event()
+
+        class SlowController(rpc.CraneControllerServicer):
+            async def Heartbeat(self, request, context):
+                started.set()
+                await asyncio.Event().wait()
+
+        server = grpc.aio.server()
+        rpc.add_CraneControllerServicer_to_server(SlowController(), server)
+        port = server.add_insecure_port("127.0.0.1:0")
+        await server.start()
+        client = ControllerHeartbeatClient(f"127.0.0.1:{port}", "crane-1", "controller")
+        probe = None
+        try:
+            probe = asyncio.create_task(client.probe())
+            await asyncio.wait_for(started.wait(), 2)
+            await client.reconnect(f"127.0.0.1:{port}")
+            assert not await asyncio.wait_for(probe, 2)
+            started.clear()
+            probe = asyncio.create_task(client.probe())
+            await asyncio.wait_for(started.wait(), 2)
+            probe.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await probe
+        finally:
+            if probe is not None:
+                probe.cancel()
+                await asyncio.gather(probe, return_exceptions=True)
+            await client.close()
+            await server.stop(0)
+    asyncio.run(scenario())
+
+
 def test_controller_switches_existing_authority_to_central(h):
     assert h.install()["allowed"]
     server = RunningServer(h.gate, "127.0.0.1:0")
@@ -50,6 +87,47 @@ def test_controller_switches_existing_authority_to_central(h):
             assert result["state"]["epoch"] == 0
             assert result["state"]["mode"] == "CENTRAL"
             assert result["state"]["holder"] == "crane-2"
+    finally:
+        server.close()
+
+
+@pytest.mark.parametrize("change", ["transfer", "recovery"])
+def test_controller_return_retries_snapshot_without_replacing_new_holder(h, monkeypatch, change):
+    assert h.install()["allowed"]
+    assert h.observe()["allowed"]
+    server = RunningServer(h.gate, "127.0.0.1:0")
+    try:
+        with grpc.insecure_channel(f"127.0.0.1:{server.port}") as channel:
+            controller = CentralController(h.config, h.keys["controller"], channel)
+            get_state, call = controller.get_state, controller.client.call
+            snapshots, results = [], []
+
+            def concurrent_change():
+                state = get_state()
+                snapshots.append(state)
+                if len(snapshots) == 1:
+                    if change == "transfer":
+                        result = h.call("crane-1", "TransferHolder", epoch=0, revision=1,
+                                        destination="crane-2")
+                    else:
+                        result = h.install("crane-2")
+                    assert result["allowed"]
+                return state
+
+            def record_call(*args, **kwargs):
+                result = call(*args, **kwargs)
+                results.append(result)
+                return result
+
+            monkeypatch.setattr(controller, "get_state", concurrent_change)
+            monkeypatch.setattr(controller.client, "call", record_call)
+            state = controller.restore_central()
+            assert len(snapshots) == len(results) == 2
+            assert results[0]["reason"] == ("STALE_REVISION" if change == "transfer" else "STALE_EPOCH")
+            assert (state["epoch"], state["revision"], state["holder"], state["mode"]) == (
+                0 if change == "transfer" else 1, 3, "crane-2", "CENTRAL")
+            assert controller.restore_central() == state  # Already CENTRAL is idempotent.
+            assert len(results) == 2
     finally:
         server.close()
 

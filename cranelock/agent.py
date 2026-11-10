@@ -61,6 +61,8 @@ class Agent(rpc.CraneAgentServicer):
         self.received = set()
         self.observed_handoffs = set()
         self.vote_state = {}  # Opaque reserved storage; Recovery owns vote policy.
+        self.vote_proposals = {}
+        self.recovery_blocked = None
         self.recovery_config = recovery_config
         self.recovery_private_key = recovery_private_key
         if (recovery_config is None) != (recovery_private_key is None):
@@ -84,6 +86,9 @@ class Agent(rpc.CraneAgentServicer):
             self.state.mode = Mode.REJOINING
             self.state.has_token = False
             self.vote_state = saved.get("vote_state", {})
+            self.vote_proposals = saved.get("vote_proposals", {})
+        if recovery_config is not None:
+            recovery.validate_saved(recovery_config, self.vote_state, self.vote_proposals)
         self.last_seen = {peer: clock() for peer in peers}
         self.suspected = set()
         self.holder_suspicion = None
@@ -93,6 +98,7 @@ class Agent(rpc.CraneAgentServicer):
         self.server = None
         self.controller_probe = controller_probe
         self.controller_suspected = False
+        self.controller_return_pending = False
         self.last_controller_seen = clock()
         self.persist()
 
@@ -110,7 +116,7 @@ class Agent(rpc.CraneAgentServicer):
                 json.dump(dict(agent_id=self.state.agent_id, epoch=self.state.current_epoch,
                                holder=self.state.token_holder, has_token=self.state.has_token,
                                revision=self.state.revision,
-                               vote_state=self.vote_state), stream)
+                               vote_state=self.vote_state, vote_proposals=self.vote_proposals), stream)
                 stream.flush()
                 os.fsync(stream.fileno())
             os.replace(temporary, self.path)
@@ -242,17 +248,29 @@ class Agent(rpc.CraneAgentServicer):
             raise recovery.RecoveryError("REJOINING")
         if payload["expected_epoch"] != self.state.current_epoch:
             raise recovery.RecoveryError("STALE_EPOCH")
+        if self.gate and payload["expected_revision"] != self.state.revision:
+            raise recovery.RecoveryError("STALE_REVISION")
         if self.state.mode == Mode.CENTRAL:
             if self.controller_probe is None or not self.controller_suspected:
                 raise recovery.RecoveryError("CONTROLLER_NOT_SUSPECTED")
         elif self.state.token_holder not in self.suspected:
             raise recovery.RecoveryError("HOLDER_NOT_SUSPECTED")
-        recovery.record_vote(self.vote_state, payload)
+        recovery.remember_proposal(self.vote_state, self.vote_proposals, payload)
         self.persist()
         return payload, recovery.sign(self.recovery_private_key, payload)
 
     # handles a peer recovery proposal
     async def VoteRecovery(self, request, context):
+        if self.gate and self.recovery_config is not None:
+            try:
+                payload = recovery.parse_proposal(request.proposal_json, self.recovery_config)
+                if not recovery.verify_member(self.recovery_config, request.proposer_id,
+                                              request.proposer_signature, payload):
+                    return self.recovery_reply(False, "INVALID_SIGNATURE")
+                if not await self.recovery_snapshot_current(payload):
+                    return self.recovery_reply(False, "STALE_GATE_SNAPSHOT")
+            except recovery.RecoveryError as error:
+                return self.recovery_reply(False, str(error))
         async with self.lock:
             try:
                 payload, signature = self._vote_recovery(
@@ -263,12 +281,31 @@ class Agent(rpc.CraneAgentServicer):
                       target_epoch=payload["epoch"], holder=payload["holder"])
             return self.recovery_reply(True, signature=signature)
 
+    # checks the live gate before consuming a vote for an authority snapshot
+    async def recovery_snapshot_current(self, payload):
+        authority = await self.query_gate()
+        return authority is not None and all(authority.get(key) == payload[expected]
+            for key, expected in (("epoch", "expected_epoch"), ("revision", "expected_revision")))
+
     # gathers a strict-majority certificate
     async def propose_recovery(self, gate_state, holder=None):
         if self.recovery_config is None:
             raise recovery.RecoveryError("RECOVERY_DISABLED")
         holder = holder or self.state.agent_id
         payload = recovery.proposal(self.recovery_config, gate_state, holder)
+        async with self.lock:
+            blocked = recovery.retry_block(self.vote_state, self.vote_proposals, payload)
+            if blocked:
+                key = (payload["epoch"], payload["expected_revision"], blocked)
+                if self.recovery_blocked != key:
+                    self.emit("RECOVERY_RETRY_BLOCKED", reason=blocked, target_epoch=payload["epoch"],
+                              expected_revision=payload["expected_revision"], action="WAIT_FOR_NEW_EPOCH")
+                    self.recovery_blocked = key
+                self.emit("RECOVERY_REJECTED", reason="CONFLICTING_VOTE", target_epoch=payload["epoch"])
+                return None
+        if self.gate and not await self.recovery_snapshot_current(payload):
+            self.emit("RECOVERY_REJECTED", reason="STALE_GATE_SNAPSHOT", target_epoch=payload["epoch"])
+            return None
         raw = recovery.canonical(payload)
         proposer_signature = recovery.sign(self.recovery_private_key, payload)
         request = pb.RecoveryProposal(proposer_id=self.state.agent_id,
@@ -296,6 +333,10 @@ class Agent(rpc.CraneAgentServicer):
         if len(signatures) < self.recovery_config.majority:
             self.emit("RECOVERY_NO_QUORUM", target_epoch=payload["epoch"],
                       votes=len(signatures), required=self.recovery_config.majority)
+            return None
+        if self.gate and not await self.recovery_snapshot_current(payload):
+            self.emit("RECOVERY_RETRY_BLOCKED", reason="GATE_CHANGED_DURING_VOTING",
+                      target_epoch=payload["epoch"], action="READ_GATE_KEEP_VOTES")
             return None
         self.emit("RECOVERY_CERTIFICATE_FORMED", target_epoch=payload["epoch"],
                   votes=len(signatures), holder=holder)
@@ -422,6 +463,36 @@ class Agent(rpc.CraneAgentServicer):
                         or self.state.token_holder != self.state.agent_id):
                     self.state.request_queue.clear()
                 return True
+
+    async def reconcile_controller_return(self):
+        """Adopt fresh CENTRAL authority only after local handoffs are resolved."""
+        async with self.lock:
+            if self.pending or self.gate_attempt:
+                self.emit("CONTROLLER_RECONCILIATION_DEFERRED",
+                          reason="LOCAL_TRANSFER_IN_PROGRESS")
+                return False
+            if self.authority_lock.locked():
+                self.emit("CONTROLLER_RECONCILIATION_DEFERRED",
+                          reason="AUTHORITY_UPDATE_IN_PROGRESS")
+                return False
+        async with self.authority_lock:
+            async with self.lock:
+                if self.pending or self.gate_attempt:
+                    self.emit("CONTROLLER_RECONCILIATION_DEFERRED",
+                              reason="LOCAL_TRANSFER_IN_PROGRESS")
+                    return False
+            authority = await self.query_gate()
+            if authority is None:
+                return False
+            async with self.lock:
+                old = (self.state.current_epoch, self.state.revision,
+                       self.state.token_holder)
+                if not self.adopt_gate_state(authority):
+                    return False
+                if old != (self.state.current_epoch, self.state.revision,
+                           self.state.token_holder):
+                    self.state.request_queue.clear()
+                return self.state.mode == Mode.CENTRAL
 
     async def receive_gate_transfer(self, request):
         async with self.authority_lock:
@@ -650,6 +721,10 @@ class Agent(rpc.CraneAgentServicer):
                     if not candidates:
                         return
                     holder = candidates[0]
+                saved = self.vote_proposals.get(str(authority["epoch"] + 1))
+                if saved and (saved["expected_epoch"], saved["expected_revision"]) == (
+                        authority["epoch"], authority["revision"]):
+                    holder = saved["holder"]
             certificate = await self.propose_recovery(authority, holder)
             if certificate is None:
                 return
@@ -694,7 +769,7 @@ class Agent(rpc.CraneAgentServicer):
             return
         while True:
             try:
-                async with asyncio.timeout(self.interval):
+                async with asyncio.timeout(self.timeout):
                     available = await self.controller_probe()
             except Exception as error:
                 # Timeouts and probe errors are failed observations, not worker
@@ -705,13 +780,20 @@ class Agent(rpc.CraneAgentServicer):
                 if available:
                     self.last_controller_seen = self.clock()
                     if self.controller_suspected:
-                        self.emit("CONTROLLER_RESTORED")
+                        self.controller_return_pending = True
                     self.controller_suspected = False
                     self.emit("CONTROLLER_HEARTBEAT_RECEIVED")
                 elif self.clock() - self.last_controller_seen > self.timeout and not self.controller_suspected:
                     self.controller_suspected = True
                     self.emit("CONTROLLER_SUSPECTED",
                         detection_latency_seconds=self.clock() - self.last_controller_seen)
+            # Liveness cancels fallback even while recovery holds authority_lock.
+            # Ownership comes only from a fresh gate read after handoffs settle.
+            if available and (not self.gate or await self.reconcile_controller_return()):
+                async with self.lock:
+                    if self.controller_return_pending:
+                        self.controller_return_pending = False
+                        self.emit("CONTROLLER_RESTORED")
             await asyncio.sleep(self.interval)
 
     async def start(self, address, auto_transfer=True, *, interceptors=()):

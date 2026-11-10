@@ -8,7 +8,7 @@ from prometheus_client import generate_latest
 
 from cranelock_gate.client import Client, may_enter
 from cranelock_gate.generated import gate_pb2
-from cranelock_gate.server import RunningServer, SERVICE
+from cranelock_gate.server import RunningServer, SERVICE, bind_host
 
 
 def test_grpc_real_round_trip_health_metrics_and_unavailability(h):
@@ -28,6 +28,7 @@ def test_grpc_real_round_trip_health_metrics_and_unavailability(h):
                               holder=state["holder"], grant_id=grant["id"], session_id=grant["id"])
         assert may_enter(entered)
         assert client.state()["lane_state"] == "OCCUPIED"
+        assert server.http.server_address[0] == "127.0.0.1"  # Never all interfaces by default.
         url = f"http://127.0.0.1:{server.http.server_port}/metrics"
         with urllib.request.urlopen(url, timeout=2) as reply:
             metrics = reply.read().decode()
@@ -66,3 +67,10 @@ def test_signed_envelope_cannot_be_sent_to_another_rpc(h):
             assert client.state()["lane_state"] == "CLEAR"
     finally:
         server.close()
+
+
+@pytest.mark.parametrize("address,host", [
+    ("127.0.0.1:50051", "127.0.0.1"), ("0.0.0.0:50051", "0.0.0.0"),
+    ("[::1]:50051", "::1"), ("localhost:50051", "localhost")])
+def test_metrics_follow_grpc_bind_host(address, host):
+    assert bind_host(address) == host

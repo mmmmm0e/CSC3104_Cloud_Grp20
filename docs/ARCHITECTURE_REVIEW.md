@@ -1,7 +1,88 @@
 # CraneLock architecture and proposal review
 
-Reviewed 3 November 2026. This is an evidence review, not a deployment certificate.
-No application code, manifests or Git branches were changed or merged for this review.
+Originally reviewed 3 November 2026; updated 10 November 2026. This is an evidence
+review, not a deployment certificate. The original review was read-only; subsequent
+merges and verification are recorded separately below.
+
+## Latest status: 10 November 2026
+
+Fetched the current teammate branches and merged `origin/main` snapshot `21fac92`
+into `darius`, preserving the team-controller comparison adapter and all local
+review notes. The combined code passed **373 tests in 186.12 seconds**. This replaces
+the earlier 235-test merge result as the latest full-suite verification.
+
+Important progress since the 3 November checklist:
+
+| Earlier gap | Current status and evidence |
+| --- | --- |
+| Agent launcher cannot enable recovery | Addressed: explicit recovery config/key options and `--enable-recovery`; validates membership, durable state and agent-only signing credentials. See `docs/AGENT_LAUNCHER.md` and `tests/test_agent_launcher.py`. |
+| Agent launcher lacks a controller probe | Addressed: `--controller-address` uses the actual CraneController heartbeat RPC, with TLS options, plus an optional explicitly configured probe adapter. |
+| Controller only has a monitoring CLI | Addressed for lifecycle/heartbeat: `python -m cranelock.run_controller` starts a real controller service against a configured gate, supports TLS and restores accepted central authority. The standalone protobuf service exposes Heartbeat; normal workload scheduling and the comparison Assign wrapper remain separate concerns. |
+| Autonomous failover only tested with callbacks/in one process | Stronger evidence now exists: `tests/test_controller_process.py` starts independent controller, gate and crane processes, kills the controller, observes majority LOCAL recovery and token handoff, and restarts it to verify safe CENTRAL restoration and stale-permission rejection. Both controller-only and two-survivor cases pass. |
+| Recovery retries and repeated failures | New retry/round handling and tests, documented in `docs/RECOVERY_RETRY.md`; additional multiple-failure and CLI-process recovery tests pass. |
+| Container recovery configuration absent | A new `scripts/validate_recovery_containers.py` generates and can run five crane containers plus a gate with durable volumes. It explicitly scopes itself to a shared gate network namespace and loopback development transport. It does not include a controller service. |
+| Gate TLS/monitoring setup incomplete | Added TLS provisioning, health/deployment tests, Compose TLS override, Kubernetes gate TLS patch, Prometheus config and Grafana dashboard. Their existence and passing code tests do not establish that this workstation ran Docker/Kubernetes. |
+
+Remaining boundaries after these changes:
+
+1. Docker and kubectl are still not on PATH here. No live Docker daemon, cluster
+   or cloud deployment was verified; obtain runtime evidence from the platform member.
+2. The generated container validation is five agents plus gate, with shared network
+   namespace. It does not demonstrate the complete controller + agents + gate +
+   occupancy-workload deployment across independent network endpoints/machines.
+3. The existing dashboard/evaluation path remains adapter-driven: `AgentCluster`
+   omits gate integration/automatic recovery workers, while `benefits.py` and
+   `failures.py` invoke recovery and reconciliation explicitly. The new autonomous
+   process tests are different evidence, not a relabeling of the old comparison runs.
+4. The checked Kubernetes deployment still covers the gate, now with an optional
+   TLS patch; no end-to-end crane/controller Kubernetes deployment is established.
+5. Actual edge-network placement, independent failure boundaries and participant
+   scalability must still be demonstrated if retained as claims. The new process
+   tests accurately report loopback peer transport and mutual TLS to gate/controller.
+
+Future comparison runs record controller source `21fac92`. Existing saved runs keep
+their original source identity and timing values. The preserved 3 November review
+below is historical: do not treat its launcher/controller missing-work entries as
+the current state.
+
+## Current-state recheck after the merge
+
+Rechecked on 3 November 2026 after fetching all remote updates. Local `darius`
+is now `026f8ea`, merged with main `6417ecc`, and was clean and synchronized with
+`origin/darius` before this documentation update. The earlier branch descriptions
+below are the original review snapshot, not the current merge status.
+
+The merged revision passed **235 tests** when the merge was completed. No source
+changes or newer remote main commit were found in this recheck, so that suite was
+not repeated. The team-controller adapter now records source `6417ecc` for new
+runs. The existing 54-run `benefits-team-controller-validated` set still records
+`0d4866b`; those are older harness-driven measurements and have not been relabeled.
+
+### Remaining integration work and ownership
+
+| Priority / owner | Current evidence | Required addition | Acceptance demonstration |
+| --- | --- | --- | --- |
+| 1. Platform + whole team: topology | Explicit peer endpoints exist; no physical edge placement or independent failure domains demonstrated | State where controller, gate, agents and occupancy simulator run, what network joins them, and what survives each fault | Show endpoints and the surviving peer/gate path after controller failure; label all simulated hardware |
+| 1. Agent/recovery member: launch configuration | `Agent.start()` can run recovery workers when gate and recovery config/key are supplied; CENTRAL fallback also needs `controller_probe` | Wire those inputs into the standalone agent launch path. The current `cranelock/__main__.py` passes `gate` but not recovery config/key or a controller probe | Launch agents using supported commands; stop the controller/holder; observe agent-originated votes and gate installation without a harness recovery call |
+| 1. Controller member: runnable authority service | `CentralController` and the comparison gRPC wrapper exist; controller module CLI is a state monitor | Supply a supported independently runnable controller heartbeat/assignment service, or promote the existing wrapper with explicit ownership and configuration | Stop only that service, retain agents/network/gate, then demonstrate controlled return and reconciliation |
+| 1. Platform + gate member: end-to-end deployment | `compose.agents.yaml` starts LOCAL crane-a/b/c without gate options; `compose.yaml` starts the gate separately | Add one integrated launch configuration with matching membership IDs, peer names, gate config, per-agent keys, volumes and startup provisioning. Gate CLI requires mutual TLS for non-loopback addresses, so simply adding `--gate-address gate:50051` is insufficient | Fresh setup and restart using documented commands; all components communicate and persistent state is retained |
+| 1. Simulator + gate member: independent occupancy source | Physical lane and trusted observation code exist inside the simulator | Run a bounded observation/crossing source that shares actual simulated occupancy and does not clear the lane because authority changed | Stop occupancy reports or fail a holder inside the lane; new entries remain blocked until explicit fresh clearance |
+| 1. Testing/evaluation: autonomous deployed tests | `AgentCluster` disables auto transfer and recreates workers without recovery; `benefits.py` and `failures.py` explicitly call `propose_recovery` and `reconcile` | Add an experiment path that only submits demand, injects faults, models physical occupancy and observes the agents; it must not substitute its own recovery/handoff orchestration for the agent behaviour under evaluation | Generate new labeled evidence from the integrated service path; keep older adapter results separate |
+| 2. Platform: Kubernetes claim | Checked branches contain only gate Deployment/Service/PVC and init Job; demo has an additional container recipe | If full Kubernetes deployment remains a claim, add crane identities/persistent vote storage, controller and simulator workloads, discovery/configuration and end-to-end instructions | Capture running workload/service status, container termination and recovery evidence; otherwise explicitly limit the Kubernetes claim to the gate template |
+| 2. Controller + agent member: controller return | Reconciliation methods exist | Demonstrate the complete safe return path, including queued demand and lane state, without rolling back accepted authority | Controller returns during LOCAL operation; no duplicated permission or unexplained lost queued requests |
+| 2. Testing/evaluation: proposal measurements | Three-agent comparison varies request counts; saved waiting/completion/recovery metrics exist | Measure more participants if retaining participant scalability, and define fairness/availability if retained as evaluation claims; otherwise narrow those claims | Reproducible participant/demand sweeps and clearly scoped metrics, including requests that never entered |
+
+Every teammate remote branch was checked for deployment files. No fuller Kubernetes
+deployment was found. The `demo` branch's progress recipe packages evaluation and
+live-demo runners; it does not by itself establish one separately deployed service
+per crane. No Docker or kubectl executable is on PATH here, so an actual runtime
+deployment on another teammate's machine is **unverified**, not declared absent.
+
+Required final handoff: one tested launch procedure, explicit topology/failure
+boundaries, autonomous failure demonstrations, fresh result provenance and the
+project's testing-instructions deliverable. Additional dashboard cosmetics are not
+needed to close these gaps. Read the original audit below for the source references
+and distinction between a simulated network and an operational port installation.
 
 ## Verdict
 

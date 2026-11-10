@@ -49,6 +49,8 @@ def connect(database):
     # mode=rw forbids accidental creation following data loss.
     db = sqlite3.connect(Path(database).resolve().as_uri() + "?mode=rw",
                          uri=True, isolation_level=None, check_same_thread=False)
+    # WAL lets read-only exports run without blocking gate commits.
+    db.execute("PRAGMA journal_mode=WAL")
     db.execute("PRAGMA synchronous=FULL")
     db.execute("PRAGMA busy_timeout=3000")
     return db

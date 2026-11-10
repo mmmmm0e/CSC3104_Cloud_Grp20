@@ -67,8 +67,9 @@ retains the earlier fixed-window healthy/holder-failure comparison.
 | CraneLock | Starts centrally in the benefits experiment | Detects missing heartbeats, obtains majority votes and installs LOCAL authority | Can replace the token with majority-approved recovery |
 
 Central authority now uses `cranelock/controller.py`, merged from the team's
-`main` snapshot `6417ecc`, including gate-aware reconciliation. Previously saved
-team-controller runs retain source commit `0d4866b`; new runs record `6417ecc`.
+`main` snapshot `21fac92`, including gate-aware reconciliation and controller lifecycle
+support. Previously saved team-controller runs retain their original source commit;
+new runs record `21fac92`.
 The benefits harness supplies a small gRPC
 Heartbeat/Assign service around `CentralController.install_central`; it contains
 no substitute signing or assignment algorithm. The outage test stops this service
@@ -162,6 +163,12 @@ the lane. Zero detected safety violations is a bounded observation, not a proof
 of safety for every failure or a production port performance benchmark.
 
 ## Verify changes
+
+The local handoff adapter retries the same holder announcement up to three times
+using the configured control RPC timeout. It confirms every agent's reported holder
+before updating the gate. Persistent delivery failure stops the experiment and
+retains diagnostic events; retries never restore ownership or invent a transfer.
+Instrumented retries contribute to the actual RPC counts and elapsed measurements.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q

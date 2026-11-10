@@ -137,9 +137,24 @@ class AgentCluster:
             token_holder=sender.state.token_holder, mode=sender.state.mode,
             has_token=sender.state.has_token, outgoing_transfer_id=sender.last_handoff,
             sent_unix_seconds=wall_clock())
-        await asyncio.gather(*(sender.heartbeat_peer(peer, announcement) for peer in sender.peers))
-        _, states = await self.snapshot("after_handoff_announcement")
-        if any(state.token_holder != expected for state in states.values()):
+        # uses the control rpc budget for the unchanged handoff announcement
+        async def announce(peer):
+            try:
+                await sender.stubs[peer].Heartbeat(announcement, timeout=self.timeout)
+            except grpc.aio.AioRpcError as error:
+                self.emit("handoff_announcement_unavailable", sender=owner, receiver=peer,
+                          reason=error.code().name)
+
+        for attempt in range(3):
+            await asyncio.gather(*(announce(peer) for peer in sender.peers))
+            _, states = await self.snapshot("after_handoff_announcement")
+            if all(state.token_holder == expected for state in states.values()):
+                break
+            if attempt < 2:
+                self.emit("handoff_announcement_retry", sender=owner, holder=expected,
+                          transfer_id=announcement.outgoing_transfer_id, attempt=attempt + 2)
+                await asyncio.sleep(.05)
+        else:
             raise RuntimeError("Holder announcement did not reach every agent")
         require(await asyncio.to_thread(client.call, owner, "TransferHolder",
             epoch=old["epoch"], revision=old["revision"], destination=expected))
@@ -190,11 +205,11 @@ async def run_agent_demo(output, *, rounds=2, crossing_time=0.1):
     settings = dict(model="three-agent-grpc-normal-handoff", rounds=rounds,
                     crossing_time=crossing_time, time_basis="host_monotonic_seconds")
     (output / "experiment.json").write_text(json.dumps(settings, indent=2), encoding="utf-8")
-    origin = time.monotonic()
+    origin = time.perf_counter()
     events, rows = [], []
 
     def emit(event, **fields):
-        events.append(dict(time=time.monotonic() - origin, event=event, **fields))
+        events.append(dict(time=time.perf_counter() - origin, event=event, **fields))
 
     config, keys = new_config(3)
     members = list(config.members)
@@ -215,11 +230,11 @@ async def run_agent_demo(output, *, rounds=2, crossing_time=0.1):
         lane = Lane(client, wall_clock, emit)
         require(await asyncio.to_thread(lane.observe))
         await cluster.start()
-        workload_start = time.monotonic()
+        workload_start = time.perf_counter()
 
         async def request(identity, round_number):
             row = dict(request_id=f"round-{round_number}-{identity}", crane=identity,
-                       requested_at=time.monotonic() - origin, entered_at=None,
+                       requested_at=time.perf_counter() - origin, entered_at=None,
                        exited_at=None, status="waiting")
             rows.append(row)
             emit("request", request_id=row["request_id"], crane=identity)
@@ -249,7 +264,7 @@ async def run_agent_demo(output, *, rounds=2, crossing_time=0.1):
                 if not await asyncio.to_thread(lane.enter, identity, row["request_id"],
                                                 grant["grant"], state):
                     raise RuntimeError("Gate denied normal holder entry")
-                row.update(entered_at=time.monotonic() - origin, status="occupied")
+                row.update(entered_at=time.perf_counter() - origin, status="occupied")
                 if identity == members[0]:
                     # Actual gRPC requests populate A's queue while A is inside.
                     for waiter in members[1:]:
@@ -264,8 +279,8 @@ async def run_agent_demo(output, *, rounds=2, crossing_time=0.1):
                 if owner != identity or lane.occupant != identity:
                     raise SafetyViolation("Holder changed before physical exit")
                 await asyncio.to_thread(lane.exit, identity, row["request_id"])
-                row.update(exited_at=time.monotonic() - origin, status="completed")
-        elapsed = time.monotonic() - workload_start
+                row.update(exited_at=time.perf_counter() - origin, status="completed")
+        elapsed = time.perf_counter() - workload_start
         owner, _ = await cluster.snapshot("finished")
         final = await asyncio.to_thread(client.state)
         if lane.occupant is not None or final["lane_state"] != "CLEAR" or final["holder"] != owner:
