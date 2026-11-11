@@ -164,6 +164,10 @@ function renderBenefits(){
     const a=card("Token-holder failure",finite(c)&&finite(b)?`Crane A stops before entering, while holding the token—the permission needed to use the lane. In a typical test, CraneLock completes ${fmt(c)} of ${fmt(n)} requests from the other cranes. Basic token completes ${fmt(b)} of ${fmt(n)} because it cannot replace the missing token.`:"This selection has no completed holder-failure comparison.");
     a.append(node("p","","CraneLock requires the remaining cranes to agree before replacing permission. The central reference can also assign another crane while its controller remains available."));
   }
+  if(scenario!=="normal"){
+    card("Reading waiting during this failure test","Waiting is measured from asking for access until entering the lane, across the selected failure test, including requests before and after the fault. Requests that never entered have no finished waiting time and are excluded from the average. Read the entry counts beside each waiting bar: a short wait for a few served requests does not mean a stalled system performed better.");
+    return;
+  }
   const comparable=pairDifferences(healthy,"normal","central-lock","mean_wait_seconds").length>0;
   const cl=typical(healthy,"cranelock","mean_wait_seconds"),central=typical(healthy,"central-lock","mean_wait_seconds"),difference=(cl-central)*1000;
   const a=card("Waiting during normal operation",comparable&&finite(cl)&&finite(central)?`When nothing failed, the typical average wait was ${(cl*1000).toFixed(1)} ms with CraneLock and ${(central*1000).toFixed(1)} ms with central lock. That is ${Math.abs(difference).toFixed(2)} ms ${difference>=0?"longer":"shorter"} for the middle values shown in the waiting graph. Waiting means the time from asking for access until the crane is allowed into the lane.`:"Healthy-operation waiting is not measured for these selected requests. A system passing a safety check does not tell us how fast it is.");
@@ -196,11 +200,13 @@ function renderCharts(){
   $("comparison").querySelector(".chart-legend span:last-child").textContent=completeAll?"Every request must finish. Incomplete runs do not get a successful completion time.":"Did not resume is never drawn as zero seconds.";
   $("comparison-title").textContent=completeAll?"Completion time and waiting":"Requests and recovery";
   $("comparison-note").textContent=`Same request count and observation window for each system${finite(window)?`: ${window} seconds per test`:""}. A longer bar means more work on the requests graph, but more delay on the time graphs.`;
-  $("metric-explanation").textContent="We show only requests served, time until work resumes, and normal waiting. All systems run for the same fixed time, so total test duration would not be a useful speed comparison.";
+  $("metric-explanation").textContent=scenario==="normal"?"Waiting covers requests that entered during this healthy test; read it alongside the completion counts.":"All three graphs use the selected failure scenario. Waiting covers requests that entered during the whole test, including before and after the fault. Requests still waiting at the cutoff are counted separately, not assigned zero wait.";
   if(completeAll){
     $("comparison-note").textContent="All systems get the same complete batch at the start. They finish every request before the clock stops. Lower times are better; setup and teardown are excluded.";
     $("metric-explanation").textContent="Total completion time measures how long the whole batch takes. Average waiting measures how long an individual request waits before entering the lane. Both include all requests.";
-  }else if(healthy.some(r=>r.summary.measurement_policy==="complete_all_requests"))$("metric-explanation").textContent="Failure tests keep a fixed observation window so stalled systems can be compared. The separate healthy batch test runs every request to completion and supplies the waiting-time comparison.";
+  }
+  const hasEntryCounts=r=>Number.isInteger(r.summary.accepted)&&Number.isInteger(r.summary.requested)&&r.summary.accepted>=0&&r.summary.accepted<=r.summary.requested;
+  const waitingMetric=r=>r.summary.accepted===0?null:finite(r.summary.mean_wait_seconds)&&r.summary.mean_wait_seconds>=0?r.summary.mean_wait_seconds:null;
   function chart(id,heading,explanation,data,metric,kind){
     const group=node("article","chart-group");group.dataset.chart=id;
     group.append(node("h3","chart-title",heading),node("p","chart-explanation",explanation));
@@ -213,6 +219,7 @@ function renderCharts(){
       const stalled=passed.filter(r=>r.summary.resumed_within_window===false).length;
       const independent=id==="recovery"&&scenario==="controller-outage"&&model==="basic-token"&&passed.length;
       let text=finite(mid)?kind==="ms"?`${(mid*1000).toFixed(1)} ms`:kind==="seconds"?`${mid.toFixed(3)} seconds`:`${fmt(mid)} requests`:independent?"Keeps working":stalled?"Did not resume":"Not measured";
+      if(id==="waiting"&&!finite(mid))text=passed.length&&passed.every(r=>hasEntryCounts(r)&&r.summary.accepted===0)?"No requests entered":"Not measured";
       if(id==="requests"&&scenario==="normal"&&finite(mid)&&finite(window))text=`${fmt(mid)} of ${fmt(typical(data,model,"requested"))} by ${window}s`;
       caption.append(node("strong","",text));row.append(caption);
       if(finite(mid)){
@@ -230,8 +237,14 @@ function renderCharts(){
       if(id==="recovery"&&stalled)row.append(node("p","undefined",`${stalled}/${passed.length} test(s) never resumed${finite(window)?` within ${window} seconds`:""}. This is not zero-second recovery.`));
       if(!samples.length&&!stalled&&!independent)row.append(node("p","chart-detail","No suitable saved timing or request measurement. Missing data is not zero."));
       if(id==="waiting"&&passed.length){
-        const missing=passed.reduce((n,r)=>n+(unfinished(r)||0),0),requested=passed.reduce((n,r)=>n+(r.summary.requested||0),0);
-        row.append(node("p","chart-detail",passed.every(r=>r.summary.measurement_policy==="complete_all_requests")?`All ${requested} requests finished across ${passed.length} healthy test(s); every request's waiting time is included.`:`${missing} of ${requested} requests were unfinished across these healthy tests. Waiting values cover requests that entered only.`));
+        if(scenario!=="normal"){
+          const counted=passed.filter(hasEntryCounts),entered=counted.reduce((n,r)=>n+r.summary.accepted,0),requested=counted.reduce((n,r)=>n+r.summary.requested,0);
+          if(counted.length)row.append(node("p","chart-detail entry-coverage",`Across ${counted.length} recorded test(s): ${entered} of ${requested} requests entered; ${requested-entered} had not entered by the cutoff. Waiting averages exclude requests that never entered.`));
+          if(counted.length<passed.length)row.append(node("p","chart-detail",`Entry counts are unavailable for ${passed.length-counted.length} test(s). Their missing counts are not treated as zero.`));
+        }else{
+          const missing=passed.reduce((n,r)=>n+(unfinished(r)||0),0),requested=passed.reduce((n,r)=>n+(r.summary.requested||0),0);
+          row.append(node("p","chart-detail",passed.every(r=>r.summary.measurement_policy==="complete_all_requests")?`All ${requested} requests finished across ${passed.length} healthy test(s); every request's waiting time is included.`:`${missing} of ${requested} requests were unfinished across these healthy tests. Waiting values cover requests that entered only.`));
+        }
       }
       if(id==="execution"&&passed.length)row.append(node("p","chart-detail",`${passed.filter(r=>r.summary.completed_all_requests===true).length}/${passed.length} recorded test(s) finished the entire batch. A failed or stalled batch has no successful completion time.`));
       if(selected.some(r=>r.status!=="passed"))row.append(node("p","chart-detail","Some runs failed or are incomplete; they are excluded from the bars."));
@@ -253,8 +266,8 @@ function renderCharts(){
     const group=chart("requests",`How many normal requests finished${finite(window)?` within ${window} seconds`:""}?`,"The clock stops counting at the cutoff. A request finishing just afterward is excluded, even though it completes successfully. Bars show the typical result per test; the notes give outcomes across the selected repeats.",rows,"completed","requests");
     group.append(node("p","chart-explanation","Why might a bar show 17 instead of 18? The last request can finish a few milliseconds past the cutoff. The recorded timings above show whether that happened here. This count alone does not establish a consistent speed difference between systems."));
   }
-  chart("waiting",scenario==="normal"?"How long did a crane wait for its turn?":"3. What is the waiting time when nothing fails?",
-    healthy.some(r=>r.summary.measurement_policy==="complete_all_requests")?"Uses the separate healthy batch test: all requests arrive together and every request finishes. Average the time from asking until actual entry; bars show the middle average across repeats. Lower means less time waiting for permission.":"Uses the separate healthy-traffic test with the same request count and sequences. For each test, average the time from asking to actual entry; bars show the middle average across repeats. Lower is better.",healthy,"mean_wait_seconds","ms");
+  chart("waiting",scenario==="normal"?"How long did a crane wait for its turn?":"3. Waiting time during this failure test",
+    scenario!=="normal"?"Uses this failure scenario, including requests before and after the fault. For each test, average request-to-entry waiting for requests that entered before the cutoff; bars show the median of those averages. Lower is better only alongside the entry counts. A stalled system may show a short wait for its few earlier requests.":healthy.some(r=>r.summary.measurement_policy==="complete_all_requests")?"Uses the separate healthy batch test: all requests arrive together and every request finishes. Average the time from asking until actual entry; bars show the middle average across repeats. Lower means less time waiting for permission.":"Uses the separate healthy-traffic test with the same request count and sequences. For each test, average the time from asking to actual entry; bars show the middle average across repeats. Lower is better.",scenario==="normal"?healthy:rows,waitingMetric,"ms");
 }
 let progressGeneration=0;
 function renderProgress(){

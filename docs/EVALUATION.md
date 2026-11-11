@@ -20,6 +20,11 @@ saved experiments**. A sequence (seed) repeats the same requests; it is not a cr
 - The summary explains why each system continues or stalls.
 - Bars compare the median across selected repeated sequences. Missing recovery
   time is never shown as zero seconds.
+- On failure pages, waiting uses that failure test, including requests before and
+  after the fault. Entry counts show how many requests have a measured wait;
+  requests that never entered are excluded, not assigned zero. A short average
+  alongside many unserved requests does not establish better performance. Healthy
+  waiting is shown on the healthy-operation page.
 - The progress chart shows cumulative completed requests for **one selected
   sequence**, using recorded exit times. A flat line means no new completions.
   Its failure marker spans the recorded fault times across systems.
