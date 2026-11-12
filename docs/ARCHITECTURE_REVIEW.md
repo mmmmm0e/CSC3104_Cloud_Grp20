@@ -1,10 +1,45 @@
 # CraneLock architecture and proposal review
 
-Originally reviewed 3 November 2026; updated 10 November 2026. This is an evidence
+Originally reviewed 3 November 2026; updated 12 November 2026. This is an evidence
 review, not a deployment certificate. The original review was read-only; subsequent
 merges and verification are recorded separately below.
 
-## Latest status: 10 November 2026
+## Latest status: 12 November 2026
+
+Integrated platform main `02da358` into `darius`, preserving the local automatic
+comparison runner and its dashboard. Arif's committed platform evidence now covers
+integrated Docker services, controller/holder recovery, real network faults,
+provisioned monitoring, local single-node kind persistence/reconciliation and one
+external synthetic crossing. See `docs/Platform_Validation.md` and
+`docs/evidence/platform/`. These are teammate-recorded runtime observations; this
+Windows workstation still has no Docker/kubectl installation.
+
+Added `scripts/external_workload.py` and `cranelock_sim/deployed.py` for sustained
+requests against the published deployment endpoints. The runner checks public
+container identity/status, keeps actor signing clients separate, validates physical
+entries through the existing Lane boundary and injects only scoped container kills.
+It waits for automatic LOCAL fallback before a holder-loss test and restores only
+the services it stopped. Contract checks use the real signed gate with deployment
+doubles; they are not Docker runtime evidence. Full deployed workload execution and
+performance comparisons remain pending on a Docker-enabled machine.
+
+Saved local `benefits-autonomous-validated` evidence remains unchanged and records
+source `21fac92`. New local comparisons record `02da358`; deployed workload output
+uses a separate directory and evaluation identity. No old timing has been upgraded
+by merging code. See `docs/EVALUATION.md#test-the-integrated-containers`.
+
+Verification: the first combined run reported 389 passed and one controller-return
+convergence timeout. All three controller-process checks then passed in isolation;
+that timing failure was not root-caused and should be watched during deployment
+acceptance. A second combined run (including two additional external-client checks)
+reported 391 passed and one recovery-CLI startup timeout. Both failed-case process
+logs were empty and neither state file existed. The CLI test now requires live,
+reconciled agent RPCs before starting its existing 12-second recovery budget.
+Majority, holder and fail-closed assertions are unchanged. The resulting CLI,
+external workload, handoff and telemetry subset passed 15 tests in 19.18 seconds.
+No complete post-readiness-fix suite or Docker workload run is claimed.
+
+## Previous status: 10 November 2026
 
 Fetched the current teammate branches and merged `origin/main` snapshot `21fac92`
 into `darius`, preserving the team-controller comparison adapter and all local

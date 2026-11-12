@@ -1,0 +1,4 @@
+11 November 2026, merged main verification
+342 passed, 2 skipped in 89.21 seconds
+Recovery CLI coverage includes explicit credentials and the enable-recovery alias.
+Process demo retains handoff and failure detection checks after startup warmup.

@@ -66,8 +66,10 @@ retains the earlier fixed-window healthy/holder-failure comparison.
 | Basic token | Cranes pass one token | Continues locally; no controller recovery needed | Stalls because it cannot replace the missing token |
 | CraneLock | Starts centrally in the benefits experiment | Detects missing heartbeats, obtains majority votes and installs LOCAL authority | Can replace the token with majority-approved recovery |
 
-Central authority uses `cranelock/controller.py`, merged from the team's main
-snapshot `21fac92`. The new `benefits-v4` runner starts five independent processes:
+Central authority uses `cranelock/controller.py`, now integrated with platform main
+snapshot `02da358`. Saved `benefits-autonomous-validated` results still record
+`21fac92`; they have not been relabelled or converted into container results.
+Future local comparisons record `02da358`. The `benefits-v4` runner starts five independent processes:
 a controller, a gate and three crane agents. Agents use the supported CLI with
 gate integration, their own signing keys and automatic recovery enabled for CraneLock.
 
@@ -115,6 +117,52 @@ Generate a fresh full matrix (the directory must not already exist):
 Old saved comparison sets have been removed after validating their replacement.
 Running pytest verifies behavior; it does not populate the dashboard. Teammates
 must run the experiment command to generate their own local results.
+
+## Test the integrated containers
+
+`scripts/external_workload.py` connects to Member 6's existing Docker deployment.
+It never starts private gate/controller/agent instances. Docker Desktop and the
+first-time setup in `docs/PLATFORM_HANDOFF.md` are prerequisites. The runner checks
+the five running container identities, uses mutual TLS to the gate, and retains
+container IDs/image IDs in its manifest. Run `integrated.py state` and `check` at a
+healthy CENTRAL baseline before each workload.
+
+```powershell
+.\.venv\Scripts\python.exe scripts/external_workload.py --new-empty-simulation --scenario normal --requests 18 --seed 20
+.\.venv\Scripts\python.exe scripts/external_workload.py --new-empty-simulation --scenario controller-outage --requests 18 --seed 20 --duration 30
+.\.venv\Scripts\python.exe scripts/external_workload.py --new-empty-simulation --scenario holder-failure --requests 18 --seed 20 --duration 30
+```
+
+Run these individually, waiting for CENTRAL convergence, AVAILABLE peers and
+UNKNOWN lane occupancy before the next run. A new empty physical model must be
+explicitly declared, and no other workload may be active. The runner refuses to
+reset an existing occupied/clear/reserved model or outstanding grant. At the end,
+fresh synthetic clearance expires naturally to UNKNOWN; it is never reset by a
+database operation. A failed run can retain an unresolved synthetic occupant in
+its failure evidence; investigate it before declaring a new model.
+
+Healthy traffic runs until the batch finishes or its watchdog fails. Controller
+outage kills only the controller one-third through the observation window. The
+holder test first stops the controller and waits for agent-originated LOCAL
+authority, then kills the current holder and sends demand only from survivors.
+Agents perform all token transfers and majority recovery. The host test driver
+uses separate actor-only signing clients for crane grant requests, matching the
+platform's `external_smoke.py` boundary; it is not a new remote crane-workload API.
+Only services stopped by the test are restarted, retaining their volumes.
+`restoration_succeeded` records successful start commands; use `state`/`check` to
+verify eventual protocol convergence before another run.
+
+Each run saves requests, events, a summary, restoration outcomes and cumulative
+container logs under `run/deployed-evaluation`. Fault-to-entry times are measured
+from command start and command completion, bracketing Docker command overhead;
+they are not exact crash detection or certificate-install durations. Host and
+container monotonic clocks are never subtracted. Missing entries are not zero wait.
+
+These runs test deployed **CraneLock only**. They are separate from the dashboard's
+three-system local comparisons; do not mix their timings to claim a performance
+advantage. Deployment results have not been generated on this Windows machine:
+Docker is unavailable. The runner's signed-gate contract tests are not Docker
+runtime evidence. The existing saved dashboard remains the earlier local dataset.
 
 ## Other safety tests
 

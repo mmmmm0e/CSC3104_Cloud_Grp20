@@ -31,8 +31,9 @@ def test_gate_and_two_agent_processes_with_restart(tmp_path):
 
     def start(name, args):
         stream = (tmp_path / f"{name}.log").open("w")
-        streams.append(stream)
-        process = subprocess.Popen(args, stdout=stream, stderr=stream,
+        error_stream = (tmp_path / f"{name}.stderr.log").open("w")
+        streams.extend([stream, error_stream])
+        process = subprocess.Popen(args, stdout=stream, stderr=error_stream,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         processes.append(process)
         return process

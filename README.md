@@ -1,5 +1,9 @@
 # CraneLock
 
+For the integrated Docker deployment, host/container endpoints, development
+credential provisioning, failure controls and shutdown, see
+[the platform handoff](docs/PLATFORM_HANDOFF.md).
+
 Recovery retry review (Moe): see [retry behavior, safety limits and failure tests](docs/RECOVERY_RETRY.md).
 Votes stay immutable across gate revision changes; identical retries are supported.
 The real-container validation harness is available as:
@@ -238,6 +242,14 @@ The development demo uses plaintext loopback. Network listeners require mutual T
 unless explicitly enabled for an isolated simulation.
 
 ### Team handoff
+
+The integrated container deployment and monitoring are documented in
+[platform handoff](docs/PLATFORM_HANDOFF.md). After setup and convergence, run
+`python scripts/external_workload.py --new-empty-simulation --scenario normal` to
+exercise sustained requests against those external services. See
+[deployed testing](docs/EVALUATION.md#test-the-integrated-containers) for failure
+cases, credentials, evidence scope and prerequisites. This runner does not replace
+the separately labelled local dashboard comparisons.
 
 For the evaluation role, [benefits and costs](docs/EVALUATION.md#read-the-measurements) compares actual
 team-controller adapter outage, lost-token recovery and healthy-operation overhead.

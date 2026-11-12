@@ -1,0 +1,96 @@
+services:
+  gate:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: cranelock-gate:integrated
+    command:
+      - serve
+      - --config
+      - /config/config.json
+      - --database
+      - /data/gate.sqlite
+      - --bind
+      - 0.0.0.0:50051
+      - --tls-ca
+      - /tls/ca.pem
+      - --tls-cert
+      - /tls/server.pem
+      - --tls-key
+      - /tls/server-key.pem
+    ports:
+      - "127.0.0.1:50061:50051"
+      - "127.0.0.1:9190:9090"
+    volumes:
+      - gate-data:/data
+      - ../demo-data/integrated/config.json:/config/config.json:ro
+      - ../demo-data/integrated/tls/gate/ca.pem:/tls/ca.pem:ro
+      - ../demo-data/integrated/tls/gate/server.pem:/tls/server.pem:ro
+      - ../demo-data/integrated/tls/gate/server-key.pem:/tls/server-key.pem:ro
+      - ../demo-data/integrated/tls/gate/probe.pem:/tls/probe.pem:ro
+      - ../demo-data/integrated/tls/gate/probe-key.pem:/tls/probe-key.pem:ro
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -m
+        - cranelock_gate.healthcheck
+        - --tls-ca
+        - /tls/ca.pem
+        - --tls-cert
+        - /tls/probe.pem
+        - --tls-key
+        - /tls/probe-key.pem
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  controller:
+    build:
+      context: ..
+      dockerfile: Dockerfile.agent
+    image: cranelock-agent:integrated
+    entrypoint: ["python", "-m", "cranelock.run_controller"]
+    ports:
+      - "127.0.0.1:50062:50052"
+    command:
+      - --metrics-port
+      - "9101"
+      - --metrics-bind
+      - 0.0.0.0
+      - --gate-config
+      - /config/config.json
+      - --controller-key
+      - /signing/controller.json
+      - --gate-address
+      - gate:50051
+      - --listen
+      - 0.0.0.0:50052
+      - --gate-tls-ca
+      - /gate-tls/ca.pem
+      - --gate-tls-cert
+      - /gate-tls/client.pem
+      - --gate-tls-key
+      - /gate-tls/client-key.pem
+      - --tls-ca
+      - /controller-tls/ca.pem
+      - --tls-cert
+      - /controller-tls/server.pem
+      - --tls-key
+      - /controller-tls/server-key.pem
+    volumes:
+      - ../demo-data/integrated/config.json:/config/config.json:ro
+      - ../demo-data/integrated/signing/controller.json:/signing/controller.json:ro
+      - ../demo-data/integrated/tls/gate/ca.pem:/gate-tls/ca.pem:ro
+      - ../demo-data/integrated/tls/gate/client.pem:/gate-tls/client.pem:ro
+      - ../demo-data/integrated/tls/gate/client-key.pem:/gate-tls/client-key.pem:ro
+      - ../demo-data/integrated/tls/controller/ca.pem:/controller-tls/ca.pem:ro
+      - ../demo-data/integrated/tls/controller/server.pem:/controller-tls/server.pem:ro
+      - ../demo-data/integrated/tls/controller/server-key.pem:/controller-tls/server-key.pem:ro
+    depends_on:
+      gate:
+        condition: service_healthy
+
+volumes:
+  gate-data:

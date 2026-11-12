@@ -32,7 +32,10 @@ def test_two_process_demo(tmp_path):
                 "--holder", "crane-a", "--interval", "0.1", "--timeout", "0.6",
                 "--state-file", str(tmp_path / f"{name}.json")]
             if index:
-                command += ["--request-after", "1"]
+                # Channels can start before the peer listener and enter gRPC's
+                # initial reconnect backoff. This normal-operation demo needs
+                # startup warmup before its one-shot request, not an outage.
+                command += ["--request-after", "3"]
             processes.append(subprocess.Popen(command, stdout=stream, stderr=stream,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0))
         for channel in channels:

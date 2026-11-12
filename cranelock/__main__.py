@@ -50,6 +50,8 @@ async def main(argv=None):
     run.add_argument("--timeout", type=float, default=2)
     run.add_argument("--state-file", required=True)
     run.add_argument("--request-after", type=float)
+    run.add_argument("--metrics-port", type=int, help="Optional Prometheus listener")
+    run.add_argument("--metrics-bind", default="127.0.0.1")
     run.add_argument("--gate-address")
     run.add_argument("--gate-config")
     run.add_argument("--gate-keys", help="JSON private signing keys; only this agent's key is retained")
@@ -79,6 +81,8 @@ async def main(argv=None):
     if (not math.isfinite(args.interval) or not math.isfinite(args.timeout)
             or not 0 < args.interval < args.timeout or args.epoch < 0):
         parser.error("Require nonnegative epoch and finite 0 < interval < timeout")
+    if args.metrics_port is not None and not 0 <= args.metrics_port <= 65535:
+        parser.error("metrics-port must be between 0 and 65535")
     if any("=" not in value or not all(value.split("=", 1)) for value in args.peer):
         parser.error("Each --peer must be ID=HOST:PORT with nonempty ID and address")
     peers = dict(p.split("=", 1) for p in args.peer)
@@ -180,7 +184,12 @@ async def main(argv=None):
         if gate:
             await gate.close()
         parser.error("Agent state or startup configuration is invalid or unreadable")
+    telemetry = None
     try:
+        if args.metrics_port is not None:
+            from .telemetry import AgentMetrics
+            telemetry = AgentMetrics(agent)
+            telemetry.start(args.metrics_port, args.metrics_bind)
         await agent.start(args.listen)
         if args.request_after is not None:
             await asyncio.sleep(args.request_after)
@@ -191,8 +200,12 @@ async def main(argv=None):
         try:
             await agent.close()
         finally:
-            if heartbeat_client:
-                await heartbeat_client.close()
+            try:
+                if telemetry:
+                    await telemetry.close()
+            finally:
+                if heartbeat_client:
+                    await heartbeat_client.close()
 
 
 if __name__ == "__main__":

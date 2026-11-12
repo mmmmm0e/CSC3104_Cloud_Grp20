@@ -12,7 +12,7 @@ from cranelock_gate.client import Client
 
 
 CONTROLLER_IMPLEMENTATION = "cranelock.controller.CentralController"
-CONTROLLER_SOURCE = "21fac92"
+CONTROLLER_SOURCE = "02da358"
 
 
 def encode(value):

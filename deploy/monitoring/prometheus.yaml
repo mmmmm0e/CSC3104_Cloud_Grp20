@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 5s
+  scrape_timeout: 3s
+scrape_configs:
+  - job_name: gate
+    static_configs:
+      - targets: ["gate:9090"]
+  - job_name: controller
+    static_configs:
+      - targets: ["controller:9101"]
+  - job_name: agents
+    static_configs:
+      - targets: ["crane-1:9101", "crane-2:9101", "crane-3:9101"]

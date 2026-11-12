@@ -49,7 +49,7 @@ def prepare(output):
         arguments = ["run", "--id", member, "--listen", f"0.0.0.0:{port}", "--holder", "crane-1",
             "--epoch", "0", "--mode", "LOCAL", "--state-file", "/data/state.json", "--interval", "0.1",
             "--timeout", "0.8", "--gate-address", "127.0.0.1:50051", "--gate-config", "/config/config.json",
-            "--gate-keys", "/config/private-keys.json", "--enable-recovery"]
+            "--gate-keys", "/config/private-keys.json", "--recovery-config", "/config/config.json", "--recovery-key", "/config/private-keys.json"]
         for peer, endpoint in ports.items():
             if peer != member:
                 arguments.extend(["--peer", f"{peer}=127.0.0.1:{endpoint}"])

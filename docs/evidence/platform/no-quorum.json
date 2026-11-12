@@ -1,0 +1,16 @@
+{
+  "started_at": 1794345764.240928,
+  "scope": "Local Docker containers; authority/transport and synthetic missing occupancy evidence, no physical crossing workload",
+  "results": {
+    "no-quorum": {
+      "passed": true,
+      "elapsed_seconds": 23.20089433400426,
+      "epoch": 105,
+      "revision": 206,
+      "observation_seconds": 5,
+      "no_replacement_authority": true
+    }
+  },
+  "passed": true,
+  "finished_at": 1794345787.483395
+}

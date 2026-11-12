@@ -1,0 +1,13 @@
+{
+  "started_at": 1794345309.743433,
+  "scope": "Local Docker containers; authority/transport and synthetic missing occupancy evidence, no physical crossing workload",
+  "results": {
+    "reordered-command": {
+      "passed": true,
+      "elapsed_seconds": 1.012972875032574,
+      "delayed_signed_request_fenced": true
+    }
+  },
+  "passed": true,
+  "finished_at": 1794345310.799555
+}

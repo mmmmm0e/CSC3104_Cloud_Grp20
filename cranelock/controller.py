@@ -311,6 +311,12 @@ class ControllerHeartbeatServicer(agent_rpc.CraneControllerServicer):
                 await context.abort(grpc.StatusCode.UNAVAILABLE, error.details() or str(error))
             except RuntimeError as error:
                 await context.abort(grpc.StatusCode.UNAVAILABLE, str(error))
+        telemetry = getattr(self.controller, "telemetry", None)
+        if telemetry:
+            try:
+                telemetry.observe(state)
+            except Exception:
+                pass
         return agent_pb.ControllerHeartbeatResponse(
             available=True,
             controller_id=self.controller.config.controller_id,
@@ -329,16 +335,35 @@ class ControllerHeartbeatClient:
         self.controller_id = controller_id
         self.timeout = timeout
         self.credentials = credentials
-        self.channel = (grpc.aio.secure_channel(address, credentials) if credentials
-                        else grpc.aio.insecure_channel(address))
+        self.channel_options = (
+            ("grpc.initial_reconnect_backoff_ms", 500),
+            ("grpc.min_reconnect_backoff_ms", 1000),
+            ("grpc.max_reconnect_backoff_ms", 2000),
+        )
+        self.channel = (
+            grpc.aio.secure_channel(
+                address, credentials, options=self.channel_options
+            )
+            if credentials
+            else grpc.aio.insecure_channel(
+                address, options=self.channel_options
+            )
+        )
         self.stub = agent_rpc.CraneControllerStub(self.channel)
 
     async def reconnect(self, address, *, credentials=None):
         if credentials is not None:
             self.credentials = credentials
         old_channel = self.channel
-        self.channel = (grpc.aio.secure_channel(address, self.credentials) if self.credentials
-                        else grpc.aio.insecure_channel(address))
+        self.channel = (
+            grpc.aio.secure_channel(
+                address, self.credentials, options=self.channel_options
+            )
+            if self.credentials
+            else grpc.aio.insecure_channel(
+                address, options=self.channel_options
+            )
+        )
         self.stub = agent_rpc.CraneControllerStub(self.channel)
         await old_channel.close()
 

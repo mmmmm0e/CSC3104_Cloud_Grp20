@@ -45,6 +45,14 @@ def test_majority_partition_recovers_and_fences_old_holder(h, tmp_path, with_gat
             ports = {}
             for identity in ("crane-2", "crane-3"):
                 ports[identity] = await agents[identity].start("localhost:0", auto_transfer=False)
+                # This scenario explicitly forms/installs its own certificate.
+                # Do not let the automatic installer race that manual workflow;
+                # automatic recovery is covered by test_auto_recovery.py.
+                workers = [task for task in agents[identity].tasks
+                           if task.get_coro().__name__ == "recovery_loop"]
+                for task in workers:
+                    task.cancel()
+                await asyncio.gather(*workers, return_exceptions=True)
             for identity, peer in (("crane-2", "crane-3"), ("crane-3", "crane-2")):
                 await agents[identity].channels[peer].close()
                 agents[identity].channels[peer] = grpc.aio.insecure_channel(
