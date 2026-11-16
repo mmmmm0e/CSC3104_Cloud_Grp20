@@ -248,3 +248,31 @@ detected lane overlap. Final service convergence passed in CENTRAL mode. See
 [deployed results](DEPLOYED_RESULTS.md) for raw evidence locations and timing scope.
 These results remain separate from local comparisons and teammate Kubernetes evidence. The existing
 54 dashboard comparisons still describe their original local-process environment.
+
+## Secure workload listener platform validation
+
+16 November 2026, macOS with Docker Desktop and the dedicated `kind-cranelock`
+cluster. The integration base was `e098ccb` (`feat/secure-workload-grants`).
+
+- All three Docker and kind workload Services accepted the approved runner and
+  rejected a same-CA, unallowlisted identity and a client with no certificate.
+  The workload listener did not expose the peer service; the Docker peer listener
+  did not expose `RequestGrant`.
+- Docker smoke exercised peer handoff, an authorized grant and a fresh
+  `ValidateEntry`. The normal workload completed 9/9 crossings. A Compose crane
+  restart retained the same named volume and identical nonempty workload bindings.
+- Separate fresh Docker test projects completed 9/9 requests each during
+  controller outage and holder failure, with zero detected overlaps, autonomous
+  LOCAL recovery and verified CENTRAL convergence after restoration. The original
+  retained project did not enter LOCAL during its controller-outage run and logged
+  `CONFLICTING_VOTE`. Its existing votes and volumes were preserved.
+- kind completed one authorized crossing through the published internal Service
+  using a local port-forward. Pod replacement retained the original crane PVC,
+  and gate replacement retained authority while invalidating the old session.
+- Focused pytest: **46 passed**. Full pytest: **392 passed, 2 skipped, 1 failed**.
+  The controller-only process test timed out waiting for CENTRAL reconciliation;
+  the same failure also reproduced on the untouched feature commit.
+
+Local, ignored evidence: `run/platform-validation`, `run/deployed-evaluation`,
+and `run/secure-workload-validation.CGG4QZ`. The isolated test directories also
+contain development credentials; export individual result files, not the directories.

@@ -8,6 +8,7 @@ import sys
 import time
 
 from integrated import ROOT, BASE, COMPOSE, monitoring_secret
+from scripts.workload_credentials import CLIENT_FILES, CRANES, PORT, require_credentials, runner_config
 
 KUBE = ['kubectl', '--kubeconfig', str(ROOT / 'demo-data/kubeconfig'), '--context', 'kind-cranelock', '-n', 'cranelock']
 OUT = ROOT / 'deploy/kubernetes/integrated'
@@ -25,17 +26,43 @@ def obj(kind, name, spec=None, **extra):
     return value
 
 
-def render():
+def secret_files(name, directory, filenames):
+    return obj('Secret', name, type='Opaque', data={
+        filename: base64.b64encode((directory / filename).read_bytes()).decode('ascii')
+        for filename in filenames})
+
+
+def apply_input(value):
+    if value['kind'] != 'Secret':
+        kube('apply', '-f', '-', data=value)
+        return
+    try:
+        # Avoid storing a second client-side copy in a last-applied annotation or
+        # echoing a server error that may contain parts of the submitted Secret.
+        kube('apply', '--server-side', '--field-manager=cranelock-platform', '-f', '-',
+             data=value, capture=True)
+    except subprocess.CalledProcessError:
+        raise ValueError(f"Could not apply Secret {value['metadata']['name']} to kind-cranelock") from None
+
+
+def render(*, apply_inputs=True):
+    workload_files = require_credentials(BASE)
     monitoring_secret()
     config = json.loads(subprocess.run(COMPOSE + ['config', '--format', 'json'], capture_output=True, text=True, check=True).stdout)
     resources, inputs = [], []
     inputs.append(obj('Namespace', 'cranelock'))
     inputs[-1]['metadata'].pop('namespace')
     inputs.append(obj('ConfigMap', 'cranelock-public', data={'config.json': (BASE / 'config.json').read_text()}))
+    inputs.append(secret_files('workload-runner-tls', workload_files / 'runner', CLIENT_FILES))
+    runner = runner_config(Path('/workload-client'), {crane: f'{crane}:{PORT}' for crane in CRANES})
+    inputs.append(obj('ConfigMap', 'workload-runner-config', data={'config.json': json.dumps(runner)}))
     for name, service in config['services'].items():
         labels = {'app': name, 'part-of': 'cranelock'}
         mounts, volumes, secret, public, has_data = [], [], {}, {}, False
-        for i, volume in enumerate(service.get('volumes', [])):
+        # Filter before numbering so the upgrade preserves existing Secret keys.
+        ordinary_volumes = [volume for volume in service.get('volumes', [])
+                            if not (name in CRANES and volume['target'].startswith('/workload/'))]
+        for i, volume in enumerate(ordinary_volumes):
             target = volume['target']
             if volume['type'] == 'volume':
                 has_data = True
@@ -58,6 +85,12 @@ def render():
             inputs.append(obj('Secret', name+'-files', type='Opaque', data=secret))
         if public:
             inputs.append(obj('ConfigMap', name+'-public', data=public))
+        if name in CRANES:
+            workload_secret = name + '-workload-tls'
+            inputs.append(secret_files(workload_secret, workload_files / name,
+                                       ('ca.pem', 'server.pem', 'server-key.pem', 'allowlist.json')))
+            volumes.append(dict(name='workload-tls', secret=dict(secretName=workload_secret, defaultMode=0o440)))
+            mounts.append(dict(name='workload-tls', mountPath='/workload', readOnly=True))
         uid = 472 if name == 'grafana' else 65534 if name == 'prometheus' else 10001
         container = dict(name=name, image=service['image'], imagePullPolicy='IfNotPresent',
                          volumeMounts=mounts, securityContext=dict(allowPrivilegeEscalation=False, capabilities={'drop': ['ALL']}),
@@ -70,6 +103,8 @@ def render():
             container['env'] = [dict(name=k, value=str(v)) for k,v in service['environment'].items()]
         port = 50051 if name == 'gate' or name.startswith('crane-') else 50052 if name == 'controller' else 9090 if name == 'prometheus' else 3000
         container['ports'] = [dict(name='service', containerPort=port)]
+        if name in CRANES:
+            container['ports'].append(dict(name='workload', containerPort=PORT))
         if name in {'gate','controller'} or name.startswith('crane-'):
             container['ports'].append(dict(name='metrics', containerPort=9090 if name=='gate' else 9101))
         if name == 'gate':
@@ -100,6 +135,8 @@ def render():
                           spec=dict(replicas=1,strategy={'type':'Recreate'},selector={'matchLabels':labels},template=pod))
         resources.append(workload)
         service_ports=[dict(name='service',port=port,targetPort=port)]
+        if name in CRANES:
+            service_ports.append(dict(name='workload',port=PORT,targetPort='workload'))
         if name=='gate': service_ports.append(dict(name='metrics',port=9090,targetPort=9090))
         if name=='controller' or name.startswith('crane-'): service_ports.append(dict(name='metrics',port=9101,targetPort=9101))
         spec=dict(selector=labels,ports=service_ports)
@@ -109,8 +146,9 @@ def render():
     (OUT/'resources.yaml').write_text('\n---\n'.join(json.dumps(r,indent=2) for r in resources)+'\n')
     (OUT/'kustomization.yaml').write_text('apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nnamespace: cranelock\nresources:\n  - resources.yaml\n')
     # Secret contents only travel over stdin, never to the tracked manifest or argv.
-    for value in inputs:
-        kube('apply','-f','-',data=value)
+    if apply_inputs:
+        for value in inputs:
+            apply_input(value)
     return resources
 
 

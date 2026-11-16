@@ -131,14 +131,16 @@ must run the experiment command to generate their own local results.
 `scripts/external_workload.py` connects to Member 6's existing Docker deployment.
 It never starts private gate/controller/agent instances. Docker Desktop and the
 first-time setup in `docs/PLATFORM_HANDOFF.md` are prerequisites. The runner checks
-the five running container identities, uses mutual TLS to the gate, and retains
+the five running container identities, uses mutual TLS to the gate and workload
+listeners, and retains
 container IDs/image IDs in its manifest. Run `integrated.py state` and `check` at a
 healthy CENTRAL baseline before each workload.
 
 ```powershell
-.\.venv\Scripts\python.exe scripts/external_workload.py --new-empty-simulation --scenario normal --requests 18 --seed 20
-.\.venv\Scripts\python.exe scripts/external_workload.py --new-empty-simulation --scenario controller-outage --requests 18 --seed 20 --duration 30
-.\.venv\Scripts\python.exe scripts/external_workload.py --new-empty-simulation --scenario holder-failure --requests 18 --seed 20 --duration 30
+$workload = 'demo-data/integrated/workload/config.json'
+.\.venv\Scripts\python.exe scripts/external_workload.py --new-empty-simulation --workload-config $workload --scenario normal --requests 18 --seed 20
+.\.venv\Scripts\python.exe scripts/external_workload.py --new-empty-simulation --workload-config $workload --scenario controller-outage --requests 18 --seed 20 --duration 30
+.\.venv\Scripts\python.exe scripts/external_workload.py --new-empty-simulation --workload-config $workload --scenario holder-failure --requests 18 --seed 20 --duration 30
 ```
 
 Run these individually, waiting for CENTRAL convergence, AVAILABLE peers and
@@ -154,8 +156,8 @@ outage kills only the controller one-third through the observation window. The
 holder test first stops the controller and waits for agent-originated LOCAL
 authority, then kills the current holder and sends demand only from survivors.
 Agents perform all token transfers and majority recovery. The host test driver
-uses separate actor-only signing clients for crane grant requests, matching the
-platform's `external_smoke.py` boundary; it is not a new remote crane-workload API.
+requests grants through the separate workload listener and validates each entry
+as the simulator. It does not load crane signing keys.
 Only services stopped by the test are restarted, retaining their volumes.
 `restoration_succeeded` records successful start commands; use `state`/`check` to
 verify eventual protocol convergence before another run.

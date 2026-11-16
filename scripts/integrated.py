@@ -10,6 +10,8 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from scripts.workload_credentials import PORT as WORKLOAD_PORT, host_endpoint, provision_workload, require_credentials
+
 BASE = ROOT / "demo-data/integrated"
 SERVICES = ("gate", "controller", "crane-1", "crane-2", "crane-3")
 COMPOSE = ["docker", "compose", "-p", "cranelock-integrated",
@@ -43,7 +45,7 @@ def compose(*args, **kwargs):
     return subprocess.run(COMPOSE + list(args), cwd=ROOT, check=True, **kwargs)
 
 
-def provision(directory=BASE):
+def provision(directory=BASE, *, include_test_identity=False):
     from cranelock_gate.demo import create_demo_config
     from cranelock_gate.tls import write
     directory = Path(directory)
@@ -57,6 +59,7 @@ def provision(directory=BASE):
             json.dumps({identity: key.private_bytes_raw().hex()}) + "\n")
     for service in ("gate", "controller"):
         write(directory / "tls" / service, names=[service, "localhost", "127.0.0.1"])
+    provision_workload(directory, include_test_identity=include_test_identity)
     print("Development configuration and credentials created. No authority or clearance installed.")
     return config
 
@@ -137,6 +140,10 @@ def endpoints():
         "agents": {f"crane-{i}": {"host": f"127.0.0.1:{50100+i}",
                                      "internal": f"crane-{i}:50051", "tls": False}
                    for i in (1, 2, 3)},
+        "workload_agents": {crane: {"host": host_endpoint(crane),
+                                    "internal": f"{crane}:{WORKLOAD_PORT}", "tls": True}
+                            for crane in SERVICES[2:]},
+        "workload_config": str(BASE / "workload/config.json"),
         "containers": {s: f"cranelock-integrated-{s}-1" for s in SERVICES},
         "config": str(BASE / "config.json"),
         "signing_directory": str(BASE / "signing"),
@@ -212,15 +219,21 @@ def record_fault(action, service):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("provision", "init", "bootstrap", "up", "status", "state", "check", "endpoints", "logs"):
+    for name in ("init", "bootstrap", "up", "status", "state", "check", "endpoints", "logs"):
         commands.add_parser(name)
+    for name in ("provision", "provision-workload"):
+        command = commands.add_parser(name)
+        command.add_argument("--with-test-identity", action="store_true",
+                             help="Issue a separate, unallowlisted client for local auth validation")
     for name in ("stop", "start", "restart", "kill"):
         command = commands.add_parser(name)
         command.add_argument("service", choices=SERVICES, nargs="?" if name == "stop" else None)
     args = parser.parse_args(argv)
     try:
         if args.command == "provision":
-            provision()
+            provision(include_test_identity=args.with_test_identity)
+        elif args.command == "provision-workload":
+            print(provision_workload(BASE, include_test_identity=args.with_test_identity))
         elif args.command == "init":
             # Explicitly new volumes only. initialize() refuses an existing database.
             compose("build", "gate", "controller")
@@ -231,6 +244,7 @@ def main(argv=None):
         elif args.command == "bootstrap":
             bootstrap()
         elif args.command == "up":
+            require_credentials(BASE)
             monitoring_secret()
             compose("build", "gate", "controller")
             compose("up", "-d", "--wait", "--wait-timeout", "60")

@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir . \
 
 USER 10001:10001
 
-EXPOSE 50051
+EXPOSE 50051 50053
 
 ENTRYPOINT ["python", "-m", "cranelock"]
 CMD ["run", "--help"]
