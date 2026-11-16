@@ -30,8 +30,8 @@ allowlist and certificates read-only; the Agent still needs its existing durable
 state volume and actor-only Gate signing key. Bind and publish the new workload
 port separately from the existing peer port. Protect the existing peer network
 according to its current trust assumptions: this change does not authenticate
-peer RPCs. Configure Docker and Kubernetes ports, Services, Secrets and mounts
-outside this change.
+peer RPCs. For platform setup see the [Compose handoff](PLATFORM_HANDOFF.md) and
+[dedicated kind instructions](PLATFORM_OPERATIONS.md).
 
 For `scripts/external_workload.py` and `scripts/external_smoke.py`, provide
 `--workload-config PATH` pointing to a host-readable JSON file:

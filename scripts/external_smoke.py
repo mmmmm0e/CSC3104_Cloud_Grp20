@@ -30,7 +30,7 @@ def main():
         lane=Lane(sim,time.time,emit)
         if not lane.observe()['allowed']: raise RuntimeError('New model observation rejected')
         old=state['holder']
-        receiver=next(identity for identity in sorted(controller_client.config.members) if identity!=old)
+        receiver=next(identity for identity in sorted(sim.config.members) if identity!=old)
         with grpc.insecure_channel('127.0.0.1:'+str(50100+int(old.rsplit('-',1)[1]))) as peer_channel:
             reply=rpc.CraneAgentStub(peer_channel).TokenRequest(pb.TokenRequestMessage(
                 agent_id=receiver,epoch=state['epoch'],revision=state['revision'],request_id=str(uuid.uuid4())),timeout=3)

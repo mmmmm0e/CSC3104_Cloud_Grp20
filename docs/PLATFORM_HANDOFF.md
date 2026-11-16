@@ -7,7 +7,7 @@ yard simulator or generate physical lane movements by itself.
 
 For provisioned monitoring, fault experiments, Kubernetes and shutdown, see
 [platform operations](PLATFORM_OPERATIONS.md). A minimal external crossing example
-is available as `python scripts/external_smoke.py --new-empty-simulation`.
+is available as `python scripts/external_smoke.py --new-empty-simulation --workload-config demo-data/integrated/workload/config.json`.
 Submission instructions are in `output/pdf/GROUP20_INSTRUCTIONS.pdf`; report material
 is in `docs/PLATFORM_IMPLEMENTATION.md`.
 
@@ -33,7 +33,7 @@ python scripts/integrated.py check
 
 Provisioning creates ignored files under `demo-data/integrated`: public configuration,
 development signing keys, one signing file per actor, and separate gate/controller
-TLS sets. It refuses any existing experiment directory. Never commit these private
+and workload TLS sets. It refuses any existing experiment directory. Never commit these private
 files. Local setup generates new identities on each teammate's machine; do not
 combine agents from independently provisioned experiments.
 
@@ -53,7 +53,11 @@ DNS connections can take time to settle. UNKNOWN occupancy is healthy but blocks
 
 ## Existing experiment on Arif's machine
 
-Configuration and volumes already exist. Skip `provision`, `init` and `bootstrap`:
+Configuration and volumes already exist. Skip `provision`, `init` and `bootstrap`.
+On an existing experiment that does not yet have workload credentials, run
+`python scripts/integrated.py provision-workload` once. This only adds
+`demo-data/integrated/workload/`; it will not overwrite credentials or touch volumes.
+Then use:
 
 ```bash
 python scripts/integrated.py up
@@ -74,10 +78,13 @@ retaining volumes. Agents must reconcile after recreation.
 | Crane 1 gRPC | 127.0.0.1:50101 | crane-1:50051 | cranelock-integrated-crane-1-1 |
 | Crane 2 gRPC | 127.0.0.1:50102 | crane-2:50051 | cranelock-integrated-crane-2-1 |
 | Crane 3 gRPC | 127.0.0.1:50103 | crane-3:50051 | cranelock-integrated-crane-3-1 |
+| Crane 1 workload mTLS | localhost:50201 | crane-1:50053 | cranelock-integrated-crane-1-1 |
+| Crane 2 workload mTLS | localhost:50202 | crane-2:50053 | cranelock-integrated-crane-2-1 |
+| Crane 3 workload mTLS | localhost:50203 | crane-3:50053 | cranelock-integrated-crane-3-1 |
 | Gate metrics | http://127.0.0.1:9190/metrics | http://gate:9090/metrics | cranelock-integrated-gate-1 |
 
-Host ports bind to loopback only. Gate and controller require mutual TLS. Agent
-RPCs use plaintext within the isolated local simulation. Service names work only
+Host ports bind to loopback only. Gate, controller and workload RPCs require mutual
+TLS. Agent peer RPCs on `50051` keep their existing plaintext trust model. Service names work only
 inside this Compose network, not from the host. Each agent and gate has a separate
 named persistent volume. Controller authority resides at the gate, not a separate
 controller database. The gate/controller TLS client identities are shared
@@ -109,25 +116,32 @@ them beside this deployment is NOT a container workload/recovery experiment.
 Darius's external workload entry point is now `scripts/external_workload.py`.
 It connects to these endpoints instead of constructing Agent/Gate/RunningServer
 instances. See [deployed workload commands](EVALUATION.md#test-the-integrated-containers).
-Its runner contract has local signed-gate tests; sustained Docker workload
-validation still needs to run on a Docker-enabled machine. The commands below
-describe the endpoint and actor boundaries it must preserve.
+Pass `--workload-config demo-data/integrated/workload/config.json` to the runner.
+It reads runner TLS files under `workload/runner/`; the config contains paths and
+endpoints only. The workload CA is distinct from both gate and controller CAs;
+its private key is not saved. A crane mounts only its own workload server material
+and crane/lane allowlist, which accepts `urn:cranelock:workload:deployed-runner`.
+The runner credentials are never mounted into crane containers. Development
+workload certificates expire after 30 days; rotate them as a set and restart the
+affected listeners. For a validation setup, add `--with-test-identity` to the initial
+`provision` or upgrade `provision-workload` command, then run
+`python scripts/check_workload_listener.py --docker-peer`. Keep that unapproved
+certificate local; it is never mounted or submitted to Kubernetes.
 
 - Use the generated public config and the simulator-only signing file
   `demo-data/integrated/signing/simulator.json` for simulator-signed gate actions.
   Use only the appropriate actor's key for any other signed action. The endpoint
   manifest exposes paths, never private key contents.
-- Use the shared proto clients for agent token requests/state and the existing
-  signed gate Client for grant/entry/occupancy operations. Respect actor permissions
-  in CONTRACT.md; simulator credentials alone do not authorize crane grant requests.
+- Use peer RPCs for token requests and state. The runner requests grants through the
+  separate mTLS listener; the agent signs the existing gate request with its own key.
+  The simulator signs fresh entry validation and occupancy observations independently.
 - Serialize admission, movement, sampling, exit and clearance through the physical
   lane lock. An RPC grant or has_token=true never replaces actual entry validation.
 - Start with UNKNOWN occupancy. Supply fresh, phase/session-aware simulator evidence
   after independently establishing physical clearance. No launcher automatically
   clears the lane or simulates operator clearance.
-- The agent CLI coordinates digital authority but does not expose a complete remote
-  crane-workload API. Agree the grant-request boundary with agent/gate owners; do
-  not bypass it or distribute all crane private keys to a single crane container.
+- The workload API exposes `RequestGrant` only. See [the workload security contract](WORKLOAD_SECURITY.md)
+  for replay rules and the requirement for a fresh `ValidateEntry` before movement.
 - Keep state queries separate from traffic generation: `state` is read-only.
   The simulator playback dashboard shows saved experiments, not live container state.
 

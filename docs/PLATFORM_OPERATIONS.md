@@ -164,7 +164,21 @@ The existing filesystem lease prevents concurrent gate ownership on the same
 filesystem; this is not a highly available replicated gate.
 
 Services use the same internal names/ports as Compose (gate:50051,
-controller:50052, crane-1/2/3:50051). Monitoring uses prometheus:9090 and grafana:3000.
+controller:50052, crane-1/2/3:50051 for peers and crane-1/2/3:50053 for mTLS workload).
+Monitoring uses prometheus:9090 and grafana:3000.
+
+On an existing experiment, run `python scripts/integrated.py provision-workload`
+once if the workload bundle is missing. Use `kubernetes.py load-images` and `up`
+to upgrade the dedicated cluster; do not rerun `init` on its existing PVCs.
+The renderer mounts each `crane-N-workload-tls` Secret read-only in its own StatefulSet.
+An in-cluster runner can mount `workload-runner-tls` at `/workload-client` and
+`workload-runner-config` at `/workload-config`, then pass
+`--workload-config /workload-config/config.json` to its workload client. That
+config contains paths and internal endpoints only; it carries no keys. These
+objects provision credentials and endpoints, not a runner Pod. A local auth check
+can use loopback port-forwards to each `service/crane-N` workload port and a host
+runner config whose endpoint ports match the forwards. No workload Service is
+published outside the cluster by default.
 These ClusterIP/headless endpoints are not directly host-accessible. For a temporary
 local dashboard connection, in a separate terminal:
 
@@ -217,10 +231,10 @@ cluster, remove PVCs, use down -v or delete databases to resume an experiment.
 ## External workload starting point
 
 ```bash
-python scripts/external_smoke.py --new-empty-simulation
+python scripts/external_smoke.py --new-empty-simulation --workload-config demo-data/integrated/workload/config.json
 ```
 
-This uses the actual host-published agent and mutual-TLS gate endpoints. It creates
+This uses the actual host-published peer, workload and mutual-TLS gate endpoints. It creates
 one new empty physical model, requests an actual token handoff, uses separate
 crane/simulator signing identities to request and consume a grant, serializes entry
 and exit through the existing Lane lock, and leaves clearance UNKNOWN after its
@@ -229,11 +243,12 @@ run beside another physical runner. It writes physical-entry/exit and authority
 events to a unique local JSON record. It is a minimal integration example for
 Darius, not the final workload generator or scalability benchmark.
 
-## Remaining shared integration
+## Workload validation scope
 
-The supplied platform is ready for external workload integration. The existing
-cranelock_sim CLI modes create their own services and do not automatically exercise
-these endpoints. Darius and the agent/gate owners must connect the real workload
-and lane boundary, collect physical traces and produce end-to-end performance and
-scalability results. Tests of signed authority, metrics and restart persistence
-are bounded deployment evidence; they are not an industrial-safety certification.
+Use `scripts/external_workload.py` with the generated workload config for sustained
+tests on the integrated Docker deployment. The `cranelock_sim` CLI modes create
+their own services and do not automatically use these endpoints. Run the auth probe
+first, then exercise normal traffic and each fault separately, allowing occupancy
+to expire to UNKNOWN and all agents to converge before each test. An authentic grant
+still requires a fresh `ValidateEntry`. These local experiments use synthetic lane
+movement and three agents; they do not measure larger deployments or node loss.

@@ -3,6 +3,7 @@ services:
     image: cranelock-agent:integrated
     ports:
       - "127.0.0.1:50101:50051"
+      - "127.0.0.1:50201:50053"
     command:
       - run
       - --metrics-port
@@ -47,8 +48,42 @@ services:
       - /controller-tls/client.pem
       - --controller-tls-key
       - /controller-tls/client-key.pem
+      - --workload-listen
+      - 0.0.0.0:50053
+      - --workload-tls-ca
+      - /workload/ca.pem
+      - --workload-tls-cert
+      - /workload/server.pem
+      - --workload-tls-key
+      - /workload/server-key.pem
+      - --workload-allowlist
+      - /workload/allowlist.json
     volumes:
       - crane-1-data:/data
+      - type: bind
+        source: ../demo-data/integrated/workload/crane-1/ca.pem
+        target: /workload/ca.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../demo-data/integrated/workload/crane-1/server.pem
+        target: /workload/server.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../demo-data/integrated/workload/crane-1/server-key.pem
+        target: /workload/server-key.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../demo-data/integrated/workload/crane-1/allowlist.json
+        target: /workload/allowlist.json
+        read_only: true
+        bind:
+          create_host_path: false
       - ../demo-data/integrated/config.json:/config/config.json:ro
       - ../demo-data/integrated/signing/crane-1.json:/signing/agent.json:ro
       - ../demo-data/integrated/tls/gate/ca.pem:/gate-tls/ca.pem:ro
@@ -66,6 +101,7 @@ services:
     image: cranelock-agent:integrated
     ports:
       - "127.0.0.1:50102:50051"
+      - "127.0.0.1:50202:50053"
     command:
       - run
       - --metrics-port
@@ -110,8 +146,42 @@ services:
       - /controller-tls/client.pem
       - --controller-tls-key
       - /controller-tls/client-key.pem
+      - --workload-listen
+      - 0.0.0.0:50053
+      - --workload-tls-ca
+      - /workload/ca.pem
+      - --workload-tls-cert
+      - /workload/server.pem
+      - --workload-tls-key
+      - /workload/server-key.pem
+      - --workload-allowlist
+      - /workload/allowlist.json
     volumes:
       - crane-2-data:/data
+      - type: bind
+        source: ../demo-data/integrated/workload/crane-2/ca.pem
+        target: /workload/ca.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../demo-data/integrated/workload/crane-2/server.pem
+        target: /workload/server.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../demo-data/integrated/workload/crane-2/server-key.pem
+        target: /workload/server-key.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../demo-data/integrated/workload/crane-2/allowlist.json
+        target: /workload/allowlist.json
+        read_only: true
+        bind:
+          create_host_path: false
       - ../demo-data/integrated/config.json:/config/config.json:ro
       - ../demo-data/integrated/signing/crane-2.json:/signing/agent.json:ro
       - ../demo-data/integrated/tls/gate/ca.pem:/gate-tls/ca.pem:ro
@@ -130,6 +200,7 @@ services:
     image: cranelock-agent:integrated
     ports:
       - "127.0.0.1:50103:50051"
+      - "127.0.0.1:50203:50053"
     command:
       - run
       - --metrics-port
@@ -174,8 +245,42 @@ services:
       - /controller-tls/client.pem
       - --controller-tls-key
       - /controller-tls/client-key.pem
+      - --workload-listen
+      - 0.0.0.0:50053
+      - --workload-tls-ca
+      - /workload/ca.pem
+      - --workload-tls-cert
+      - /workload/server.pem
+      - --workload-tls-key
+      - /workload/server-key.pem
+      - --workload-allowlist
+      - /workload/allowlist.json
     volumes:
       - crane-3-data:/data
+      - type: bind
+        source: ../demo-data/integrated/workload/crane-3/ca.pem
+        target: /workload/ca.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../demo-data/integrated/workload/crane-3/server.pem
+        target: /workload/server.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../demo-data/integrated/workload/crane-3/server-key.pem
+        target: /workload/server-key.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../demo-data/integrated/workload/crane-3/allowlist.json
+        target: /workload/allowlist.json
+        read_only: true
+        bind:
+          create_host_path: false
       - ../demo-data/integrated/config.json:/config/config.json:ro
       - ../demo-data/integrated/signing/crane-3.json:/signing/agent.json:ro
       - ../demo-data/integrated/tls/gate/ca.pem:/gate-tls/ca.pem:ro
