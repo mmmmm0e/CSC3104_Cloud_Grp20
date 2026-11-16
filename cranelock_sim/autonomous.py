@@ -6,6 +6,7 @@ around the team's controller, in the controller's own process. Loopback only.
 """
 import argparse
 import asyncio
+import base64
 import json
 import os
 from pathlib import Path
@@ -15,16 +16,21 @@ import statistics
 import subprocess
 import sys
 import time
-from dataclasses import asdict
+import shutil
 
 import grpc
 
 from cranelock import protocol_pb2 as pb, protocol_pb2_grpc as rpc
-from cranelock_gate.client import Client, certificate
+from cranelock_gate.client import Client
+from cranelock_gate.config import Config
+from cranelock_gate.demo import load_keys
+from cranelock_gate.generated import gate_pb2
 from .controller import (CONTROLLER_IMPLEMENTATION, CONTROLLER_SOURCE,
                          ControllerConnection, RPCStats, TeamControllerService)
-from .experiment import new_config, percentile, require
+from .experiment import percentile, require
 from .lane import Lane, SafetyViolation
+from .workload_client import GrantAttempt, channel as workload_channel
+from .workload_tls import IDENTITY
 
 EVALUATION = "benefits-v4"
 LIMITS = ("Independent crane, controller and gate processes on one host using loopback gRPC. "
@@ -114,12 +120,17 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
     output.mkdir(parents=True, exist_ok=False)
     complete_all = scenario == "normal"
     initial_mode = "LOCAL" if model == "basic-token" or scenario == "holder-failure" else "CENTRAL"
-    config, keys = new_config(3)
     public = output / "gate-config.json"
-    public.write_text(json.dumps(asdict(config), indent=2), encoding="utf-8")
-    for identity, key in keys.items():
-        (output / f"{identity}.key.json").write_text(
-            json.dumps({identity: key.private_bytes_raw().hex()}), encoding="utf-8")
+    provisioned = subprocess.run([sys.executable, "-B", "-m", "cranelock_sim.evaluation_provision", str(output)],
+        capture_output=True, timeout=30, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+    if provisioned.returncode:
+        raise RuntimeError("Evaluation credential provisioning failed")
+    config = Config.load(public)
+    private = output / ".credentials"
+    database = output / "state" / "gate" / "gate.sqlite"
+    simulator_keys = load_keys(private / "driver" / "simulator.key.json")
+    if set(simulator_keys) != {config.simulator_id}:
+        raise ValueError("Evaluation requires simulator-only signing credentials")
     settings = dict(model=model, scenario=scenario, seed=seed, evaluation=EVALUATION,
         controller_implementation=CONTROLLER_IMPLEMENTATION, controller_source_commit=CONTROLLER_SOURCE,
         recovery_driver="agent_workers", execution_mode="independent_processes",
@@ -170,7 +181,7 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
     try:
         # Reserve distinct endpoints until the relevant process is launched.
         addresses = {}
-        for name in ("gate", *config.members):
+        for name in ("gate", *config.members, *(f"{member}-workload" for member in config.members)):
             sock = socket.socket()
             sock.bind(("127.0.0.1", 0))
             reservations.append(sock)
@@ -179,24 +190,24 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
             cluster.addresses.update({address: f"{name}:{address.rsplit(':', 1)[1]}"
                                       for name, address in addresses.items()})
         init_arguments = ["cranelock_gate.server", "init", "--config", str(public),
-                          "--database", str(output / "gate.sqlite")]
+                          "--database", str(database)]
         initialized = await asyncio.to_thread(cluster.initialize, init_arguments) if docker else await asyncio.to_thread(subprocess.run,
             [sys.executable, "-B", "-m", "cranelock_gate.server", "init", "--config", str(public),
-             "--database", str(output / "gate.sqlite")], capture_output=True, timeout=15,
+             "--database", str(database)], capture_output=True, timeout=15,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         if initialized.returncode:
             raise RuntimeError("Gate initialization failed")
         reservations[0].close()
         cluster.spawn("gate", "cranelock_gate.server", "serve", "--config", public,
-            "--database", output / "gate.sqlite", "--bind", addresses["gate"], "--metrics-port", "0")
+            "--database", database, "--bind", addresses["gate"], "--metrics-port", "0")
         channel = cluster.gate_channel(addresses["gate"]) if docker else grpc.insecure_channel(addresses["gate"])
-        client = Client(channel, config, keys, timeout=2 if docker else .5)
+        client = Client(channel, config, simulator_keys, timeout=2 if docker else .5)
         async def gate_state():
             return await asyncio.to_thread(client.state)
         await poll(gate_state, startup_timeout, "gate startup")
-        ready = output / "controller-ready.json"
+        ready = output / "state" / "controller" / "ready.json"
         cluster.spawn("controller", "cranelock_sim.autonomous", "--controller", "--config", public,
-            "--key", output / "controller.key.json", "--gate", addresses["gate"], "--ready", ready)
+            "--key", private / "controller" / "controller.key.json", "--gate", addresses["gate"], "--ready", ready)
         async def controller_ready():
             if ready.exists():
                 try:
@@ -205,15 +216,16 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
                     pass
         endpoint = await poll(controller_ready, startup_timeout, "controller startup")
         connection = ControllerConnection(endpoint["assignment_port"], RPCStats())
-        before = await gate_state()
-        bootstrap = certificate(config, keys, before, "crane-1", 0,
-            mode=initial_mode, signers=[config.controller_id] if initial_mode == "CENTRAL" else None)
         if initial_mode == "CENTRAL" or model == "central-lock":
             require(await connection.assign("crane-1"))
             mode = initial_mode = "CENTRAL"
         else:
-            require(await asyncio.to_thread(client.call, "crane-1", "InstallAuthority", certificate=bootstrap,
-                expected_epoch=before["epoch"], expected_revision=before["revision"]))
+            bootstrap = json.loads((private / "driver" / "bootstrap-command.json").read_text(encoding="utf-8"))
+            signed = gate_pb2.SignedCommand(payload_json=base64.b64decode(bootstrap["payload"]),
+                                           signature=base64.b64decode(bootstrap["signature"]))
+            response = await asyncio.to_thread(client.stub.InstallAuthority, signed, timeout=client.timeout)
+            require(dict(allowed=response.allowed, reason=response.reason,
+                         replayed=response.replayed, action_applied=response.action_applied))
         lane = Lane(client, wall_clock, emit)
         require(await asyncio.to_thread(lane.observe))
         async def sample_lane():
@@ -222,14 +234,23 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
             # from clearing the reservation. Keep the real reservation intact.
             if observed["reason"] != "OUTSTANDING_GRANT":
                 require(observed)
-        stubs = {}
+        stubs, workloads = {}, {}
         for index, identity in enumerate(config.members, 1):
             reservations[index].close()
+            reservations[index + len(config.members)].close()
+            service_credentials = private / identity
+            tls = service_credentials / "workload-tls"
+            allowlist = service_credentials / "workload.json"
+            allowlist.write_text(json.dumps(dict(crane_id=identity, lane_id=config.lane_id,
+                allowed_workload_uri_sans=[IDENTITY])), encoding="utf-8")
             args = ["cranelock", "run", "--id", identity, "--listen", addresses[identity],
                 "--holder", "crane-1", "--epoch", "0", "--mode", initial_mode,
-                "--state-file", str(output / f"{identity}.json"), "--interval", ".5" if docker else ".05",
+                "--state-file", str(output / "state" / identity / "state.json"), "--interval", ".5" if docker else ".05",
                 "--timeout", str(detection_timeout), "--gate-address", addresses["gate"],
-                "--gate-config", str(public), "--gate-keys", str(output / f"{identity}.key.json")]
+                "--gate-config", str(public), "--gate-keys", str(service_credentials / f"{identity}.key.json"),
+                "--workload-listen", addresses[f"{identity}-workload"],
+                "--workload-tls-ca", str(tls/"ca.pem"), "--workload-tls-cert", str(tls/"server.pem"),
+                "--workload-tls-key", str(tls/"server-key.pem"), "--workload-allowlist", str(allowlist)]
             if model == "cranelock":
                 args += ["--enable-recovery"]
                 if scenario != "holder-failure":
@@ -241,6 +262,10 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
             peer_channel = grpc.insecure_channel(addresses[identity])
             cluster.channels.append(peer_channel)
             stubs[identity] = rpc.CraneAgentStub(peer_channel)
+            driver_tls = private / "driver" / (identity + "-workload")
+            workload_connection, workloads[identity] = workload_channel(addresses[f"{identity}-workload"],
+                (driver_tls/"ca.pem").read_bytes(), (driver_tls/"client.pem").read_bytes(), (driver_tls/"client-key.pem").read_bytes())
+            cluster.channels.append(workload_connection)
         async def warm():
             states = await asyncio.gather(*(asyncio.to_thread(stub.GetAgentState, pb.Empty(), timeout=.5)
                                           for stub in stubs.values()))
@@ -327,6 +352,8 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
                 if time.monotonic()-origin >= horizon:
                     break
                 requested = None
+                attempt = None
+                central_assigned = False
                 while time.monotonic()-origin < horizon:
                     cluster.check()
                     state = await gate_state()
@@ -335,15 +362,17 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
                         if "controller" in cluster.stopped:
                             await asyncio.sleep(.02)
                             continue
-                        try:
-                            assigned = await connection.assign(identity)
-                        except grpc.RpcError as error:
-                            if "controller" in cluster.stopped:
-                                continue
-                            raise error
-                        require(assigned)
-                        emit("central_assignment", crane=identity)
-                        state = await gate_state()
+                        if not central_assigned or state["holder"] != identity:
+                            try:
+                                assigned = await connection.assign(identity)
+                            except grpc.RpcError as error:
+                                if "controller" in cluster.stopped:
+                                    continue
+                                raise error
+                            require(assigned)
+                            central_assigned = True
+                            emit("central_assignment", crane=identity)
+                            state = await gate_state()
                     elif state["holder"] != identity:
                         token = (state["epoch"],state["revision"],state["holder"],identity)
                         if token != requested:
@@ -365,9 +394,23 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
                             continue
                     await sample_lane()
                     state = await gate_state()
-                    grant = await asyncio.to_thread(client.call,identity,"RequestGrant",
-                        epoch=state["epoch"],revision=state["revision"])
+                    if attempt is None:
+                        attempt = GrantAttempt(state["epoch"], state["revision"])
+                    try:
+                        grant = await asyncio.to_thread(attempt.call, workloads[identity])
+                    except grpc.RpcError as error:
+                        if error.code() not in {grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED}:
+                            raise
+                        await asyncio.sleep(.01)
+                        continue
+                    if attempt.unresolved(grant):
+                        await asyncio.sleep(.01)
+                        continue
+                    attempt = None
                     if not grant["allowed"]:
+                        await asyncio.sleep(.01)
+                        continue
+                    if grant["replayed"] or not grant["action_applied"]:
                         await asyncio.sleep(.01)
                         continue
                     emit("grant_issued",request_id=row["request_id"],crane=identity,
@@ -451,10 +494,18 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
         if connection: await connection.close()
         if channel: channel.close()
         for sock in reservations: sock.close()
-        if (output/"gate.sqlite").exists():
-            with sqlite3.connect((output/"gate.sqlite").as_uri()+"?mode=ro",uri=True) as db:
+        if database.exists():
+            # The Gate is stopped; mode=rw allows SQLite to recover its WAL on
+            # Windows after abrupt process termination without creating a database.
+            with sqlite3.connect(database.as_uri()+"?mode=rw",uri=True) as db:
                 audit=[json.loads(row[0]) for row in db.execute("SELECT value FROM events ORDER BY event_id")]
+                with sqlite3.connect(output/"gate.sqlite") as snapshot:
+                    db.backup(snapshot)
             (output/"gate-events.jsonl").write_text("".join(json.dumps(e)+"\n" for e in audit),encoding="utf-8")
+        for identity in config.members:
+            state_path = output/"state"/identity/"state.json"
+            if state_path.exists():
+                shutil.copyfile(state_path, output/f"{identity}.json")
         events.sort(key=lambda e:e["time"])
         (output/"events.jsonl").write_text("".join(json.dumps(e)+"\n" for e in events),encoding="utf-8")
         write_csv(output/"requests.csv",rows)

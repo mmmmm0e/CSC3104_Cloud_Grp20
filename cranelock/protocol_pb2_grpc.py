@@ -25,6 +25,78 @@ if _version_not_supported:
     )
 
 
+class CraneWorkloadStub:
+    """Missing associated documentation comment in .proto file."""
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.RequestGrant = channel.unary_unary(
+                '/cranelock.v1.CraneWorkload/RequestGrant',
+                request_serializer=cranelock_dot_protocol__pb2.WorkloadGrantRequest.SerializeToString,
+                response_deserializer=cranelock_dot_protocol__pb2.WorkloadGrantResponse.FromString,
+                _registered_method=True)
+
+
+class CraneWorkloadServicer:
+    """Missing associated documentation comment in .proto file."""
+
+    def RequestGrant(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_CraneWorkloadServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'RequestGrant': grpc.unary_unary_rpc_method_handler(
+                    servicer.RequestGrant,
+                    request_deserializer=cranelock_dot_protocol__pb2.WorkloadGrantRequest.FromString,
+                    response_serializer=cranelock_dot_protocol__pb2.WorkloadGrantResponse.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'cranelock.v1.CraneWorkload', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('cranelock.v1.CraneWorkload', rpc_method_handlers)
+
+
+ # This class is part of an EXPERIMENTAL API.
+class CraneWorkload:
+    """Missing associated documentation comment in .proto file."""
+
+    @staticmethod
+    def RequestGrant(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/cranelock.v1.CraneWorkload/RequestGrant',
+            cranelock_dot_protocol__pb2.WorkloadGrantRequest.SerializeToString,
+            cranelock_dot_protocol__pb2.WorkloadGrantResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+
 class CraneAgentStub:
     """Missing associated documentation comment in .proto file."""
 

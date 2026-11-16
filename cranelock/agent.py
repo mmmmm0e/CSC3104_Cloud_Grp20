@@ -62,6 +62,7 @@ class Agent(rpc.CraneAgentServicer):
         self.observed_handoffs = set()
         self.vote_state = {}  # Opaque reserved storage; Recovery owns vote policy.
         self.vote_proposals = {}
+        self.workload_requests = {}
         self.recovery_blocked = None
         self.recovery_config = recovery_config
         self.recovery_private_key = recovery_private_key
@@ -87,6 +88,9 @@ class Agent(rpc.CraneAgentServicer):
             self.state.has_token = False
             self.vote_state = saved.get("vote_state", {})
             self.vote_proposals = saved.get("vote_proposals", {})
+            self.workload_requests = saved.get("workload_requests", {})
+            if type(self.workload_requests) is not dict:
+                raise ValueError("Invalid persisted workload request bindings")
         if recovery_config is not None:
             recovery.validate_saved(recovery_config, self.vote_state, self.vote_proposals)
         self.last_seen = {peer: clock() for peer in peers}
@@ -116,7 +120,8 @@ class Agent(rpc.CraneAgentServicer):
                 json.dump(dict(agent_id=self.state.agent_id, epoch=self.state.current_epoch,
                                holder=self.state.token_holder, has_token=self.state.has_token,
                                revision=self.state.revision,
-                               vote_state=self.vote_state, vote_proposals=self.vote_proposals), stream)
+                               vote_state=self.vote_state, vote_proposals=self.vote_proposals,
+                               workload_requests=self.workload_requests), stream)
                 stream.flush()
                 os.fsync(stream.fileno())
             os.replace(temporary, self.path)

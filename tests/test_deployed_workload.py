@@ -14,7 +14,16 @@ class DeploymentDouble:
         self.calls, self.stopped = [], set()
         assert h.install(mode="CENTRAL")["allowed"]
         self.simulator = LocalGateClient(h.gate, h.config, h.keys)
-        self.cranes = {identity: self.simulator for identity in h.config.members}
+        class Stub:
+            def __init__(self, identity):
+                self.identity = identity
+            def RequestGrant(self, request, timeout):
+                result = h.call(self.identity, "RequestGrant", request_id=request.request_id,
+                    epoch=request.expected_epoch, revision=request.expected_revision)
+                return SimpleNamespace(**{key: result[key] for key in
+                    ("request_id", "allowed", "reason", "replayed", "action_applied")},
+                    grant_json=json.dumps(result["grant"]).encode() if result["grant"] else b"")
+        self.workloads = {identity: Stub(identity) for identity in h.config.members}
         self.endpoints = {"scope": "test double backed by actual signed gate"}
 
     def agent(self, identity):
@@ -161,7 +170,7 @@ def load_external_script(monkeypatch):
     return module
 
 
-def test_external_clients_keep_actor_keys_separate_and_record_container_identity(tmp_path, monkeypatch):
+def test_external_clients_use_only_simulator_key_and_record_container_identity(tmp_path, monkeypatch):
     from contextlib import ExitStack
     module = load_external_script(monkeypatch)
     from integrated import provision
@@ -170,6 +179,12 @@ def test_external_clients_keep_actor_keys_separate_and_record_container_identity
     manifest = module.endpoints()
     manifest.update(config=str(directory/"config.json"), signing_directory=str(directory/"signing"),
                     gate_tls_directory=str(directory/"tls/gate"))
+    from cranelock_sim.workload_tls import write
+    tls = directory/"workload-tls"
+    write(tls)
+    workload_config = directory/"workload.json"
+    workload_config.write_text(json.dumps(dict(ca=str(tls/"ca.pem"), cert=str(tls/"client.pem"),
+        key=str(tls/"client-key.pem"), agents={f"crane-{i}": f"localhost:{50200+i}" for i in (1,2,3)})))
     inventory = [dict(id=f"container-{i}", image=f"image-{i}", running=True,
                       project=manifest["project"], name=name) for i, name in enumerate(manifest["containers"].values())]
     monkeypatch.setattr(module, "endpoints", lambda: manifest)
@@ -179,9 +194,10 @@ def test_external_clients_keep_actor_keys_separate_and_record_container_identity
         return "\n".join(json.dumps(item) for item in inventory)
     monkeypatch.setattr(module.subprocess, "check_output", inspect)
     with ExitStack() as stack:
-        deployment = module.ExternalDeployment(stack)
+        deployment = module.ExternalDeployment(stack, workload_config)
         assert set(deployment.simulator.keys) == {"simulator"}
-        assert all(set(client.keys) == {identity} for identity, client in deployment.cranes.items())
+        assert set(deployment.workloads) == {"crane-1", "crane-2", "crane-3"}
+        assert not hasattr(deployment, "cranes")
         assert deployment.endpoints["container_inventory"] == inventory
 
 
@@ -195,7 +211,39 @@ def test_external_adapter_rejects_stopped_or_wrong_project_containers(monkeypatc
     monkeypatch.setattr(module.subprocess, "check_output",
                         lambda *args, **kwargs: "\n".join(json.dumps(item) for item in inventory))
     with ExitStack() as stack, pytest.raises(RuntimeError, match="complete integrated"):
-        module.ExternalDeployment(stack)
+        module.ExternalDeployment(stack, None)
     inventory[0].update(running=True, project="unrelated-project")
     with ExitStack() as stack, pytest.raises(RuntimeError, match="complete integrated"):
-        module.ExternalDeployment(stack)
+        module.ExternalDeployment(stack, None)
+
+
+def test_external_smoke_loads_only_simulator_signing_key(tmp_path, monkeypatch):
+    import importlib.util
+    import sys
+    from pathlib import Path
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1]/"scripts"))
+    from integrated import provision
+    import integrated
+    import cranelock_gate.demo as demo
+    from cranelock_gate.client import Client
+    directory = tmp_path/"credentials"
+    provision(directory)
+    monkeypatch.setattr(integrated, "BASE", directory)
+    original = demo.load_keys
+    loaded = []
+    def simulator_only(path):
+        loaded.append(Path(path).name)
+        if Path(path).name != "simulator.json":
+            raise AssertionError("Smoke runner attempted to load a non-simulator key")
+        return original(path)
+    monkeypatch.setattr(demo, "load_keys", simulator_only)
+    monkeypatch.setattr(Client, "state", lambda self: {"mode": "LOCAL", "lane_state": "UNKNOWN", "grant": None})
+    script = Path(__file__).resolve().parents[1]/"scripts"/"external_smoke.py"
+    spec = importlib.util.spec_from_file_location("secure_external_smoke", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    monkeypatch.setattr(sys, "argv", ["external_smoke", "--new-empty-simulation", "--workload-config", "unused"])
+    with pytest.raises(RuntimeError, match="Requires CENTRAL"):
+        module.main()
+    assert loaded == ["simulator.json"]

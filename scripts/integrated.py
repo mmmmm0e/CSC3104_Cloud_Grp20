@@ -87,6 +87,29 @@ def gate_client():
     return channel, client
 
 
+def simulator_gate_client():
+    """Gate mTLS plus only the simulator's signing key, for physical models."""
+    import grpc
+    from cranelock_gate.client import Client
+    from cranelock_gate.config import Config
+    from cranelock_gate.demo import load_keys
+    tls = BASE / "tls/gate"
+    credentials = grpc.ssl_channel_credentials(
+        root_certificates=(tls / "ca.pem").read_bytes(),
+        private_key=(tls / "client-key.pem").read_bytes(),
+        certificate_chain=(tls / "client.pem").read_bytes())
+    channel = grpc.secure_channel("localhost:50061", credentials)
+    try:
+        config = Config.load(BASE / "config.json")
+        keys = load_keys(BASE / "signing" / f"{config.simulator_id}.json")
+        if set(keys) != {config.simulator_id}:
+            raise ValueError("Simulator signing file must contain only its identity")
+        return channel, Client(channel, config, keys)
+    except Exception:
+        channel.close()
+        raise
+
+
 def bootstrap():
     from cranelock_gate.client import certificate
     channel, client = gate_client()
