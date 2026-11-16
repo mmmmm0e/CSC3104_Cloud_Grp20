@@ -21,6 +21,48 @@ def browser():
         b.close()
 
 
+def test_docker_results_keep_timings_and_evidence_separate(browser, dashboard_server):
+    from test_dashboard import save
+    url, root = dashboard_server
+    timings = {"normal": [.5, 1, 3], "controller-outage": [None, .4, .8],
+               "holder-failure": [1, 2, 7]}
+    for scenario, values in timings.items():
+        for seed, value in zip((7, 20, 3104), values):
+            path = root.parent / "deployed-evaluation" / f"seed-{seed}" / scenario
+            settings = dict(model="deployed-cranelock", evaluation="deployed-v1",
+                execution_mode="external_containers", scenario=scenario, seed=seed,
+                requested=18, crossing_time_seconds=.1,
+                duration_seconds=None if scenario == "normal" else 30,
+                measurement_policy="complete_all_requests" if scenario == "normal" else "fixed_window")
+            save(path, "experiment.json", settings)
+            save(path, "summary.json", dict(**settings, passed=True, completed=18,
+                safety_violations=0, total_completion_seconds=value if scenario == "normal" else None,
+                fault_command_end_to_entry_seconds=value if scenario != "normal" else None))
+            (path / "requests.csv").write_text("request_id,exited_at\nr1,1\n")
+            (path / "events.jsonl").write_text("")
+            save(path, "restoration.json", dict(succeeded=True))
+    page = browser.new_page(viewport=dict(width=1440, height=1000))
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.goto(url)
+    playwright.expect(page.locator("#docker-count")).to_have_text("9/9 runs passed")
+    playwright.expect(page.locator("#collection")).to_have_value("comparison-validated")
+    for scenario, median in [("normal", "1.000 s"), ("controller-outage", "0.600 s"), ("holder-failure", "2.000 s")]:
+        card = page.locator(f'.docker-card[data-scenario="{scenario}"]')
+        playwright.expect(card.locator(".docker-metric")).to_have_text(median)
+    playwright.expect(page.locator('.docker-card[data-scenario="controller-outage"]')).to_contain_text("2/3 passed runs have recorded timing")
+    playwright.expect(page.locator('.docker-card[data-scenario="holder-failure"] .docker-range')).to_contain_text("7.000 s")
+    page.locator(".docker-register > summary").click()
+    assert page.locator("#docker-runs tr").count() == 9
+    with page.expect_download() as download:
+        page.locator('#docker-runs a[download="requests.csv"]').first.click()
+    assert Path(download.value.path()).read_text().startswith("request_id,exited_at")
+    page.set_viewport_size(dict(width=390, height=844))
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert not errors
+    page.close()
+
+
 def test_progress_chart_shows_one_sequence_and_marks_recorded_fault(browser, dashboard_server):
     import json
     url, root = dashboard_server
@@ -459,5 +501,45 @@ def test_autonomous_results_are_preferred_and_explain_process_scope(browser, das
     playwright.expect(page.locator("#benefit-scope")).to_contain_text("Agents perform recovery")
     playwright.expect(page.locator("#benefit-scope")).to_contain_text("loopback gRPC")
     assert "recovery initiation are supplied by the local harness" not in page.locator("#benefit-scope").inner_text()
+    assert not errors
+    page.close()
+
+
+def test_docker_comparisons_are_preferred_and_use_command_end_timing(browser, dashboard_server):
+    from test_dashboard import save
+    url, root = dashboard_server
+    for scenario in ("normal", "controller-outage", "holder-failure"):
+        for model in ("central-lock", "basic-token", "cranelock"):
+            path = root / "docker-comparison-validated" / scenario / model
+            settings = dict(model=model, scenario=scenario, seed=20,
+                evaluation="benefits-docker-v1", execution_mode="docker_containers",
+                controller_implementation="cranelock.controller.CentralController",
+                controller_source_commit="02da358", recovery_driver="agent_workers",
+                docker=dict(image_id="same",cpus_per_service=1,memory_bytes_per_service=268435456))
+            save(path,"experiment.json",settings)
+            stalled = (scenario == "controller-outage" and model == "central-lock" or
+                       scenario == "holder-failure" and model == "basic-token")
+            save(path,"summary.json",dict(**settings,passed=True,requested=6,
+                completed=0 if stalled else 6,accepted=0 if stalled else 6,
+                mean_wait_seconds=None if stalled else .1,safety_violations=0,
+                workload_sha256="same",duration_seconds=None if scenario=="normal" else 5,
+                measurement_policy="complete_all_requests" if scenario=="normal" else "fixed_window",
+                total_completion_seconds=1.2 if scenario=="normal" else None,
+                crossing_time_seconds=.1,detection_timeout_seconds=2,
+                post_fault_new_entries=0 if stalled else 4,resumed_within_window=not stalled,
+                fault_command_end_to_entry_seconds=None if stalled else .7,
+                outage_to_entry_seconds=None if stalled else 1.5))
+    page = browser.new_page()
+    errors = []
+    page.on("pageerror",lambda error: errors.append(str(error)))
+    page.goto(url)
+    playwright.expect(page.locator("#collection")).to_have_value("docker-comparison-validated")
+    playwright.expect(page.locator("#benefit-scope")).to_contain_text("five separate containers")
+    playwright.expect(page.locator('[data-chart="recovery"]')).to_contain_text("kill-command completion")
+    playwright.expect(page.locator('[data-chart="recovery"]')).to_contain_text("0.700 seconds")
+    assert "1.500 seconds" not in page.locator('[data-chart="recovery"]').inner_text()
+    page.select_option("#focus","holder-failure")
+    playwright.expect(page.locator('[data-chart="recovery"]')).to_contain_text("0.700 seconds")
+    playwright.expect(page.locator('[data-chart="recovery"]')).to_contain_text("Did not resume")
     assert not errors
     page.close()

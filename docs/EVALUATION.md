@@ -13,7 +13,15 @@ Open **http://127.0.0.1:8765**. The viewer reads `run/evaluation`; it does not s
 experiments or control cranes. Use **Refresh results** after generating results
 and **Ctrl + F5** after changing the interface. Stop the server with Ctrl+C.
 
-The recommended set is `benefits-autonomous-validated` when available. Select a scenario in the
+The separate **Integrated CraneLock deployment checks** section reads `run/deployed-evaluation`
+automatically. It shows median timings, observed ranges and per-run evidence
+downloads for the deployed CraneLock services. Expand **Inspect Docker runs and
+download evidence** for individual results. These results are not pooled with
+the three-system comparisons below. Restart the server after updating its code.
+Use `--deployed-root PATH` if the Docker evidence is saved elsewhere.
+
+The recommended set is the Docker comparison when available; otherwise use
+`benefits-autonomous-validated` for local-process results. Select a scenario in the
 main dropdown. Request count and sequence filters are inside **Test settings and
 saved experiments**. A sequence (seed) repeats the same requests; it is not a crane.
 
@@ -160,9 +168,56 @@ container monotonic clocks are never subtracted. Missing entries are not zero wa
 
 These runs test deployed **CraneLock only**. They are separate from the dashboard's
 three-system local comparisons; do not mix their timings to claim a performance
-advantage. Deployment results have not been generated on this Windows machine:
-Docker is unavailable. The runner's signed-gate contract tests are not Docker
-runtime evidence. The existing saved dashboard remains the earlier local dataset.
+advantage. Nine Docker runs have now been verified on this Windows machine:
+three scenarios and seeds 7/20/3104, with all 162 requests completed and no detected
+overlap. See [deployed results](DEPLOYED_RESULTS.md) for medians, ranges and raw
+evidence locations. This runtime evidence is separate from the runner's signed-gate
+contract tests and from the existing local-comparison dashboard dataset.
+
+## Compare all three systems in Docker
+
+With Docker Desktop running, from the repository root:
+
+```powershell
+.\.venv\Scripts\python.exe -m cranelock_sim.docker_comparison --build --seeds 7 20 3104 --requests 18 --duration 30
+```
+
+This creates 27 experiments: three models, three scenarios and three seeds.
+Each experiment starts a fresh gate, controller and three crane-agent containers
+on its own bridge network, then removes only those experiment containers and
+network. Your integrated deployment and its state volumes remain intact.
+Use a fresh `--output` directory to retain each complete matrix.
+
+All models use the same image, 1 CPU/256 MiB limit per service, 0.5-second
+heartbeat interval, 2-second detection timeout and identical seeded requests.
+Healthy traffic submits all 18 requests together and measures batch completion;
+failure tests observe scheduled requests for 30 seconds. Model order is shuffled
+per seed. Run these experiments without other test workloads competing for CPU.
+
+- Central lock depends on the team controller for each assignment.
+- Basic token starts in LOCAL mode; its automatic replacement recovery is disabled.
+- CraneLock enables the team's autonomous voting, fencing and LOCAL handoff.
+
+Controller failure kills that experiment's controller at one-third of the window.
+Holder failure kills crane-1 before any crossing and sends demand only from B/C;
+CraneLock and basic token start in LOCAL mode for that scenario, while central
+lock retains its controller. The runner never manufactures recovery certificates.
+
+CENTRAL assignment uses the existing test RPC adapter around the team's
+`CentralController`, running in its own container. Lane movement and demand remain
+synthetic. This is a containerised evaluation deployment, separate from the
+integrated monitored stack. Gate and controller-heartbeat links use development
+mutual TLS; peer and assignment links use plaintext on the private test bridge.
+The common host driver serves requests in FIFO order. Timing includes its polling,
+signing and observation costs; this is not a concurrent-load stress test or a
+measurement of unconstrained production throughput.
+
+Results appear as a separate comparison collection under `run/evaluation` and
+are not pooled with older local-process measurements or the nine integrated
+CraneLock-only runs. Failure timing uses host kill-command completion to next
+entry; cross-container monotonic clocks are not subtracted. No observed resumption
+has a missing time, not zero seconds. A baseline correctly stalling can pass its
+expected-behavior check; compare completed work to assess availability.
 
 ## Other safety tests
 

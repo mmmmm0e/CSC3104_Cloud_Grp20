@@ -65,7 +65,7 @@ class MeasuredGateClient(Client):
 
 
 class TeamControllerService:
-    def __init__(self, config, private_key, channel, stats):
+    def __init__(self, config, private_key, channel, stats, bind="127.0.0.1:0"):
         self.controller = CentralController(config, private_key, channel)
         # Instrument the same signed gate client API without replacing the
         # controller's authority construction, validation or retry decisions.
@@ -80,7 +80,7 @@ class TeamControllerService:
                 request_deserializer=json.loads, response_serializer=encode),
         }
         self.server.add_generic_rpc_handlers((grpc.method_handlers_generic_handler("cranelock.sim.Controller", methods),))
-        self.port = self.server.add_insecure_port("127.0.0.1:0")
+        self.port = self.server.add_insecure_port(bind)
         self.server.start()
         self.stopped = False
 

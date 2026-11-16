@@ -241,7 +241,10 @@ The Darius branch now preserves its independent-process comparison runner while
 integrating this platform work. `scripts/external_workload.py` supplies sustained
 healthy, controller-outage and LOCAL holder-loss demand to the external endpoints.
 Its signed-gate contract and credential-isolation checks do not establish Docker
-runtime performance. The tester workstation has no Docker installation, so run
-the [deployed workload commands](EVALUATION.md#test-the-integrated-containers) on a
-Docker-enabled machine and retain the resulting evidence separately. The existing
+runtime performance. At initial adapter handoff the tester workstation had no Docker installation.
+Docker Desktop was subsequently installed, and all nine deployed workload runs
+(three scenarios, seeds 7/20/3104) passed, completing all 162 requests without a
+detected lane overlap. Final service convergence passed in CENTRAL mode. See
+[deployed results](DEPLOYED_RESULTS.md) for raw evidence locations and timing scope.
+These results remain separate from local comparisons and teammate Kubernetes evidence. The existing
 54 dashboard comparisons still describe their original local-process environment.

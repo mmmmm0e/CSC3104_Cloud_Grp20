@@ -198,3 +198,27 @@ def test_api_has_no_mutation_route(dashboard_server):
     with pytest.raises(HTTPError) as error:
         urlopen(Request(url + "/api/run", method="POST", data=b"{}"))
     assert error.value.code == 501
+
+
+def test_deployed_results_use_separate_root_and_safe_downloads(dashboard_server):
+    url, root = dashboard_server
+    deployed = root.parent/"deployed-evaluation"/"seed-7"/"normal"
+    settings = dict(model="deployed-cranelock", evaluation="deployed-v1",
+                    execution_mode="external_containers", scenario="normal", seed=7)
+    save(deployed, "experiment.json", settings)
+    save(deployed, "summary.json", dict(**settings, passed=True, requested=18,
+        completed=18, total_completion_seconds=2, safety_violations=0))
+    (deployed/"requests.csv").write_text("request_id,exited_at\nr1,1\n")
+    (deployed/"private-keys.json").write_text("must not be served")
+    with urlopen(url+"/api/deployed") as response:
+        runs = json.load(response)["runs"]
+    assert len(runs) == 1 and runs[0]["model"] == "deployed-cranelock"
+    with urlopen(url+"/api/catalog") as response:
+        assert not any(r["model"]=="deployed-cranelock" for r in json.load(response)["runs"])
+    with urlopen(url+"/api/deployed/artifact?"+urlencode(dict(id="seed-7/normal",name="requests.csv"))) as response:
+        assert response.read().startswith(b"request_id,exited_at")
+    for identity, name in [("seed-7/normal","private-keys.json"),
+                           ("../evaluation/comparison-validated","comparison.csv")]:
+        with pytest.raises(HTTPError) as error:
+            urlopen(url+"/api/deployed/artifact?"+urlencode(dict(id=identity,name=name)))
+        assert error.value.code == 400

@@ -15,7 +15,7 @@ ARTIFACTS = {
     "gate-events.jsonl", "recovery-certificate.json", "gate-config.json", "failure.json",
     "completed.png", "completed.svg", "p95_wait_seconds.png", "p95_wait_seconds.svg",
     "recovery_latency_seconds.png", "recovery_latency_seconds.svg", "benefits.csv",
-    "benefit_summary.png", "benefit_summary.svg",
+    "benefit_summary.png", "benefit_summary.svg", "workload.json", "restoration.json",
 }
 MAX_FILE_BYTES = 25 * 1024 * 1024
 
@@ -204,8 +204,9 @@ class Results:
         return dict(events=events, total=total, truncated=total > len(events), malformed=malformed)
 
 
-def make_server(root, port=8765):
+def make_server(root, port=8765, deployed_root=None):
     results = Results(root)
+    deployed = Results(deployed_root if deployed_root is not None else Path(root).resolve().parent / "deployed-evaluation")
     assets = files("cranelock_sim").joinpath("web")
 
     class Handler(BaseHTTPRequestHandler):
@@ -216,17 +217,20 @@ def make_server(root, port=8765):
                 identity = query.get("id", [""])[0]
                 if parsed.path == "/api/catalog":
                     return self.send_json(results.catalog())
+                if parsed.path == "/api/deployed":
+                    return self.send_json(deployed.catalog())
                 if parsed.path == "/api/run":
                     return self.send_json(results.detail(identity))
                 if parsed.path == "/api/events":
                     return self.send_json(results.events(identity))
                 if parsed.path == "/api/progress":
                     return self.send_json(results.progress(identity))
-                if parsed.path == "/api/artifact":
+                if parsed.path in {"/api/artifact", "/api/deployed/artifact"}:
+                    source = deployed if parsed.path == "/api/deployed/artifact" else results
                     name = query.get("name", [""])[0]
                     if name not in ARTIFACTS:
                         raise ValueError("Artifact is not available for download")
-                    path = results.safe_file(results.directory(identity), name)
+                    path = source.safe_file(source.directory(identity), name)
                     return self.send_bytes(path.read_bytes(), mimetypes.guess_type(name)[0]
                                            or "application/octet-stream", download=name)
                 asset = {"/": "index.html", "/app.js": "app.js", "/style.css": "style.css"}.get(parsed.path)
@@ -268,11 +272,12 @@ def make_server(root, port=8765):
 def main():
     parser = argparse.ArgumentParser(description="View saved CraneLock results locally")
     parser.add_argument("--root", default="run/evaluation")
+    parser.add_argument("--deployed-root", help="Docker evidence directory (default: deployed-evaluation beside --root)")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()
     if not 0 <= args.port <= 65535:
         parser.error("port must be between 0 and 65535")
-    with make_server(args.root, args.port) as server:
+    with make_server(args.root, args.port, args.deployed_root) as server:
         print(f"CraneLock results: http://127.0.0.1:{server.server_port}", flush=True)
         print(f"Reading saved experiments from {Path(args.root).resolve()}", flush=True)
         print("Press Ctrl+C to stop.", flush=True)

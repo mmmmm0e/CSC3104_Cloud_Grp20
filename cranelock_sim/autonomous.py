@@ -104,7 +104,8 @@ class ProcessCluster:
                 stream.close()
 
 
-async def run_case(output, model, scenario, workload, *, seed, duration, crossing_time, detection_timeout):
+async def run_case(output, model, scenario, workload, *, seed, duration, crossing_time, detection_timeout,
+                   cluster_factory=ProcessCluster):
     # Imported lazily: benefits imports this entry point and comparison supplies
     # only hashing/export helpers, never the legacy recovery experiment.
     from .comparison import workload_hash, write_csv
@@ -136,7 +137,13 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
         stamp = recorded_monotonic if isinstance(recorded_monotonic, (int, float)) else time.monotonic()
         if measuring and stamp >= origin:
             events.append(dict(time=stamp-origin, event=event, **fields))
-    cluster = ProcessCluster(output, emit)
+    cluster = cluster_factory(output, emit)
+    docker = getattr(cluster, "containerized", False)
+    if docker:
+        settings.update(evaluation="benefits-docker-v1", execution_mode="docker_containers",
+                        limitations=cluster.limitations, detection_time_basis="host_log_receipt",
+                        heartbeat_interval_seconds=.5, host_rpc_timeout_seconds=2)
+    startup_timeout = 60 if docker else 15
     connection = channel = None
     rows = [dict(row, entered_at=None, exited_at=None, status="waiting") for row in workload]
     fault_at = detected_at = authority_at = None
@@ -168,7 +175,12 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
             sock.bind(("127.0.0.1", 0))
             reservations.append(sock)
             addresses[name] = f"127.0.0.1:{sock.getsockname()[1]}"
-        initialized = await asyncio.to_thread(subprocess.run,
+        if docker:
+            cluster.addresses.update({address: f"{name}:{address.rsplit(':', 1)[1]}"
+                                      for name, address in addresses.items()})
+        init_arguments = ["cranelock_gate.server", "init", "--config", str(public),
+                          "--database", str(output / "gate.sqlite")]
+        initialized = await asyncio.to_thread(cluster.initialize, init_arguments) if docker else await asyncio.to_thread(subprocess.run,
             [sys.executable, "-B", "-m", "cranelock_gate.server", "init", "--config", str(public),
              "--database", str(output / "gate.sqlite")], capture_output=True, timeout=15,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
@@ -177,11 +189,11 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
         reservations[0].close()
         cluster.spawn("gate", "cranelock_gate.server", "serve", "--config", public,
             "--database", output / "gate.sqlite", "--bind", addresses["gate"], "--metrics-port", "0")
-        channel = grpc.insecure_channel(addresses["gate"])
-        client = Client(channel, config, keys, timeout=.5)
+        channel = cluster.gate_channel(addresses["gate"]) if docker else grpc.insecure_channel(addresses["gate"])
+        client = Client(channel, config, keys, timeout=2 if docker else .5)
         async def gate_state():
             return await asyncio.to_thread(client.state)
-        await poll(gate_state, 15, "gate startup")
+        await poll(gate_state, startup_timeout, "gate startup")
         ready = output / "controller-ready.json"
         cluster.spawn("controller", "cranelock_sim.autonomous", "--controller", "--config", public,
             "--key", output / "controller.key.json", "--gate", addresses["gate"], "--ready", ready)
@@ -191,7 +203,7 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
                     return json.loads(ready.read_text())
                 except ValueError:
                     pass
-        endpoint = await poll(controller_ready, 15, "controller startup")
+        endpoint = await poll(controller_ready, startup_timeout, "controller startup")
         connection = ControllerConnection(endpoint["assignment_port"], RPCStats())
         before = await gate_state()
         bootstrap = certificate(config, keys, before, "crane-1", 0,
@@ -215,7 +227,7 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
             reservations[index].close()
             args = ["cranelock", "run", "--id", identity, "--listen", addresses[identity],
                 "--holder", "crane-1", "--epoch", "0", "--mode", initial_mode,
-                "--state-file", str(output / f"{identity}.json"), "--interval", ".05",
+                "--state-file", str(output / f"{identity}.json"), "--interval", ".5" if docker else ".05",
                 "--timeout", str(detection_timeout), "--gate-address", addresses["gate"],
                 "--gate-config", str(public), "--gate-keys", str(output / f"{identity}.key.json")]
             if model == "cranelock":
@@ -232,21 +244,30 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
         async def warm():
             states = await asyncio.gather(*(asyncio.to_thread(stub.GetAgentState, pb.Empty(), timeout=.5)
                                           for stub in stubs.values()))
-            return all(s.mode == getattr(pb, initial_mode) for s in states)
-        await poll(warm, 15, "agent reconciliation")
+            return all(s.mode == getattr(pb, initial_mode) and
+                (not docker or (all(peer.status == "AVAILABLE" for peer in s.peers)
+                 and len(s.peers) == len(config.members)-1 and s.token_holder == "crane-1"
+                 and s.has_token == (s.agent_id == "crane-1"))) for s in states)
+        await poll(warm, startup_timeout, "agent reconciliation")
         await asyncio.sleep(max(.2, detection_timeout))
         cluster.collect()
         settings.update(initial_mode=initial_mode, process_ids={n:p.pid for n,p in cluster.processes.items()},
                         service_endpoints=dict(addresses, controller=endpoint))
         assert len(set(settings["process_ids"].values())) == 5
+        if docker:
+            settings["container_ids"] = settings.pop("process_ids")
+            settings["docker"] = cluster.inventory()
         (output / "experiment.json").write_text(json.dumps(settings, indent=2), encoding="utf-8")
         origin = time.monotonic()
         measuring = True
         emit("workload_started", mode=initial_mode, requests=len(rows), recovery_driver="agent_workers")
+        fault_completed_at = None
         if scenario == "holder-failure":
             fault_at = time.monotonic()-origin
             await cluster.stop("crane-1")
-            emit("holder_stopped", crane="crane-1")
+            fault_completed_at = time.monotonic()-origin
+            emit("holder_stopped", crane="crane-1", command_started_at=fault_at,
+                 command_finished_at=fault_completed_at)
 
         async def observe():
             nonlocal mode, authority_at, detected_at
@@ -283,11 +304,13 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
                 await asyncio.sleep(.02)
 
         async def fault():
-            nonlocal fault_at
+            nonlocal fault_at, fault_completed_at
             await asyncio.sleep(duration/3)
             fault_at = time.monotonic()-origin
             await cluster.stop("controller")
-            emit("controller_stopped", occupant=lane.occupant, mode=mode)
+            fault_completed_at = time.monotonic()-origin
+            emit("controller_stopped", occupant=lane.occupant, mode=mode,
+                 command_started_at=fault_at, command_finished_at=fault_completed_at)
             if await connection.probe():
                 raise SafetyViolation("Stopped controller still answers")
             emit("controller_rpc_unavailable")
@@ -394,7 +417,7 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
             mean_wait_seconds=statistics.mean(waits) if waits else None,p95_wait_seconds=percentile(waits,.95),
             throughput_per_minute=len(completed)*60/(elapsed if complete_all else duration),
             fault_at_seconds=fault_at,authority_at_seconds=authority_at,
-            final_mode=state["mode"],safety_violations=0,passed=True,
+            final_mode=state["mode"],final_epoch=state["epoch"],safety_violations=0,passed=True,
             failure_detection_seconds=detected_at-fault_at if detected_at is not None else None,
             recovery_latency_seconds=resumed[0]["entered_at"]-detected_at if resumed and detected_at is not None else None,
             outage_to_entry_seconds=resumed[0]["entered_at"]-fault_at if resumed else None,
@@ -403,6 +426,11 @@ async def run_case(output, model, scenario, workload, *, seed, duration, crossin
             post_fault_completed=sum(r["exited_at"]>fault_at for r in completed) if fault_at is not None else None,
             rpc_attempts=None,rpc_per_completed=None,rpc_by_method={},
             drain_seconds=0 if complete_all else max(0,elapsed-duration))
+        if docker:
+            after_command = [r for r in admitted if fault_completed_at is not None and r["entered_at"] >= fault_completed_at]
+            result.update(fault_completed_at_seconds=fault_completed_at,
+                fault_command_end_to_entry_seconds=after_command[0]["entered_at"]-fault_completed_at if after_command else None,
+                failure_detection_seconds=None, recovery_latency_seconds=None)
         (output/"summary.json").write_text(json.dumps(result,indent=2),encoding="utf-8")
         return result
     except BaseException as error:
@@ -436,10 +464,22 @@ async def controller_process(args):
     from cranelock_gate.config import Config
     from cranelock_gate.demo import load_keys
     config=Config.load(args.config)
-    channel=grpc.insecure_channel(args.gate)
-    service=TeamControllerService(config,load_keys(args.key)[config.controller_id],channel,RPCStats())
+    if args.gate_tls_directory:
+        tls = Path(args.gate_tls_directory)
+        credentials = grpc.ssl_channel_credentials((tls/"ca.pem").read_bytes(),
+            (tls/"client-key.pem").read_bytes(), (tls/"client.pem").read_bytes())
+        channel = grpc.secure_channel(args.gate, credentials)
+    else:
+        channel=grpc.insecure_channel(args.gate)
+    service=TeamControllerService(config,load_keys(args.key)[config.controller_id],channel,RPCStats(), args.assignment_bind)
     try:
-        port=await service.controller.start_heartbeat_server("127.0.0.1:0")
+        credentials = None
+        if args.tls_directory:
+            tls = Path(args.tls_directory)
+            credentials = grpc.ssl_server_credentials(
+                [((tls/"server-key.pem").read_bytes(), (tls/"server.pem").read_bytes())],
+                root_certificates=(tls/"ca.pem").read_bytes(), require_client_auth=True)
+        port=await service.controller.start_heartbeat_server(args.heartbeat_bind, credentials=credentials)
         Path(args.ready).write_text(json.dumps(dict(assignment_port=service.port,heartbeat_port=port)),encoding="utf-8")
         await asyncio.Event().wait()
     finally:
@@ -453,6 +493,10 @@ def main():
     parser.add_argument("--controller",action="store_true",required=True)
     for name in ("config","key","gate","ready"):
         parser.add_argument(f"--{name}",required=True)
+    parser.add_argument("--assignment-bind", default="127.0.0.1:0")
+    parser.add_argument("--heartbeat-bind", default="127.0.0.1:0")
+    parser.add_argument("--tls-directory")
+    parser.add_argument("--gate-tls-directory")
     asyncio.run(controller_process(parser.parse_args()))
 
 

@@ -28,15 +28,21 @@ def make_workload(seed, count, duration):
 def paired(results, scenario, baseline, metric):
     """Only compare exact seeded inputs and timing parameters; missing stays missing."""
     def key(row):
+        docker = row.get("docker", {})
         return tuple(row.get(field) for field in ("seed", "requested", "workload_sha256", "duration_seconds",
-                     "crossing_time_seconds", "detection_timeout_seconds", "evaluation")) + (row.get("measurement_policy","fixed_window"), row.get("controller_implementation"), row.get("controller_source_commit"), row.get("recovery_driver"), row.get("execution_mode"))
-    results = [row for row in results if row.get("evaluation") in {"benefits-v1","benefits-v2","benefits-v3","benefits-v4"}
-               and (row.get("evaluation") not in {"benefits-v3", "benefits-v4"} or
+                     "crossing_time_seconds", "detection_timeout_seconds", "evaluation")) + (row.get("measurement_policy","fixed_window"), row.get("controller_implementation"), row.get("controller_source_commit"), row.get("recovery_driver"), row.get("execution_mode"), docker.get("image_id"), docker.get("cpus_per_service"), docker.get("memory_bytes_per_service"), row.get("heartbeat_interval_seconds"), row.get("host_rpc_timeout_seconds"))
+    results = [row for row in results if row.get("evaluation") in {"benefits-v1","benefits-v2","benefits-v3","benefits-v4","benefits-docker-v1"}
+               and (row.get("evaluation") not in {"benefits-v3", "benefits-v4", "benefits-docker-v1"} or
                     (row.get("controller_implementation") == CONTROLLER_IMPLEMENTATION and
                      isinstance(row.get("controller_source_commit"), str)))
                and (row.get("evaluation") != EVALUATION or
                     (row.get("recovery_driver") == "agent_workers" and
                      row.get("execution_mode") == "independent_processes"))
+               and (row.get("evaluation") != "benefits-docker-v1" or
+                    (row.get("execution_mode") == "docker_containers" and
+                     row.get("recovery_driver") == "agent_workers" and row.get("passed") is True and
+                     all(row.get("docker", {}).get(field) is not None for field in
+                         ("image_id", "cpus_per_service", "memory_bytes_per_service"))))
                and isinstance(row.get("workload_sha256"), str)
                and all(row.get(field) is not None for field in ("seed", "requested",
                    "crossing_time_seconds", "detection_timeout_seconds"))

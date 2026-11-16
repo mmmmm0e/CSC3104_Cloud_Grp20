@@ -10,8 +10,9 @@ const title = text => String(text??"").replaceAll("_"," ").replaceAll("-"," ").r
 const label = m => names[m] || title(m);
 const usesTeamController=r=>r?.summary?.controller_implementation==="cranelock.controller.CentralController";
 const controllerLabel=r=>usesTeamController(r)?"Team controller":"Reference controller";
+const usesDocker=r=>r?.summary?.evaluation==="benefits-docker-v1"&&r.summary.execution_mode==="docker_containers"&&r.summary.recovery_driver==="agent_workers";
 const usesAutonomous=r=>r?.summary?.evaluation==="benefits-v4"&&r.summary.recovery_driver==="agent_workers"&&r.summary.execution_mode==="independent_processes";
-const controllerScope=r=>usesAutonomous(r)?"Crane agents, the team's controller and the gate run in separate processes on one computer. Agents perform recovery and LOCAL token handoff themselves over loopback gRPC. The runner supplies demand, process failures and simulated lane observations. CENTRAL scheduling uses a test adapter. This does not test Docker, a remote network or physical cranes.":usesTeamController(r)?"Central permissions use the team's CentralController through a test adapter. Scheduling, heartbeats and recovery initiation are supplied by the local harness; this is not a deployed controller service.":"Historical reference-controller results; these saved runs do not exercise the teammate controller.";
+const controllerScope=r=>usesDocker(r)?"Docker comparison: five separate containers per run, using the same image, CPU/memory limits, gate and seeded requests. Agents own LOCAL token handoff and recovery. CENTRAL assignment uses a test adapter around the team controller. Physical lane movement is simulated; the common host driver serves FIFO demand. Timing includes driver overhead. Fresh state per case; this is separate from the integrated monitoring deployment.":usesAutonomous(r)?"Crane agents, the team's controller and the gate run in separate processes on one computer. Agents perform recovery and LOCAL token handoff themselves over loopback gRPC. The runner supplies demand, process failures and simulated lane observations. CENTRAL scheduling uses a test adapter. This does not test Docker, a remote network or physical cranes.":usesTeamController(r)?"Central permissions use the team's CentralController through a test adapter. Scheduling, heartbeats and recovery initiation are supplied by the local harness; this is not a deployed controller service.":"Historical reference-controller results; these saved runs do not exercise the teammate controller.";
 let catalog={runs:[],collections:[],warnings:[]}, visible=[], selected=null, detail=null, trace=[], eventRows=[];
 let playing=false, frame=0, lastFrame=0, generation=0, currentTime=0, lastActive=-1;
 let steps=[], currentOrder=-1, holdElapsed=0;
@@ -21,7 +22,7 @@ const situation=s=>situationNames[s]||title(s);
 const familyNames={comparison:"Compare the three systems",agents:"Normal token handoff",logical:"Generated lane traffic",recovery:"Crash and majority recovery",partition:"Lost communication / network split",restart:"Restart and safe rejoin",other:"Other saved experiments"};
 function describe(r){
   const s=r?.summary||{},f=r?.family||"other",scenario=r?.scenario||"normal";
-  if(f==="comparison"&&scenario==="controller-outage")return {what:`The ${usesAutonomous(r)?"independent team-controller process":usesTeamController(r)?"team controller service adapter":"reference controller service"} is stopped one-third through a steady stream of identical requests. All three cranes and the gate stay running.`,expected:"Central lock loses its coordinator. CraneLock starts centrally, detects missing controller heartbeats, obtains real majority votes and installs LOCAL authority. Basic token is already local and needs no switch. Existing occupancy must remain protected."};
+  if(f==="comparison"&&scenario==="controller-outage")return {what:`The ${usesDocker(r)?"team-controller container":usesAutonomous(r)?"independent team-controller process":usesTeamController(r)?"team controller service adapter":"reference controller service"} is stopped one-third through a steady stream of identical requests. All three cranes and the gate stay running.`,expected:"Central lock loses its coordinator. CraneLock starts centrally, detects missing controller heartbeats, obtains real majority votes and installs LOCAL authority. Basic token is already local and needs no switch. Existing occupancy must remain protected."};
   if(f==="comparison")return {
     what:scenario==="holder-failure"?"Crane A starts with the token, then its software is stopped before entry. The same requests from B and C are sent to each system.":"The same requests are sent to three systems while all cranes are healthy. This measures how they coordinate access to one shared lane.",
     expected:scenario==="holder-failure"?"Basic token should stall because it cannot replace a lost token. CraneLock should recover with B and C's approval. The central controller can also reassign because its coordinator remains available.":"Each system should let one authorised crane enter at a time and complete the requests. A recovery advantage is not expected when nothing has failed."};
@@ -47,10 +48,10 @@ function populateCollections(previous){
   let choices=catalog.collections;
   if(!$("all-collections").checked){
     const families=[...new Set(choices.map(c=>c.family))];
-    choices=families.map(f=>choices.find(c=>c.family===f&&catalog.runs.some(r=>r.collection===c.id&&usesAutonomous(r)&&r.status==="passed"))||choices.find(c=>c.family===f&&catalog.runs.some(r=>r.collection===c.id&&["benefits-v4","benefits-v3"].includes(r.summary.evaluation)&&r.status==="passed"))||choices.find(c=>c.family===f&&c.id==="benefits-completion-validated")||choices.find(c=>c.family===f&&c.id==="benefits-validated")||choices.find(c=>c.family===f&&c.id.includes("validated"))||choices.find(c=>c.family===f&&!c.id.includes("development"))||choices.find(c=>c.family===f));
+    choices=families.map(f=>choices.find(c=>c.family===f&&catalog.runs.some(r=>r.collection===c.id&&usesDocker(r)&&r.status==="passed"&&!c.id.includes("development")))||choices.find(c=>c.family===f&&catalog.runs.some(r=>r.collection===c.id&&usesAutonomous(r)&&r.status==="passed"))||choices.find(c=>c.family===f&&catalog.runs.some(r=>r.collection===c.id&&["benefits-v4","benefits-v3"].includes(r.summary.evaluation)&&r.status==="passed"))||choices.find(c=>c.family===f&&c.id==="benefits-completion-validated")||choices.find(c=>c.family===f&&c.id==="benefits-validated")||choices.find(c=>c.family===f&&c.id.includes("validated"))||choices.find(c=>c.family===f&&!c.id.includes("development"))||choices.find(c=>c.family===f));
   }
-  const preferred=choices.find(c=>catalog.runs.some(r=>r.collection===c.id&&usesAutonomous(r)&&r.status==="passed"))||choices.find(c=>catalog.runs.some(r=>r.collection===c.id&&["benefits-v4","benefits-v3"].includes(r.summary.evaluation)&&r.status==="passed"))||choices.find(c=>c.id==="benefits-completion-validated")||choices.find(c=>c.id==="benefits-validated")||choices.find(c=>c.id==="comparison-validated")||choices.find(c=>c.family==="comparison")||choices[0];
-  setOptions($("collection"),choices.map(c=>[c.id,`${familyNames[c.family]||"Saved results"} · ${c.count} runs${$("all-collections").checked?` · ${c.id}`:""}`]),choices.some(c=>c.id===previous)?previous:preferred?.id);
+  const preferred=choices.find(c=>catalog.runs.some(r=>r.collection===c.id&&usesDocker(r)&&r.status==="passed"&&!c.id.includes("development")))||choices.find(c=>catalog.runs.some(r=>r.collection===c.id&&usesAutonomous(r)&&r.status==="passed"))||choices.find(c=>catalog.runs.some(r=>r.collection===c.id&&["benefits-v4","benefits-v3"].includes(r.summary.evaluation)&&r.status==="passed"))||choices.find(c=>c.id==="benefits-completion-validated")||choices.find(c=>c.id==="benefits-validated")||choices.find(c=>c.id==="comparison-validated")||choices.find(c=>c.family==="comparison")||choices[0];
+  setOptions($("collection"),choices.map(c=>[c.id,`${catalog.runs.some(r=>r.collection===c.id&&usesDocker(r))?"Docker comparison":familyNames[c.family]||"Saved results"} · ${c.count} runs${$("all-collections").checked?` · ${c.id}`:""}`]),choices.some(c=>c.id===previous)?previous:preferred?.id);
 }
 function renderExplanation(){
   const first=visible[0];
@@ -95,15 +96,64 @@ const valueOf=(r,m)=>m==="completed"?completed(r):r.summary[m];
 const median=values=>{const a=[...values].sort((a,b)=>a-b),m=Math.floor(a.length/2);return a.length?(a.length%2?a[m]:(a[m-1]+a[m])/2):null;};
 function artifact(id,name){return `/api/artifact?${new URLSearchParams({id,name})}`;}
 
+async function loadDeployed(){
+  const section=$("docker-results"),cards=$("docker-cards"),table=$("docker-runs");
+  try{
+    const data=await api("/api/deployed");
+    const order=["normal","controller-outage","holder-failure"];
+    const labels={normal:"Healthy operation","controller-outage":"Controller stopped","holder-failure":"Token holder stopped"};
+    const rows=data.runs.filter(r=>r.model==="deployed-cranelock"&&r.summary.evaluation==="deployed-v1"&&r.summary.execution_mode==="external_containers");
+    section.classList.toggle("hidden",!rows.length);
+    $("docker-nav").classList.toggle("hidden",!rows.length);
+    if(!rows.length)return;
+    cards.replaceChildren();table.replaceChildren();
+    const passed=rows.filter(r=>r.status==="passed"&&r.summary.passed===true);
+    $("docker-count").textContent=`${passed.length}/${rows.length} runs passed`;
+    $("docker-warning").textContent=[...data.warnings,rows.length!==passed.length?"Failed or incomplete runs are listed below and excluded from timing summaries.":""].filter(Boolean).join(" ");
+    for(const scenario of order){
+      const selected=rows.filter(r=>r.scenario===scenario),good=passed.filter(r=>r.scenario===scenario);
+      const card=node("article","docker-card");card.dataset.scenario=scenario;
+      card.append(node("h3","",labels[scenario]));
+      const compatible=new Set(good.map(r=>JSON.stringify([r.summary.requested,r.summary.crossing_time_seconds,r.summary.duration_seconds,r.summary.measurement_policy]))).size<=1;
+      const field=scenario==="normal"?"total_completion_seconds":"fault_command_end_to_entry_seconds";
+      const times=compatible?good.map(r=>r.summary[field]).filter(v=>finite(v)&&v>=0):[];
+      card.append(node("p","docker-metric-label",scenario==="normal"?"Median batch completion":"Median next entry after command"));
+      card.append(node("strong","docker-metric",fmt(median(times)," s")));
+      card.append(node("p","docker-range",times.length?`Observed range: ${fmt(Math.min(...times)," s")} to ${fmt(Math.max(...times)," s")}`:compatible?"No successful timing recorded.":"Mixed test settings; no pooled timing shown."));
+      const counts=good.length&&good.every(r=>finite(r.summary.completed)&&finite(r.summary.requested));
+      card.append(node("p","",`${good.length}/${selected.length} runs passed. `+(counts?`${good.reduce((n,r)=>n+r.summary.completed,0)}/${good.reduce((n,r)=>n+r.summary.requested,0)} requests completed.`:"Completion counts unavailable.")));
+      card.append(node("p","",good.length&&good.every(r=>finite(r.summary.safety_violations))?`${good.reduce((n,r)=>n+r.summary.safety_violations,0)} detected lane safety violations.`:"Safety totals unavailable."));
+      if(times.length&&times.length<good.length)card.append(node("p","",`${times.length}/${good.length} passed runs have recorded timing; missing values are excluded.`));
+      cards.append(card);
+    }
+    rows.sort((a,b)=>order.indexOf(a.scenario)-order.indexOf(b.scenario)||a.seed-b.seed||a.id.localeCompare(b.id));
+    for(const row of rows){
+      const tr=node("tr");tr.dataset.runId=row.id;
+      for(const text of [labels[row.scenario]||title(row.scenario),fmt(row.seed),row.status.toUpperCase(),finite(row.summary.completed)&&finite(row.summary.requested)?`${row.summary.completed}/${row.summary.requested}`:"Unavailable",fmt(row.summary.total_completion_seconds," s"),fmt(row.summary.fault_command_end_to_entry_seconds," s")])tr.append(node("td","",text));
+      const downloads=node("td","docker-downloads");
+      for(const [name,label] of [["summary.json","Summary"],["requests.csv","Requests"],["events.jsonl","Events"],["restoration.json","Restarts"]]){
+        const link=node("a","",label);link.href=`/api/deployed/artifact?${new URLSearchParams({id:row.id,name})}`;link.setAttribute("download",name);downloads.append(link);
+      }
+      tr.append(downloads);table.append(tr);
+    }
+  }catch(error){
+    section.classList.remove("hidden");cards.replaceChildren();table.replaceChildren();
+    $("docker-nav").classList.remove("hidden");
+    $("docker-count").textContent="Unavailable";
+    $("docker-warning").textContent=`Could not read Docker evidence: ${error.message}. No sample values are substituted.`;
+  }
+}
+
 async function refresh(){
   $("refresh").disabled=true;
+  const deployedTask=loadDeployed();
   try{
     const old=$("collection").value;
     catalog=await api("/api/catalog");
     populateCollections(old);
     notice(catalog.warnings.length?catalog.warnings.join(" "):"");
     updateFilters();
-  }catch(e){notice(`Could not read saved results: ${e.message}`);}finally{$("refresh").disabled=false;}
+  }catch(e){notice(`Could not read saved results: ${e.message}`);}finally{await deployedTask;$("refresh").disabled=false;}
 }
 function updateFilters(){
   const rows=catalog.runs.filter(r=>r.collection===$("collection").value);
@@ -131,8 +181,8 @@ function filter(){
 }
 function pairDifferences(rows,scenario,baseline,metric){
   const fields=["seed","requested","workload_sha256","duration_seconds","crossing_time_seconds","detection_timeout_seconds","evaluation"];
-  const key=r=>JSON.stringify([...fields.map(f=>r.summary[f]),r.summary.measurement_policy||"fixed_window",r.summary.controller_implementation,r.summary.controller_source_commit,r.summary.recovery_driver,r.summary.execution_mode]);
-  const valid=r=>r.status==="passed"&&["benefits-v1","benefits-v2","benefits-v3","benefits-v4"].includes(r.summary.evaluation)&&(!["benefits-v3","benefits-v4"].includes(r.summary.evaluation)||(usesTeamController(r)&&typeof r.summary.controller_source_commit==="string"))&&(r.summary.evaluation!=="benefits-v4"||usesAutonomous(r))&&typeof r.summary.workload_sha256==="string"&&fields.every(f=>r.summary[f]!==undefined);
+  const key=r=>JSON.stringify([...fields.map(f=>r.summary[f]),r.summary.measurement_policy||"fixed_window",r.summary.controller_implementation,r.summary.controller_source_commit,r.summary.recovery_driver,r.summary.execution_mode,r.summary.docker?.image_id,r.summary.docker?.cpus_per_service,r.summary.docker?.memory_bytes_per_service,r.summary.heartbeat_interval_seconds,r.summary.host_rpc_timeout_seconds]);
+  const valid=r=>r.status==="passed"&&["benefits-v1","benefits-v2","benefits-v3","benefits-v4","benefits-docker-v1"].includes(r.summary.evaluation)&&(!["benefits-v3","benefits-v4"].includes(r.summary.evaluation)||(usesTeamController(r)&&typeof r.summary.controller_source_commit==="string"))&&(r.summary.evaluation!=="benefits-v4"||usesAutonomous(r))&&(r.summary.evaluation!=="benefits-docker-v1"||(usesDocker(r)&&usesTeamController(r)&&typeof r.summary.docker?.image_id==="string"&&finite(r.summary.docker?.cpus_per_service)&&finite(r.summary.docker?.memory_bytes_per_service)))&&typeof r.summary.workload_sha256==="string"&&fields.every(f=>r.summary[f]!==undefined);
   const refs=rows.filter(r=>valid(r)&&r.scenario===scenario&&r.model===baseline);
   return rows.filter(r=>valid(r)&&r.scenario===scenario&&r.model==="cranelock").flatMap(r=>{const matches=refs.filter(other=>key(other)===key(r));if(matches.length!==1)return [];const other=matches[0];return finite(r.summary[metric])&&finite(other.summary[metric])?[r.summary[metric]-other.summary[metric]]:[];});
 }
@@ -142,6 +192,7 @@ function comparisonRows(scenario){
 function typical(rows,model,metric){return median(rows.filter(r=>r.model===model&&r.status==="passed").map(r=>typeof metric==="function"?metric(r):r.summary[metric]).filter(finite));}
 function timeToResume(r){
   if(r.summary.resumed_within_window===false)return null;
+  if(usesDocker(r))return r.scenario==="controller-outage"&&r.model==="basic-token"?null:r.summary.fault_command_end_to_entry_seconds;
   if(r.scenario==="controller-outage")return r.model==="basic-token"?null:r.summary.outage_to_entry_seconds;
   const a=r.summary.failure_detection_seconds,b=r.summary.recovery_latency_seconds;
   return finite(a)&&finite(b)?a+b:null;
@@ -173,9 +224,14 @@ function renderBenefits(){
     return;
   }
   const comparable=pairDifferences(healthy,"normal","central-lock","mean_wait_seconds").length>0;
+  const batchDifferences=pairDifferences(healthy,"normal","central-lock","total_completion_seconds");
+  if(healthy.some(usesDocker)&&batchDifferences.length){
+    const mid=median(batchDifferences);
+    card("Compare matching request seeds",`For the same seeded batches, CraneLock's completion-time difference from central lock has a median of ${mid>=0?"+":""}${mid.toFixed(3)} seconds, ranging from ${Math.min(...batchDifferences).toFixed(3)} to ${Math.max(...batchDifferences).toFixed(3)} seconds. Positive means CraneLock took longer. Compare these paired differences alongside the separate median bars; variation across repeats does not establish a consistent speed advantage.`);
+  }
   const cl=typical(healthy,"cranelock","mean_wait_seconds"),central=typical(healthy,"central-lock","mean_wait_seconds"),difference=(cl-central)*1000;
   const a=card("Waiting during normal operation",comparable&&finite(cl)&&finite(central)?`When nothing failed, the typical average wait was ${(cl*1000).toFixed(1)} ms with CraneLock and ${(central*1000).toFixed(1)} ms with central lock. That is ${Math.abs(difference).toFixed(2)} ms ${difference>=0?"longer":"shorter"} for the middle values shown in the waiting graph. Waiting means the time from asking for access until the crane is allowed into the lane.`:"Healthy-operation waiting is not measured for these selected requests. A system passing a safety check does not tell us how fast it is.");
-  a.append(node("p","",healthy.length&&healthy.every(r=>r.summary.measurement_policy==="complete_all_requests")?"These healthy tests include every request's wait, because the batch runs to completion. Short local runs still vary; these local measurements are not real-port performance benchmarks.":"The repeat runs vary, and requests that never entered have no measured waiting time. Use the waiting chart with its unfinished-request notes. These samples do not establish a consistent speed advantage."));
+  a.append(node("p","",healthy.length&&healthy.every(r=>r.summary.measurement_policy==="complete_all_requests")?"These healthy tests include every request's wait, because the batch runs to completion. Short repeated runs still vary; these single-machine measurements are not real-port performance benchmarks.":"The repeat runs vary, and requests that never entered have no measured waiting time. Use the waiting chart with its unfinished-request notes. These samples do not establish a consistent speed advantage."));
 }
 function renderStats(){
   const passed=visible.filter(r=>r.status==="passed").length,failed=visible.filter(r=>r.status==="failed").length;
@@ -252,6 +308,10 @@ function renderCharts(){
       }
       if(id==="execution"&&passed.length)row.append(node("p","chart-detail",`${passed.filter(r=>r.summary.completed_all_requests===true).length}/${passed.length} recorded test(s) finished the entire batch. A failed or stalled batch has no successful completion time.`));
       if(selected.some(r=>r.status!=="passed"))row.append(node("p","chart-detail","Some runs failed or are incomplete; they are excluded from the bars."));
+      if(samples.length>1&&Math.min(...samples)!==Math.max(...samples)){
+        const rangeValue=v=>kind==="ms"?`${(v*1000).toFixed(1)} ms`:kind==="seconds"?`${v.toFixed(3)} s`:`${fmt(v)} requests`;
+        row.append(node("p","chart-detail observed-range",`Observed range across ${samples.length} runs: ${rangeValue(Math.min(...samples))} to ${rangeValue(Math.max(...samples))}. The bar shows the median.`));
+      }
       if(samples.length&&samples.length<passed.length&&!independent)row.append(node("p","chart-detail",`${samples.length}/${passed.length} runs have a measured value; the other runs are excluded.`));
       group.append(row);
     }
@@ -260,10 +320,10 @@ function renderCharts(){
   if(scenario!=="normal"){
     const controller=scenario==="controller-outage";
     chart("requests",controller?"1. Could more requests start after the controller stopped?":"1. How many requests finished after the token holder stopped?",
-      controller?"Counts new requests allowed into the lane after controller failure. Requests already running before failure do not count. Higher means more cranes could begin work despite the outage.":"A stops before any crossing. Counts requests from B and C that both entered and exited before the test ended. Higher means more work was completed despite A's failure.",
+      controller?(rows.some(usesDocker)?"Counts lane entries after Docker kill-command initiation. The exact service failure occurs during that command. Requests already inside do not count; higher means more new work during the outage.":"Counts new requests allowed into the lane after controller failure. Requests already running before failure do not count. Higher means more cranes could begin work despite the outage."):"A stops before any crossing. Counts requests from B and C that both entered and exited before the test ended. Higher means more work was completed despite A's failure.",
       rows,controller?"post_fault_new_entries":"completed","requests");
     chart("recovery","2. How long until a waiting crane could move again?",
-      "Starts when the failure is injected and ends at the next new lane entry. This includes detecting the failure, agreeing on permission and any wait for a request or a clear lane. Lower means work resumed sooner.",rows,timeToResume,"seconds");
+      rows.some(usesDocker)?"Measured from Docker kill-command completion to the next lane entry. Includes remaining detection, coordination and waiting for demand or lane clearance. It is not pure algorithm recovery time; no observed entry is not zero seconds.":"Starts when the failure is injected and ends at the next new lane entry. This includes detecting the failure, agreeing on permission and any wait for a request or a clear lane. Lower means work resumed sooner.",rows,timeToResume,"seconds");
   }else if(completeAll){
     chart("execution",`How long to finish all ${fmt(typical(rows,"cranelock","requested"))} requests?`,"The clock starts when all requests are submitted together and stops after the last crane exits. The number of requests is identical for each system. Lower means the same work finished sooner.",rows,"total_completion_seconds","seconds");
   }else {

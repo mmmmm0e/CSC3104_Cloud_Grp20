@@ -7,6 +7,7 @@
   <div class="rail-label">Evaluation</div>
   <a class="nav active" href="#overview">Overview</a>
   <a class="nav" href="#comparison">Comparisons</a>
+  <a id="docker-nav" class="nav hidden" href="#docker-results">Docker results</a>
   <a class="nav" href="#trace">Playback</a>
   <a class="nav" href="#evidence">Saved evidence</a>
   <div class="rail-bottom">Tuas Mega Port simulation<p>Local experiments<br>Saved results, not live control</p></div>
@@ -15,6 +16,16 @@
   <header class="topbar"><span>Group 20 <b>/</b> Evaluation</span><span class="environment">Saved experiments</span></header>
   <section id="overview" class="intro"><div><h1>Crane coordination tests</h1><p>Compare normal operation, controller failure and token recovery.</p></div><button id="refresh" class="button light">Refresh results</button></section>
   <div id="message" class="notice hidden" role="status"></div>
+  <section id="docker-results" class="panel docker-results hidden" aria-label="Docker deployment results">
+    <div class="section-head"><h2>Integrated CraneLock deployment checks</h2><span id="docker-count" class="pill"></span></div>
+    <p class="scope-note">These runs use the integrated controller, gate and crane containers. Physical lane movement is simulated. Only CraneLock is tested here; the three-system comparison below uses its own separate experiment set.</p>
+    <div id="docker-cards" class="docker-cards"></div>
+    <p class="scope-note">Failure timing starts when the kill command finishes and ends at the next lane entry. It includes waiting for demand or clearance; it is not pure recovery time. Healthy requests arrive together, while failure requests are spread over the observation window.</p>
+    <p id="docker-warning" class="scope-note" role="status"></p>
+    <details class="docker-register"><summary>Inspect Docker runs and download evidence</summary>
+      <div class="table-wrap"><table><thead><tr><th>SCENARIO</th><th>SEED</th><th>RESULT</th><th>COMPLETED</th><th>BATCH TIME</th><th>NEXT ENTRY AFTER COMMAND</th><th>EVIDENCE</th></tr></thead><tbody id="docker-runs"></tbody></table></div>
+    </details>
+  </section>
   <details class="panel advanced-settings"><summary>Test settings and saved experiments</summary><div class="filters" aria-label="Result filters">
     <label class="dataset">EXPERIMENT SET<select id="collection" aria-label="Experiment set"></select></label>
     <label>SCENARIO<select id="scenario" aria-label="Scenario"><option value="all">All scenarios</option></select></label>

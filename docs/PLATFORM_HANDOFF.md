@@ -182,10 +182,12 @@ experiment with `python scripts/integrated.py up` and verify `state`. Do not use
 ## Validation scope
 
 The previous manual deployment verified mutual TLS, agent convergence, controller
-fallback and stable controller return after bounded reconnect retries. One
-external synthetic crossing is now validated; a complete workload experiment is
-still shared evaluation work. The host port mappings and helper must be exercised on the target
-machine before claiming this handoff is operational there. The latest platform
+fallback and stable controller return after bounded reconnect retries. Subsequent
+Windows validation completed nine integrated CraneLock workload runs and a
+separate 27-case paired Docker comparison. See [Docker evaluation results](DEPLOYED_RESULTS.md)
+for measurements, evidence and the distinction between these deployments.
+Host mappings and credentials still need verification on each new target machine.
+The latest platform
 validation also covers optional component telemetry, provisioned monitoring,
 container faults, Kustomize deployment and a single external synthetic crossing.
 See Platform_Validation.md for evidence and scope. The original standalone

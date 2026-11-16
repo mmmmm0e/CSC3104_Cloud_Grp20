@@ -12,7 +12,9 @@ integrated Docker services, controller/holder recovery, real network faults,
 provisioned monitoring, local single-node kind persistence/reconciliation and one
 external synthetic crossing. See `docs/Platform_Validation.md` and
 `docs/evidence/platform/`. These are teammate-recorded runtime observations; this
-Windows workstation still has no Docker/kubectl installation.
+Windows workstation now runs Docker Desktop; no new local Kubernetes verification
+is claimed here. Nine sustained Docker workload runs completed after setup; see
+[deployed results](DEPLOYED_RESULTS.md).
 
 Added `scripts/external_workload.py` and `cranelock_sim/deployed.py` for sustained
 requests against the published deployment endpoints. The runner checks public
@@ -20,8 +22,8 @@ container identity/status, keeps actor signing clients separate, validates physi
 entries through the existing Lane boundary and injects only scoped container kills.
 It waits for automatic LOCAL fallback before a holder-loss test and restores only
 the services it stopped. Contract checks use the real signed gate with deployment
-doubles; they are not Docker runtime evidence. Full deployed workload execution and
-performance comparisons remain pending on a Docker-enabled machine.
+doubles; they are not Docker runtime evidence. Deployed workload execution has now passed across nine Docker runs on this
+machine. Comparisons against deployed baseline algorithms remain pending.
 
 Saved local `benefits-autonomous-validated` evidence remains unchanged and records
 source `21fac92`. New local comparisons record `02da358`; deployed workload output
