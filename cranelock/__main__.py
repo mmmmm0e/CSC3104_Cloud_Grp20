@@ -58,6 +58,11 @@ async def main(argv=None):
     run.add_argument("--gate-tls-ca")
     run.add_argument("--gate-tls-cert")
     run.add_argument("--gate-tls-key")
+    run.add_argument("--workload-listen")
+    run.add_argument("--workload-tls-ca")
+    run.add_argument("--workload-tls-cert")
+    run.add_argument("--workload-tls-key")
+    run.add_argument("--workload-allowlist")
     run.add_argument("--enable-recovery", action="store_true",
                      help="use gate config and this agent's key file for recovery")
     run.add_argument("--recovery-config", help="Existing gate Config JSON; requires gate integration")
@@ -167,6 +172,21 @@ async def main(argv=None):
         if recovery_config is not None and recovery_config != gate.client.config:
             await gate.close()
             parser.error("Recovery and gate configuration must match")
+    workload_options = [args.workload_listen, args.workload_tls_ca, args.workload_tls_cert,
+                        args.workload_tls_key, args.workload_allowlist]
+    workload_credentials = workload_allowed = None
+    if any(workload_options):
+        if not all(workload_options) or gate is None:
+            parser.error("Workload listener requires gate and all --workload-* options")
+        from .workload import load_allowlist
+        try:
+            workload_allowed = load_allowlist(args.workload_allowlist, args.id, gate.client.config.lane_id)
+            workload_credentials = grpc.ssl_server_credentials(
+                [(Path(args.workload_tls_key).read_bytes(), Path(args.workload_tls_cert).read_bytes())],
+                root_certificates=Path(args.workload_tls_ca).read_bytes(), require_client_auth=True)
+        except (OSError, ValueError, TypeError, KeyError):
+            await gate.close()
+            parser.error("Invalid workload TLS or allowlist configuration")
     heartbeat_client = None
     if args.controller_address:
         heartbeat_client = ControllerHeartbeatClient(
@@ -185,12 +205,17 @@ async def main(argv=None):
             await gate.close()
         parser.error("Agent state or startup configuration is invalid or unreadable")
     telemetry = None
+    workload_server = workload_service = None
     try:
         if args.metrics_port is not None:
             from .telemetry import AgentMetrics
             telemetry = AgentMetrics(agent)
             telemetry.start(args.metrics_port, args.metrics_bind)
         await agent.start(args.listen)
+        if workload_credentials:
+            from .workload import start_workload
+            workload_server, workload_service, _ = await start_workload(
+                agent, args.workload_listen, workload_credentials, workload_allowed)
         if args.request_after is not None:
             await asyncio.sleep(args.request_after)
             reply = await agent.request_token()
@@ -198,6 +223,10 @@ async def main(argv=None):
         await asyncio.Event().wait()
     finally:
         try:
+            if workload_server:
+                await workload_server.stop(0)
+                if workload_service.tasks:
+                    await asyncio.gather(*tuple(workload_service.tasks), return_exceptions=True)
             await agent.close()
         finally:
             try:

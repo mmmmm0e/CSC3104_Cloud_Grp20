@@ -17,8 +17,33 @@ def test_container_addresses_reach_future_peers_and_use_container_paths():
     cluster.addresses = {'127.0.0.1:50101':'crane-1:50101',
                          '127.0.0.1:50102':'crane-2:50102', '127.0.0.1:50103':'crane-3:50103'}
     assert cluster.translate(['--peer','crane-3=127.0.0.1:50103','--state-file',
-        cluster.output/'crane-1.json']) == ['--peer','crane-3=crane-3:50103',
-                                          '--state-file','/evidence/crane-1.json']
+        cluster.output/'state'/'crane-1'/'state.json'], 'crane-1') == [
+            '--peer','crane-3=crane-3:50103','--state-file','/state/state.json']
+
+
+def test_credentials_are_scoped_and_never_in_shared_mounts(tmp_path):
+    from cranelock_sim.evaluation_provision import provision
+    provision(tmp_path)
+    cluster = DockerCluster.__new__(DockerCluster)
+    cluster.output = tmp_path
+    cluster.addresses = {}
+    for identity in ('crane-1', 'crane-2', 'crane-3'):
+        credentials = tmp_path/'.credentials'/identity
+        assert (credentials/f'{identity}.key.json').is_file()
+        assert {p.name for p in credentials.glob('*.key.json')} == {f'{identity}.key.json'}
+        assert not (credentials/'workload-tls'/'client-key.pem').exists()
+        mounts = cluster.mounts(identity)
+        assert str(credentials) in ' '.join(mounts)
+        assert f'source={tmp_path},target=' not in ' '.join(mounts)
+        assert 'target=/credentials,readonly' in ' '.join(mounts)
+        assert str(tmp_path/'.credentials'/'driver') not in ' '.join(mounts)
+        for other in {'crane-1', 'crane-2', 'crane-3', 'controller'} - {identity}:
+            assert str(tmp_path/'.credentials'/other) not in ' '.join(mounts)
+    driver = tmp_path/'.credentials'/'driver'
+    assert {p.name for p in driver.glob('*.key.json')} == {'simulator.key.json'}
+    assert not list(driver.rglob('server-key.pem'))
+    assert not list(driver.rglob('crane-*.key.json'))
+    assert not list(driver.rglob('controller.key.json'))
 
 
 def test_docker_pairing_requires_matching_image_resources_and_execution():

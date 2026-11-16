@@ -80,6 +80,9 @@ def test_normal_finishes_entire_batch_beyond_former_cutoff(tmp_path, model, monk
     assert len(set(result["process_ids"].values())) == 5
     assert result["controller_implementation"] == CONTROLLER_IMPLEMENTATION
     assert result["execution_mode"] == "independent_processes"
+    if result["initial_mode"] == "CENTRAL":
+        events = [json.loads(line) for line in (output/"events.jsonl").read_text().splitlines()]
+        assert sum(e["event"] == "central_assignment" for e in events) == len(rows)
     import csv
     with (output / "requests.csv").open() as stream:
         requests=list(csv.DictReader(stream))

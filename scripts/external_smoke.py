@@ -6,27 +6,27 @@ import uuid
 
 import grpc
 from cranelock import protocol_pb2 as pb, protocol_pb2_grpc as rpc
-from cranelock_gate.client import Client
-from cranelock_gate.demo import load_keys
 from cranelock_sim.lane import Lane
-from integrated import BASE, ROOT, gate_client, validation_lock
+from cranelock_sim.workload_client import GrantAttempt, channel as workload_channel
+from pathlib import Path
+from integrated import ROOT, simulator_gate_client, validation_lock
 
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--new-empty-simulation',action='store_true',required=True,
                         help='Explicitly start a new empty physical model; no other workload runner may be active')
-    parser.parse_args()
-    channel,controller_client=gate_client()
+    parser.add_argument('--workload-config', required=True)
+    args = parser.parse_args()
+    channel,sim=simulator_gate_client()
     events=[]
     def emit(event,**values): events.append(dict(event=event,timestamp=time.time(),monotonic=time.monotonic(),**values))
     out=ROOT/'run/platform-validation';out.mkdir(parents=True,exist_ok=True)
     result={'passed':False,'scope':'One fresh synthetic lane crossing; real external container RPCs, not a general workload benchmark'}
     try:
-        state=controller_client.state()
+        state=sim.state()
         if state['mode']!='CENTRAL' or state['lane_state']!='UNKNOWN' or state['grant'] is not None:
             raise RuntimeError('Requires CENTRAL, UNKNOWN and no grant; refusing to reset existing lane state')
-        sim=Client(channel,controller_client.config,load_keys(BASE/'signing/simulator.json'))
         lane=Lane(sim,time.time,emit)
         if not lane.observe()['allowed']: raise RuntimeError('New model observation rejected')
         old=state['holder']
@@ -48,10 +48,16 @@ def main():
         else: raise RuntimeError('Token handoff did not settle')
         emit('external_handoff_verified',holder=receiver,epoch=authority['epoch'],revision=authority['revision'])
         if not lane.observe()['allowed']: raise RuntimeError('Fresh pre-entry evidence rejected')
-        crane=Client(channel,controller_client.config,load_keys(BASE/f'signing/{receiver}.json'))
-        authority=crane.state()
-        grant=crane.call(receiver,'RequestGrant',epoch=authority['epoch'],revision=authority['revision'])
-        if not grant['allowed']: raise RuntimeError('Grant denied: '+grant['reason'])
+        options=json.loads(Path(args.workload_config).read_text(encoding='utf-8'))
+        credentials=[Path(options[name]).read_bytes() for name in ('ca','cert','key')]
+        authority=sim.state()
+        workload_connection, stub=workload_channel(options['agents'][receiver], *credentials)
+        try:
+            grant=GrantAttempt(authority['epoch'], authority['revision']).call(stub)
+        finally:
+            workload_connection.close()
+        if not grant['allowed'] or grant['replayed'] or not grant['action_applied']:
+            raise RuntimeError('Grant denied or uncertain: '+grant['reason'])
         request_id=str(uuid.uuid4())
         if not lane.enter(receiver,request_id,grant['grant'],authority): raise RuntimeError('Entry not accepted')
         time.sleep(.05)

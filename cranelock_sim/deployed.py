@@ -11,11 +11,12 @@ import grpc
 from .comparison import workload_hash, write_csv
 from .experiment import require
 from .lane import Lane
+from .workload_client import GrantAttempt
 
 SCENARIOS = ("normal", "controller-outage", "holder-failure")
 SCOPE = ("External deployed CraneLock services; synthetic physical lane and host-driven demand. "
-         "Token handoff and recovery belong to the deployed agents. Grant requests use each "
-         "crane's isolated signing client on the test host, as in external_smoke.py. "
+         "Token handoff and recovery belong to the deployed agents. Grant requests use "
+         "authenticated workload RPCs. "
          "No baseline comparison or physical-port claim. Fault latency brackets Docker "
          "command execution; it is not a measurement of the exact failure instant.")
 
@@ -96,7 +97,7 @@ def run_workload(deployment, output, *, scenario="normal", seed=20, requests=18,
             measurement_policy="complete_all_requests" if scenario == "normal" else "fixed_window",
             initial_epoch=state["epoch"], initial_holder=state["holder"], initial_mode=state["mode"],
             endpoints=deployment.endpoints, limitations=SCOPE,
-            grant_request_driver="host_actor_specific_clients", preparation_events=list(events))
+            grant_request_driver="agent_workload_rpc", preparation_events=list(events))
         (output/"experiment.json").write_text(json.dumps(settings, indent=2), encoding="utf-8")
         (output/"workload.json").write_text(json.dumps(rows, indent=2), encoding="utf-8")
         events.clear()
@@ -108,6 +109,7 @@ def run_workload(deployment, output, *, scenario="normal", seed=20, requests=18,
             fault_start, fault_end = stop(target)
         index = arrivals = 0
         pending = None
+        grant_attempt = None
         last_authority = None
         horizon = max(120., duration) if scenario == "normal" else duration
 
@@ -160,11 +162,25 @@ def run_workload(deployment, output, *, scenario="normal", seed=20, requests=18,
             if not agent.has_token or (agent.epoch, agent.revision) != (state["epoch"], state["revision"]):
                 sleep(.02)
                 continue
-            grant = deployment.cranes[identity].call(identity, "RequestGrant",
-                epoch=state["epoch"], revision=state["revision"])
+            if grant_attempt is None:
+                grant_attempt = GrantAttempt(state["epoch"], state["revision"])
+            try:
+                grant = grant_attempt.call(deployment.workloads[identity])
+            except grpc.RpcError as error:
+                if error.code() not in {grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED}:
+                    raise
+                sleep(.02)
+                continue
+            if grant_attempt.unresolved(grant):
+                sleep(.02)
+                continue
+            grant_attempt = None
             if not grant["allowed"]:
-                if grant["reason"] not in {"LANE_UNKNOWN", "LANE_BUSY", "OUTSTANDING_GRANT", "STALE_EPOCH", "STALE_REVISION", "NOT_HOLDER"}:
+                if grant["reason"] not in {"LANE_UNKNOWN", "LANE_BUSY", "OUTSTANDING_GRANT", "STALE_EPOCH", "STALE_REVISION", "NOT_HOLDER", "WRONG_HOLDER", "STALE_AUTHORITY", "AUTHORITY_UNCERTAIN", "TRANSFER_PENDING", "GATE_UNAVAILABLE", "STATE_UNAVAILABLE"}:
                     raise RuntimeError("Grant rejected: "+grant["reason"])
+                sleep(.02)
+                continue
+            if grant["replayed"] or not grant["action_applied"]:
                 sleep(.02)
                 continue
             if not lane.enter(identity, row["request_id"], grant["grant"], state):

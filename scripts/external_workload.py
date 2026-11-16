@@ -15,10 +15,11 @@ from cranelock_gate.client import Client
 from cranelock_gate.config import Config
 from cranelock_gate.demo import load_keys
 from cranelock_sim.deployed import SCENARIOS, run_workload
+from cranelock_sim.workload_client import channel as workload_channel
 
 
 class ExternalDeployment:
-    def __init__(self, stack):
+    def __init__(self, stack, workload_config):
         self.endpoints = endpoints()
         manifest = self.endpoints
         # Capture only public container metadata, not inspect's environment/secrets.
@@ -46,7 +47,15 @@ class ExternalDeployment:
                 raise ValueError(f"Expected an actor-only signing file for {identity}")
             return Client(channel, config, keys, timeout=2)
         self.simulator = actor_client(config.simulator_id)
-        self.cranes = {identity: actor_client(identity) for identity in config.members}
+        options = json.loads(Path(workload_config).read_text(encoding="utf-8"))
+        if set(options["agents"]) != set(config.members):
+            raise ValueError("Workload endpoints must match configured crane membership")
+        ca, cert, key = (Path(options[name]).read_bytes() for name in ("ca", "cert", "key"))
+        self.workloads = {}
+        for identity, address in options["agents"].items():
+            connection, stub = workload_channel(address, ca, cert, key)
+            stack.enter_context(connection)
+            self.workloads[identity] = stub
         self.stubs = {identity: rpc.CraneAgentStub(stack.enter_context(grpc.insecure_channel(endpoint["host"])))
                       for identity, endpoint in manifest["agents"].items()}
 
@@ -65,6 +74,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--new-empty-simulation", action="store_true", required=True,
                         help="Start a new synthetic empty lane; no other workload runner may be active")
+    parser.add_argument("--workload-config", required=True, help="JSON workload mTLS client credentials and agent endpoints")
     parser.add_argument("--scenario", choices=SCENARIOS, default="normal")
     parser.add_argument("--requests", type=int, default=18)
     parser.add_argument("--seed", type=int, default=20)
@@ -79,7 +89,7 @@ def main():
         parser.exit(1, "Docker CLI is unavailable. Install/start Docker Desktop and follow docs/PLATFORM_HANDOFF.md.\n")
     try:
         with validation_lock(), ExitStack() as stack:
-            deployment = ExternalDeployment(stack)
+            deployment = ExternalDeployment(stack, args.workload_config)
             try:
                 result = run_workload(deployment, args.output, scenario=args.scenario, seed=args.seed,
                     requests=args.requests, duration=args.duration, crossing_time=args.crossing_time,

@@ -79,6 +79,22 @@ message ControllerHeartbeatResponse {
   string holder = 5;
   string mode = 6;
 }
+message WorkloadGrantRequest {
+  string request_id = 1;
+  optional uint64 expected_epoch = 2;
+  optional uint64 expected_revision = 3;
+}
+message WorkloadGrantResponse {
+  string request_id = 1;
+  bool allowed = 2;
+  string reason = 3;
+  bool replayed = 4;
+  bool action_applied = 5;
+  bytes grant_json = 6;
+}
+service CraneWorkload {
+  rpc RequestGrant(WorkloadGrantRequest) returns (WorkloadGrantResponse);
+}
 service CraneAgent {
   rpc Heartbeat(HeartbeatMessage) returns (Reply);
   rpc TokenRequest(TokenRequestMessage) returns (Reply);

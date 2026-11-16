@@ -18,7 +18,6 @@ import uuid
 
 import grpc
 
-from cranelock_gate.tls import write as write_tls
 from .autonomous import run_case
 from .benefits import make_workload
 from .comparison import MODELS, write_csv
@@ -61,11 +60,10 @@ class DockerCluster:
         self.processes, self.channels, self.stopped = {}, [], set()
         self.addresses, self.offsets, self.streams, self.loggers = {}, {}, {}, {}
         self.image = json.loads(docker("image", "inspect", IMAGE, "--format", "{{json .Id}}").stdout)
-        write_tls(self.output/"gate-tls", names=["gate", "127.0.0.1"])
         docker("network", "create", "--label", "cranelock.evaluation=true", self.name)
 
     def gate_channel(self, address):
-        tls = self.output/"gate-tls"
+        tls = self.output/".credentials"/"driver"/"gate-tls"
         credentials = grpc.ssl_channel_credentials((tls/"ca.pem").read_bytes(),
             (tls/"client-key.pem").read_bytes(), (tls/"client.pem").read_bytes())
         return grpc.secure_channel(address, credentials)
@@ -74,23 +72,34 @@ class DockerCluster:
         return ["run", "--detach", "--name", f"{self.name}-{name}",
                 "--label", f"cranelock.evaluation={self.name}",
                 "--network", self.name, "--network-alias", name,
-                "--cpus", "1", "--memory", "256m",
-                "--mount", f"type=bind,source={self.output},target=/evidence"]
+                "--cpus", "1", "--memory", "256m", *self.mounts(name)]
 
-    def translate(self, arguments):
+    def mounts(self, name, *, credentials=True):
+        mounts = ["--mount", f"type=bind,source={self.output/'gate-config.json'},target=/config/gate-config.json,readonly",
+                  "--mount", f"type=bind,source={self.output/'state'/name},target=/state"]
+        if credentials:
+            mounts += ["--mount", f"type=bind,source={self.output/'.credentials'/name},target=/credentials,readonly"]
+        return mounts
+
+    def translate(self, arguments, name):
+        paths = [(self.output / ".credentials" / name, "/credentials"),
+                 (self.output / "state" / name, "/state"),
+                 (self.output / "gate-config.json", "/config/gate-config.json")]
         result = []
         for value in map(str, arguments):
-            value = value.replace(str(self.output), "/evidence").replace("\\", "/")
+            value = value.replace("\\", "/")
+            for source, target in paths:
+                value = value.replace(str(source).replace("\\", "/"), target)
             for host, internal in self.addresses.items():
                 value = value.replace(host, internal)
             result.append(value)
         return result
 
     def initialize(self, arguments):
-        # Initializer shares the exact image and evidence directory; exits before measurement.
+        # Gate initialization receives only public configuration and its own state directory.
         return docker("run", "--rm", "--network", self.name,
-                      "--mount", f"type=bind,source={self.output},target=/evidence",
-                      self.image, *self.translate(arguments))
+                      *self.mounts("gate", credentials=False),
+                      self.image, *self.translate(arguments, "gate"))
 
     def spawn(self, name, *arguments):
         arguments = list(map(str, arguments))
@@ -102,6 +111,11 @@ class DockerCluster:
             ports.append(port)
             self.addresses[address] = f"{name}:{port}"
             arguments[arguments.index(bind_flag)+1] = f"0.0.0.0:{port}"
+            if "--workload-listen" in arguments:
+                workload_index = arguments.index("--workload-listen") + 1
+                workload_port = int(arguments[workload_index].rsplit(":", 1)[1])
+                ports.append(workload_port)
+                arguments[workload_index] = f"0.0.0.0:{workload_port}"
         else:
             # Reserve both host ports together, then bind/publish the same numbers.
             with socket.socket() as a, socket.socket() as b:
@@ -109,24 +123,23 @@ class DockerCluster:
                 assignment, heartbeat = a.getsockname()[1], b.getsockname()[1]
             ports.extend([assignment, heartbeat])
             self.addresses[f"127.0.0.1:{heartbeat}"] = f"controller:{heartbeat}"
-            write_tls(self.output/"controller-tls", names=["controller", "127.0.0.1"])
             arguments += ["--assignment-bind", f"0.0.0.0:{assignment}",
                           "--heartbeat-bind", f"0.0.0.0:{heartbeat}",
-                          "--tls-directory", str(self.output/"controller-tls"),
-                          "--gate-tls-directory", str(self.output/"gate-tls")]
+                          "--tls-directory", str(self.output/".credentials"/name/"controller-tls"),
+                          "--gate-tls-directory", str(self.output/".credentials"/name/"gate-tls")]
         if "--controller-address" in arguments:
             for flag, filename in [("ca", "ca.pem"), ("cert", "client.pem"), ("key", "client-key.pem")]:
-                arguments += [f"--controller-tls-{flag}", str(self.output/"controller-tls"/filename)]
+                arguments += [f"--controller-tls-{flag}", str(self.output/".credentials"/name/"controller-tls"/filename)]
         if name == "gate":
             for flag, filename in [("ca", "ca.pem"), ("cert", "server.pem"), ("key", "server-key.pem")]:
-                arguments += [f"--tls-{flag}", str(self.output/"gate-tls"/filename)]
+                arguments += [f"--tls-{flag}", str(self.output/".credentials"/name/"gate-tls"/filename)]
         elif name.startswith("crane-"):
             for flag, filename in [("ca", "ca.pem"), ("cert", "client.pem"), ("key", "client-key.pem")]:
-                arguments += [f"--gate-tls-{flag}", str(self.output/"gate-tls"/filename)]
+                arguments += [f"--gate-tls-{flag}", str(self.output/".credentials"/name/"gate-tls"/filename)]
         command = self.base(name)
         for port in ports:
             command += ["--publish", f"127.0.0.1:{port}:{port}"]
-        identity = docker(*command, self.image, *self.translate(arguments)).stdout.strip()
+        identity = docker(*command, self.image, *self.translate(arguments, name)).stdout.strip()
         self.processes[name] = Container(identity)
         stream = (self.output/f"{name}.log").open("wb")
         self.streams[name] = stream
