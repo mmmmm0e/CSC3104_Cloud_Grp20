@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 import grpc
 import pytest
 
+from cranelock import protocol_pb2 as pb
 from cranelock.agent import Agent, Mode
 from cranelock.gate_client import GateClient
 from cranelock.protocol_pb2_grpc import CraneAgentStub
@@ -153,10 +154,14 @@ def test_cached_suspected_holder_cannot_override_current_gate_holder(h, tmp_path
         async with survivors(h, tmp_path, ["crane-2"]) as (agents, events):
             agent = agents["crane-2"]
             assert h.observe()["allowed"]
-            assert h.call("crane-1", "TransferHolder", epoch=0, revision=1,
-                          destination="crane-2")["allowed"]
+            result = h.call("crane-1", "TransferHolder", epoch=0, revision=1, destination="crane-2")
+            assert result["allowed"]
             agent.suspected.add("crane-1")
             await agent.recover_suspected_holder()
             assert h.state["epoch"] == 0 and agent.state.revision == 2
-            assert agent.state.has_token and not agent.vote_state
+            assert not agent.state.has_token and agent.incoming_pending and not agent.vote_state
+            reply = await agent.TokenTransfer(pb.TokenTransferMessage(sender_id="crane-1",
+                receiver_id="crane-2", holder="crane-2", epoch=0, revision=2,
+                transfer_id=result["request_id"]), None)
+            assert reply.accepted and agent.state.has_token and not agent.vote_state
     asyncio.run(scenario())

@@ -30,7 +30,7 @@ Gate integration is opt-in with `--gate-address`, `--gate-config`, `--gate-keys`
 Without these, the original standalone baseline remains available for existing
 tests/platform demos. **Do not mix standalone and gate-enabled agents in one
 cluster.** Gate mode never falls back to standalone on an outage. Programmatic
-callers supply `Agent(..., gate=GateClient(...), epoch=0)`.
+callers supply `Agent(..., gate=GateClient(...), state_file=..., epoch=0)`.
 
 ## Authority and concurrency
 
@@ -38,7 +38,10 @@ New state field `revision` is persisted with epoch/holder/token and the existing
 opaque vote state. Old JSON files without revision load as revision zero. Agent
 protobuf messages add fields without renumbering existing fields: heartbeat,
 request, reply and state expose revision; transfer adds revision and holder.
-The gate schema is untouched. Update all agent bindings together: an old sender
+The Gate state response can include `authority_transition`, identifying the
+Gate-committed transfer or authority installation, and `last_handoff`, retained
+across installations. Legacy states without them are
+accepted with a conservative handoff barrier; see the durability design. Update all agent bindings together: an old sender
 defaults revision to zero and will be rejected by a gate-enabled holder.
 
 One `asyncio.Lock` protects mutable state. A separate operation lock serializes gate
@@ -67,16 +70,18 @@ interval; it does not bypass the gate's checks.
 
 For uncertain RPC outcomes, query `GetState`:
 
-- Exact `(E,R+1,B)`: treat authority transfer as committed and notify B.
-- Exact original `(E,R,A)`: keep A suspended and retry the **identical payload and
-  request ID**. A read alone cannot exclude a delayed command still reaching the gate.
+- Retry the **identical payload and request ID** to resolve its durable Gate
+  decision. A state read, including `(E,R+1,B)`, does not identify which command
+  produced that state or exclude an earlier command still reaching the Gate.
+- If that exact command succeeded and current authority is `(E,R+1,B)`, notify B.
 - Later/different authority: reconcile it; never act on historical `allowed=true`.
 - Gate unavailable, uninitialized, incompatible or older than local state: retain
   fail-closed REJOINING. Never invent authority or silently roll state back.
 
 Retries use Max's documented durable idempotency cache. Replay acknowledgements
 contain *current* state even when their allowed flag describes historical success.
-Peer notification failures also retain the transfer ID and retry in memory.
+Peer notification failures retain the transfer ID and queue in the sender's
+state file and retry while that outbox remains current.
 
 Epoch/revision comparisons are lexicographic. A higher epoch adopts its gate
 revision; equal epoch requires nondecreasing revision. At equal versions, the gate
@@ -210,9 +215,11 @@ restarts B with its persisted state. All pre-existing tests remain unchanged.
 
 Remaining limits:
 
-- Queue contents, notification deduplication and pending command payloads are still
-  in memory. Restart reconciles authority safely but does not restore scheduling
-  history. Recovery of a lost queue is not provided by the gate.
+- Accepted local queues, received notification identities and sender outboxes are
+  persisted. They are not replicated; permanent loss of sender storage can still
+  lose outstanding work. An ambiguous receiver may remain blocked. See
+  [handoff durability design](HANDOFF_DURABILITY_DESIGN.md) for the limits and the
+  additional protocol needed for an end-to-end queue guarantee.
 - Local `has_token` is a cached authority view, not permission to enter the lane.
   Later authority changes can stale that view. Any future lane entry must still
   use Max's gate grant/entry APIs; no gate bypass is added here.

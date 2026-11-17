@@ -446,3 +446,29 @@ def test_real_controller_loss_without_majority_cannot_install_local(cluster):
     assert not any(event["operation"] == "InstallAuthority" and event["allowed"] and event["epoch"] > 0
                    for event in cluster.audit())
     cluster.phases["no_quorum_return"] = cluster.gate.state()
+
+
+def test_real_controller_fallback_preserves_live_holders_accepted_queue(cluster):
+    members = list(cluster.config.members)
+    before = cluster.gate.state()
+    assert before["holder"] == "crane-2"
+    cluster.observe("OCCUPIED")
+    request = pb.TokenRequestMessage(agent_id="crane-3", epoch=before["epoch"],
+                                     revision=before["revision"], request_id=uuid.uuid4().hex)
+    assert cluster.stubs["crane-2"].TokenRequest(request, timeout=1).accepted
+    cluster.wait("accepted request held while lane occupied", lambda:
+        list(cluster.states(["crane-2"])["crane-2"].request_queue) == ["crane-3"])
+    failed_at = cluster.crash(cluster.controller_name)
+    cluster.detection(members, failed_at)
+    local = cluster.wait("LOCAL fallback with same holder", lambda: (
+        state if (state := cluster.gate.state())["mode"] == "LOCAL" else None))
+    assert local["holder"] == "crane-2" and local["epoch"] == before["epoch"] + 1
+    cluster.wait("LOCAL convergence with accepted request", lambda:
+        cluster.converged(local, members) and
+        list(cluster.states(["crane-2"])["crane-2"].request_queue) == ["crane-3"])
+    saved = json.loads((cluster.directory / "crane-2.json").read_text())
+    assert saved["request_queue"] == ["crane-3"]
+    cluster.observe("CLEAR")
+    moved = cluster.wait("queued request makes progress", lambda: (
+        state if (state := cluster.gate.state())["holder"] == "crane-3" else None))
+    cluster.wait("queued handoff converges", lambda: cluster.converged(moved, members))

@@ -6,6 +6,7 @@ from enum import IntEnum
 import json
 import os
 from pathlib import Path
+import tempfile
 import time
 import uuid
 
@@ -19,6 +20,10 @@ class Mode(IntEnum):
     CENTRAL = pb.CENTRAL
     LOCAL = pb.LOCAL
     REJOINING = pb.REJOINING
+
+
+class PersistenceError(OSError):
+    """A state-file operation failed; the original OSError is the cause."""
 
 
 @dataclass
@@ -44,22 +49,34 @@ class Agent(rpc.CraneAgentServicer):
         self.peers = dict(peers)
         self.interval, self.timeout, self.clock = interval, timeout, clock
         self.path = Path(state_file) if state_file else None
+        if gate is not None and self.path is None:
+            raise ValueError("Gate-enabled agents require a durable state file")
         self.lock = asyncio.Lock()
         self.authority_lock = asyncio.Lock()
         self.recovery_lock = asyncio.Lock()
         self.gate = gate
+        self.gate_authority_mode = None
         self.gate_attempt = None
         self.authority_refresh_needed = False
+        self.background_failure = None
         self.events = event_sink or (lambda e: print(json.dumps(e), flush=True))
         self.state = AgentState(agent_id, epoch, holder, mode, holder == agent_id)
         self.state.revision = revision
         if gate:
+            # Configuration is a startup hint, not a trusted authority version.
+            # A saved Gate version, if present, is restored below instead.
+            self.state.current_epoch = 0
+            self.state.revision = 0
             self.state.mode = Mode.REJOINING
             self.state.has_token = False
         self.pending = None
+        self.incoming_pending = None
+        self.handoff_blocked = None
         self.last_handoff = ""
         self.received = set()
         self.observed_handoffs = set()
+        self.gate_transfer_queues = {}
+        self.gate_received_transfers = set()
         self.vote_state = {}  # Opaque reserved storage; Recovery owns vote policy.
         self.vote_proposals = {}
         self.workload_requests = {}
@@ -78,8 +95,8 @@ class Agent(rpc.CraneAgentServicer):
             saved = json.loads(self.path.read_text())
             if saved["agent_id"] != agent_id:
                 raise ValueError("State file belongs to another agent")
-            self.state.current_epoch = max(epoch, saved["epoch"])
-            if saved["epoch"] > epoch:
+            self.state.current_epoch = saved["epoch"] if gate else max(epoch, saved["epoch"])
+            if gate or saved["epoch"] > epoch:
                 self.state.revision = saved.get("revision", 0)
             elif saved["epoch"] == epoch:
                 self.state.revision = max(saved.get("revision", 0), revision)
@@ -91,6 +108,82 @@ class Agent(rpc.CraneAgentServicer):
             self.workload_requests = saved.get("workload_requests", {})
             if type(self.workload_requests) is not dict:
                 raise ValueError("Invalid persisted workload request bindings")
+            saved_queue = saved.get("request_queue", [])
+            transfers = saved.get("gate_transfer_queues", {})
+            received_transfers = saved.get("gate_received_transfers", [])
+            saved_attempt = saved.get("gate_attempt")
+            saved_pending = saved.get("pending_transfer")
+            incoming_pending = saved.get("incoming_pending")
+            blocked = saved.get("handoff_blocked")
+            saved_gate_mode = saved.get("gate_enabled")
+            saved_authority_mode = saved.get("gate_authority_mode")
+            if saved_gate_mode is not None and type(saved_gate_mode) is not bool:
+                raise ValueError("Invalid persisted Gate mode")
+            if saved_authority_mode not in (None, "CENTRAL", "LOCAL"):
+                raise ValueError("Invalid persisted Gate authority mode")
+            if gate is None and (saved_gate_mode is True or saved_attempt is not None
+                                 or saved_pending is not None or incoming_pending is not None
+                                 or blocked is not None or transfers or received_transfers):
+                raise ValueError("Persisted Gate state requires Gate configuration")
+            def valid_queue(queue):
+                return (type(queue) is list and all(type(peer) is str and peer in self.peers for peer in queue)
+                        and len(queue) == len(set(queue)))
+            if (not valid_queue(saved_queue) or type(transfers) is not dict
+                    or any(type(key) is not str or not valid_queue(queue)
+                           for key, queue in transfers.items())
+                    or type(received_transfers) is not list
+                    or any(type(key) is not str or key not in transfers for key in received_transfers)
+                    or len(received_transfers) != len(set(received_transfers))):
+                raise ValueError("Invalid persisted transfer queues")
+            # Preserve receipt evidence until a Gate read establishes whether
+            # it remains applicable, irrespective of startup configuration.
+            self.state.request_queue = deque(saved_queue)
+            self.gate_transfer_queues = transfers
+            self.gate_received_transfers = set(received_transfers)
+            if gate is not None:
+                self.gate_authority_mode = saved_authority_mode
+                if incoming_pending is not None and (type(incoming_pending) is not dict
+                        or set(incoming_pending) != {"epoch", "revision"}
+                        or any(type(incoming_pending[k]) is not int or incoming_pending[k] < 0
+                               for k in ("epoch", "revision"))):
+                    raise ValueError("Invalid persisted incoming handoff barrier")
+                if blocked is not None and (type(blocked) is not str or not blocked):
+                    raise ValueError("Invalid persisted handoff status")
+                if saved_attempt is not None:
+                    if (type(saved_attempt) is not dict or set(saved_attempt) != {"command", "queue"}
+                            or type(saved_attempt["command"]) is not dict
+                            or not valid_queue(saved_attempt["queue"])):
+                        raise ValueError("Invalid persisted Gate attempt")
+                    command = saved_attempt["command"]
+                    try:
+                        epoch_value, revision_value = command["epoch"], command["revision"]
+                        destination, request_id = command["destination"], command["request_id"]
+                        if (type(epoch_value) is not int or epoch_value < 0
+                                or type(revision_value) is not int or revision_value < 0
+                                or destination not in self.peers or destination in saved_attempt["queue"]
+                                or type(request_id) is not str or not request_id
+                                or command != gate.transfer_command(epoch_value, revision_value, destination, request_id)):
+                            raise ValueError("Invalid persisted Gate command")
+                    except (KeyError, TypeError, AttributeError) as error:
+                        raise ValueError("Invalid persisted Gate command") from error
+                    self.gate_attempt = saved_attempt
+                if saved_pending is not None:
+                    fields = {"sender_id", "receiver_id", "epoch", "revision", "holder", "transfer_id", "request_queue"}
+                    if (type(saved_pending) is not dict or set(saved_pending) != fields
+                            or saved_pending["sender_id"] != agent_id
+                            or saved_pending["receiver_id"] not in self.peers
+                            or saved_pending["holder"] != saved_pending["receiver_id"]
+                            or type(saved_pending["transfer_id"]) is not str or not saved_pending["transfer_id"]
+                            or any(type(saved_pending[k]) is not int or saved_pending[k] < 0
+                                   for k in ("epoch", "revision"))
+                            or not valid_queue(saved_pending["request_queue"])
+                            or saved_pending["receiver_id"] in saved_pending["request_queue"]):
+                        raise ValueError("Invalid persisted pending transfer")
+                    self.pending = pb.TokenTransferMessage(**saved_pending)
+                    self.last_handoff = self.pending.transfer_id
+                if (self.gate_attempt and self.pending) or (blocked and not (self.gate_attempt or self.pending)):
+                    raise ValueError("Invalid persisted handoff combination")
+                self.incoming_pending, self.handoff_blocked = incoming_pending, blocked
         if recovery_config is not None:
             recovery.validate_saved(recovery_config, self.vote_state, self.vote_proposals)
         self.last_seen = {peer: clock() for peer in peers}
@@ -114,24 +207,78 @@ class Agent(rpc.CraneAgentServicer):
 
     def persist(self):
         if self.path:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            temporary = self.path.with_suffix(".tmp")
-            with temporary.open("w") as stream:
-                json.dump(dict(agent_id=self.state.agent_id, epoch=self.state.current_epoch,
-                               holder=self.state.token_holder, has_token=self.state.has_token,
-                               revision=self.state.revision,
-                               vote_state=self.vote_state, vote_proposals=self.vote_proposals,
-                               workload_requests=self.workload_requests), stream)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, self.path)
+            stage = "mkdir"
+            descriptor = temporary = None
+            try:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                stage = "create"
+                descriptor, temporary = tempfile.mkstemp(
+                    prefix=f".{self.path.name}.", suffix=".tmp", dir=self.path.parent)
+                stage = "write"
+                with os.fdopen(descriptor, "w") as stream:
+                    descriptor = None
+                    json.dump(dict(agent_id=self.state.agent_id, epoch=self.state.current_epoch,
+                                   holder=self.state.token_holder, has_token=self.state.has_token,
+                                   revision=self.state.revision,
+                                   vote_state=self.vote_state, vote_proposals=self.vote_proposals,
+                                   workload_requests=self.workload_requests,
+                                   request_queue=list(self.state.request_queue),
+                                   gate_transfer_queues=self.gate_transfer_queues,
+                                   gate_received_transfers=sorted(self.gate_received_transfers),
+                                   gate_enabled=self.gate is not None,
+                                   gate_authority_mode=self.gate_authority_mode,
+                                   gate_attempt=self.gate_attempt,
+                                   pending_transfer=(dict(sender_id=self.pending.sender_id,
+                                       receiver_id=self.pending.receiver_id, epoch=self.pending.epoch,
+                                       revision=self.pending.revision, holder=self.pending.holder,
+                                       transfer_id=self.pending.transfer_id,
+                                       request_queue=list(self.pending.request_queue))
+                                       if self.gate and self.pending else None),
+                                   incoming_pending=self.incoming_pending,
+                                   handoff_blocked=self.handoff_blocked), stream)
+                    stage = "flush"
+                    stream.flush()
+                    stage = "fsync"
+                    os.fsync(stream.fileno())
+                stage = "replace"
+                os.replace(temporary, self.path)
+                temporary = None
+            except Exception as error:
+                # A failed write may have partially or fully committed. Retain
+                # all in-memory recovery records, but do not use authority until
+                # a fresh Gate read and a subsequent durable write both succeed.
+                self.state.has_token = False
+                self.state.mode = Mode.REJOINING
+                self.authority_refresh_needed = True
+                cleanup_errors = []
+                if descriptor is not None:
+                    try:
+                        os.close(descriptor)
+                    except OSError as cleanup_error:
+                        cleanup_errors.append(str(cleanup_error))
+                if temporary is not None:
+                    try:
+                        os.unlink(temporary)
+                    except FileNotFoundError:
+                        pass  # A replacement may have committed before an error was reported.
+                    except OSError as cleanup_error:
+                        cleanup_errors.append(str(cleanup_error))
+                previous_failure = self.background_failure
+                self.background_failure = previous_failure or "persistence_reporting"
+                self.emit("STATE_PERSIST_FAILED", stage=stage, error_type=type(error).__name__,
+                          errno=getattr(error, "errno", None), winerror=getattr(error, "winerror", None), detail=str(error),
+                          cleanup_errors=cleanup_errors)
+                self.background_failure = previous_failure
+                if isinstance(error, OSError):
+                    raise PersistenceError(str(error)) from error
+                raise
 
     def reply(self, accepted, reason=""):
         return pb.Reply(accepted=accepted, reason=reason, epoch=self.state.current_epoch,
                         revision=self.state.revision)
 
     def valid(self, epoch):
-        return self.state.mode != Mode.REJOINING and epoch == self.state.current_epoch
+        return not self.background_failure and self.state.mode != Mode.REJOINING and epoch == self.state.current_epoch
 
     async def reconcile(self, epoch, holder, mode=Mode.LOCAL, revision=0):
         """Trusted integration hook ONLY: caller must establish authoritative state.
@@ -141,6 +288,8 @@ class Agent(rpc.CraneAgentServicer):
         if self.gate:
             raise ValueError("Gate-enabled agents must use reconcile_from_gate")
         async with self.lock:
+            if self.background_failure:
+                raise RuntimeError("Required background worker failed")
             if ((epoch, revision) < (self.state.current_epoch, self.state.revision)
                     or holder not in {self.state.agent_id, *self.peers}):
                 raise ValueError("Stale epoch or unknown holder")
@@ -156,6 +305,8 @@ class Agent(rpc.CraneAgentServicer):
             self.last_handoff = ""
             self.received.clear()
             self.observed_handoffs.clear()
+            self.gate_transfer_queues.clear()
+            self.gate_received_transfers.clear()
             self.persist()
             self.emit("MODE_CHANGED", mode=mode.name)
 
@@ -203,6 +354,7 @@ class Agent(rpc.CraneAgentServicer):
             self.emit("TOKEN_REQUEST_RECEIVED", request.agent_id, request_id=request.request_id)
             if request.agent_id not in self.state.request_queue:
                 self.state.request_queue.append(request.agent_id)
+                self.persist()
                 self.emit("TOKEN_QUEUED", request.agent_id, request_id=request.request_id)
             return self.reply(True)
 
@@ -362,8 +514,9 @@ class Agent(rpc.CraneAgentServicer):
         if self.gate and not await self.reconcile_from_gate():
             return self.reply(False, "Gate state unavailable or inconsistent")
         async with self.lock:
-            if self.state.mode == Mode.REJOINING or self.state.has_token:
-                return self.reply(False, "Rejoining or already holder")
+            if (self.state.mode == Mode.REJOINING or self.state.has_token or self.pending
+                    or self.gate_attempt or self.incoming_pending or self.background_failure):
+                return self.reply(False, "Authority or handoff unresolved, or already holder")
             holder = self.state.token_holder
             message = pb.TokenRequestMessage(agent_id=self.state.agent_id,
                 epoch=self.state.current_epoch, revision=self.state.revision, request_id=uuid.uuid4().hex)
@@ -421,18 +574,52 @@ class Agent(rpc.CraneAgentServicer):
             k: authority.get(k) for k in ("epoch", "revision", "holder")})
         return authority
 
-    def adopt_gate_state(self, authority, *, allow_owner=True):
+    def adopt_gate_state(self, authority, *, allow_owner=True, transfer=None):
         """Apply only gate responses, under lock and authority_lock.
 
         Epoch/revision are an ordered pair. Gate revisions currently increase
         globally too; a new epoch's revision is still taken from the gate.
         """
+        if self.background_failure:
+            return False
         epoch, revision, holder = (authority.get(k) for k in ("epoch", "revision", "holder"))
         if (type(epoch) is not int or type(revision) is not int or epoch < 0 or revision < 0
                 or holder not in {self.state.agent_id, *self.peers}
                 or authority.get("mode") not in {"CENTRAL", "LOCAL"}):
             self.suspend("Gate authority uninitialized or incompatible with membership")
             self.emit("GATE_STATE_RECONCILED", result="INVALID_AUTHORITY")
+            return False
+        transition = authority.get("authority_transition")
+        if transition is not None and (type(transition) is not dict
+                or set(transition) != {"kind", "epoch", "revision", "holder", "actor_id", "request_id"}
+                or type(transition["kind"]) is not str or transition["kind"] not in {"INSTALL", "TRANSFER"}
+                or type(transition["epoch"]) is not int or type(transition["revision"]) is not int
+                or (transition["epoch"], transition["revision"], transition["holder"]) != (epoch, revision, holder)
+                or type(transition["actor_id"]) is not str or not transition["actor_id"]
+                or (transition["kind"] == "TRANSFER" and
+                    (transition["actor_id"] not in {self.state.agent_id, *self.peers}
+                     or transition["actor_id"] == holder))
+                or type(transition["request_id"]) is not str or not transition["request_id"]):
+            self.suspend("Gate authority transition invalid")
+            self.emit("GATE_STATE_RECONCILED", result="INVALID_TRANSITION")
+            return False
+        handoff = authority.get("last_handoff")
+        if handoff is not None and (type(handoff) is not dict
+                or set(handoff) != {"epoch", "revision", "holder", "actor_id", "request_id"}
+                or type(handoff["epoch"]) is not int or type(handoff["revision"]) is not int
+                or handoff["epoch"] < 0 or handoff["revision"] < 0
+                or (handoff["epoch"], handoff["revision"]) > (epoch, revision)
+                or type(handoff["holder"]) is not str or handoff["holder"] not in {self.state.agent_id, *self.peers}
+                or type(handoff["actor_id"]) is not str or handoff["actor_id"] not in {self.state.agent_id, *self.peers}
+                or handoff["actor_id"] == handoff["holder"]
+                or type(handoff["request_id"]) is not str or not handoff["request_id"]):
+            self.suspend("Gate handoff identity invalid")
+            self.emit("GATE_STATE_RECONCILED", result="INVALID_HANDOFF")
+            return False
+        if (transition is not None and transition["kind"] == "TRANSFER" and handoff is not None
+                and handoff != {k: transition[k] for k in ("epoch", "revision", "holder", "actor_id", "request_id")}):
+            self.suspend("Gate handoff identity inconsistent")
+            self.emit("GATE_STATE_RECONCILED", result="INVALID_HANDOFF")
             return False
         if (epoch, revision) < (self.state.current_epoch, self.state.revision):
             self.suspend("Gate authority older than local state")
@@ -441,13 +628,65 @@ class Agent(rpc.CraneAgentServicer):
                       authoritative_holder=holder)
             return False
         old = (self.state.current_epoch, self.state.revision, self.state.token_holder)
+        previous_incoming = self.incoming_pending
+        if old[2] != holder or holder != self.state.agent_id:
+            # Installations can move authority away and later back while the
+            # Gate still identifies this already-received handoff. Retain that
+            # receipt, but not receipts superseded by a later Gate handoff.
+            receipt_key = (json.dumps((handoff["epoch"], handoff["revision"], handoff["actor_id"],
+                                       handoff["request_id"]), separators=(",", ":"))
+                           if handoff is not None and handoff["holder"] == self.state.agent_id else None)
+            self.gate_transfer_queues = {key: queue for key, queue in self.gate_transfer_queues.items()
+                                         if key == receipt_key}
+            self.gate_received_transfers.intersection_update(self.gate_transfer_queues)
+        if old[2] != holder or holder != self.state.agent_id:
+            self.state.request_queue.clear()
+        if holder != self.state.agent_id:
+            self.incoming_pending = None
+        elif self.incoming_pending and old != (epoch, revision, holder):
+            self.incoming_pending = dict(epoch=epoch, revision=revision)
+        elif (handoff is not None and handoff["holder"] == holder and transfer is None
+              and json.dumps((handoff["epoch"], handoff["revision"], handoff["actor_id"], handoff["request_id"]),
+                             separators=(",", ":")) not in self.gate_received_transfers):
+            self.incoming_pending = dict(epoch=epoch, revision=revision)
+        elif (handoff is None and transition is not None and transition["kind"] == "TRANSFER" and transfer is None
+              and json.dumps((epoch, revision, transition["actor_id"], transition["request_id"]),
+                             separators=(",", ":")) not in self.gate_received_transfers):
+            self.incoming_pending = dict(epoch=epoch, revision=revision)
+        elif (transition is None and transfer is None and epoch == old[0]
+              and old[2] != holder and revision > old[1]):
+            # Gate state alone cannot tell a handoff from every controller
+            # installation. Await its queue rather than forward an empty one.
+            self.incoming_pending = dict(epoch=epoch, revision=revision)
+        if transfer is not None:
+            self.incoming_pending = None
         self.state.current_epoch, self.state.revision = epoch, revision
         self.state.token_holder = holder
-        self.state.has_token = bool(allow_owner and not self.gate_attempt and holder == self.state.agent_id)
+        self.state.has_token = bool(allow_owner and not self.gate_attempt and not self.pending
+                                    and not self.incoming_pending and holder == self.state.agent_id)
         previous_mode = self.state.mode
+        previous_gate_mode = self.gate_authority_mode
         self.state.mode = Mode[authority["mode"]]
+        self.gate_authority_mode = authority["mode"]
+        new_central_install = (transition is not None and transition["kind"] == "INSTALL"
+                               and old != (epoch, revision, holder))
+        if (self.controller_probe is not None and self.state.mode == Mode.CENTRAL
+                and (previous_gate_mode != "CENTRAL" or new_central_install)):
+            # A suspicion from the preceding CENTRAL term cannot prove that
+            # the newly installed controller has already failed. Require a
+            # fresh timeout, while still reporting restoration only after a probe.
+            if self.controller_suspected:
+                self.controller_return_pending = True
+            self.controller_suspected = False
+            self.last_controller_seen = self.clock()
+        if transfer is not None:
+            transfer_key, queue = transfer
+            self.state.request_queue = deque(queue + [p for p in self.state.request_queue if p not in queue])
+            self.gate_transfer_queues[transfer_key] = queue
         self.persist()
         self.emit("GATE_STATE_RECONCILED", result="OK")
+        if self.incoming_pending and self.incoming_pending != previous_incoming:
+            self.emit("HANDOFF_DELIVERY_WAITING", pending_state=dict(self.incoming_pending))
         if old != (epoch, revision, holder):
             self.emit("AUTHORITY_UPDATED")
             self.emit("TOKEN_HOLDER_CHANGED")
@@ -461,12 +700,8 @@ class Agent(rpc.CraneAgentServicer):
             if authority is None:
                 return False
             async with self.lock:
-                old_epoch = self.state.current_epoch
                 if not self.adopt_gate_state(authority):
                     return False
-                if (old_epoch != self.state.current_epoch
-                        or self.state.token_holder != self.state.agent_id):
-                    self.state.request_queue.clear()
                 return True
 
     async def reconcile_controller_return(self):
@@ -490,13 +725,8 @@ class Agent(rpc.CraneAgentServicer):
             if authority is None:
                 return False
             async with self.lock:
-                old = (self.state.current_epoch, self.state.revision,
-                       self.state.token_holder)
                 if not self.adopt_gate_state(authority):
                     return False
-                if old != (self.state.current_epoch, self.state.revision,
-                           self.state.token_holder):
-                    self.state.request_queue.clear()
                 return self.state.mode == Mode.CENTRAL
 
     async def receive_gate_transfer(self, request):
@@ -516,22 +746,40 @@ class Agent(rpc.CraneAgentServicer):
             async with self.lock:
                 matches = ((authority.get("epoch"), authority.get("revision"), authority.get("holder"))
                            == (request.epoch, request.revision, request.holder))
-                if not self.adopt_gate_state(authority, allow_owner=matches):
+                transition = authority.get("authority_transition")
+                if matches and transition is not None and (type(transition) is not dict
+                        or transition.get("kind") != "TRANSFER"
+                        or transition.get("actor_id") != request.sender_id
+                        or transition.get("request_id") != request.transfer_id):
+                    return self.reply(False, "Transfer identity does not match Gate transition")
+                key = (request.epoch, request.revision, request.sender_id, request.transfer_id)
+                durable_key = json.dumps(key, separators=(",", ":"))
+                previous_queue = self.gate_transfer_queues.get(durable_key)
+                if matches and previous_queue is not None and previous_queue != queue:
+                    return self.reply(False, "Transfer identity reused with different queue")
+                transfer = ((durable_key, queue) if matches and durable_key not in self.gate_received_transfers
+                            else None)
+                if not self.adopt_gate_state(authority, allow_owner=matches, transfer=transfer):
                     return self.reply(False, "Inconsistent gate authority")
                 if not matches:
                     return self.reply(False, "Transfer does not match gate authority")
-                key = (request.epoch, request.revision, request.sender_id, request.transfer_id)
-                if key not in self.received:
-                    self.state.request_queue = deque(queue)
+                if durable_key not in self.gate_received_transfers:
+                    self.gate_received_transfers.add(durable_key)
+                    try:
+                        self.persist()
+                    except Exception:
+                        self.gate_received_transfers.discard(durable_key)
+                        raise
                     self.received.add(key)
                     self.emit("TOKEN_TRANSFER_RECEIVED", request.sender_id,
                               transfer_id=request.transfer_id)
-                self.persist()
                 return self.reply(True)
 
     async def transfer_with_gate(self):
         """Serialised by authority_lock; state lock is released for all I/O."""
         async with self.lock:
+            if self.handoff_blocked:
+                return False
             if not self.gate_attempt and not self.pending and (
                     self.state.mode == Mode.REJOINING or not self.state.has_token
                     or not self.state.request_queue):
@@ -545,7 +793,11 @@ class Agent(rpc.CraneAgentServicer):
             if self.pending:
                 if ((self.pending.epoch, self.pending.revision, self.pending.holder) !=
                         (self.state.current_epoch, self.state.revision, self.state.token_holder)):
-                    self.pending = None
+                    self.handoff_blocked = "DELIVERY_SUPERSEDED"
+                    self.state.has_token = False
+                    self.persist()
+                    self.emit("HANDOFF_DELIVERY_BLOCKED", reason=self.handoff_blocked,
+                              transfer_id=self.pending.transfer_id)
                     return False
             elif not self.gate_attempt:
                 if not self.state.has_token or not self.state.request_queue:
@@ -565,62 +817,59 @@ class Agent(rpc.CraneAgentServicer):
         if attempt:
             payload = attempt["command"]
             target = (payload["epoch"], payload["revision"] + 1, payload["destination"])
-            base = (payload["epoch"], payload["revision"], self.state.agent_id)
-            observed = tuple(authority[k] for k in ("epoch", "revision", "holder"))
-            if observed == base:
-                self.emit("GATE_TRANSFER_REQUESTED", payload["destination"],
-                          request_id=payload["request_id"])
-                try:
-                    result = await self.gate.transfer(payload)
-                except (grpc.RpcError, RuntimeError) as error:
-                    self.emit("GATE_TRANSFER_UNCERTAIN", payload["destination"],
-                              request_id=payload["request_id"], reason=str(error))
-                    authority = await self.query_gate()
-                    if authority is None:
-                        return False
-                    observed = tuple(authority.get(k) for k in ("epoch", "revision", "holder"))
-                    self.emit("GATE_TRANSFER_RESOLVED", payload["destination"],
-                              result="COMMITTED" if observed == target else "RETRY_OR_SUPERSEDED",
-                              authoritative_state=dict(zip(("epoch", "revision", "holder"), observed)),
-                              request_id=payload["request_id"])
-                    if observed == base:
-                        # Keep ownership suspended and the identical request ID.
-                        # Next iteration retries; GetState alone cannot prove no
-                        # delayed request is still in flight at the gate.
-                        return False
-                else:
-                    self.emit("GATE_TRANSFER_ACCEPTED" if result["allowed"] else "GATE_TRANSFER_REJECTED",
-                              payload["destination"], request_id=payload["request_id"],
-                              reason=result["reason"], replayed=result["replayed"],
-                              authoritative_state={k: result.get("state", {}).get(k)
-                                  for k in ("epoch", "revision", "holder")})
-                    authority = result.get("state") or await self.query_gate()
-                    if authority is None:
-                        return False
-                    if not result["allowed"]:
-                        async with self.lock:
-                            self.gate_attempt = None
-                            self.adopt_gate_state(authority)
-                        return False
-                    observed = tuple(authority.get(k) for k in ("epoch", "revision", "holder"))
-            else:
-                self.emit("GATE_TRANSFER_RESOLVED", payload["destination"],
-                          result="COMMITTED" if observed == target else "SUPERSEDED",
-                          authoritative_state=dict(zip(("epoch", "revision", "holder"), observed)),
-                          request_id=payload["request_id"])
+            self.emit("GATE_TRANSFER_REQUESTED", payload["destination"], request_id=payload["request_id"])
+            try:
+                # Even if GetState equals the target, only replaying this exact
+                # command identifies its durable Gate outcome.
+                result = await self.gate.transfer(payload)
+            except (grpc.RpcError, RuntimeError) as error:
+                self.emit("GATE_TRANSFER_UNCERTAIN", payload["destination"],
+                          request_id=payload["request_id"], reason=str(error))
+                await self.query_gate()  # A failed read also suspends local participation.
+                return False
+            self.emit("GATE_TRANSFER_ACCEPTED" if result["allowed"] else "GATE_TRANSFER_REJECTED",
+                      payload["destination"], request_id=payload["request_id"],
+                      reason=result["reason"], replayed=result["replayed"],
+                      authoritative_state={k: result.get("state", {}).get(k)
+                          for k in ("epoch", "revision", "holder")})
+            # Pre-transaction errors contain no request ID or state and are
+            # not cached decisions. A conflicting ID is not a decision about
+            # this payload either. A prior copy may still reach the Gate.
+            if (result.get("request_id") != payload["request_id"]
+                    or result.get("reason") == "REQUEST_ID_CONFLICT"
+                    or not result.get("state")):
+                self.emit("GATE_TRANSFER_UNCERTAIN", payload["destination"],
+                          request_id=payload["request_id"], reason=result.get("reason"))
+                await self.query_gate()
+                return False
+            authority = result.get("state") or await self.query_gate()
+            if authority is None:
+                return False
+            observed = tuple(authority.get(k) for k in ("epoch", "revision", "holder"))
             async with self.lock:
+                if not result["allowed"] and authority.get("holder") == self.state.agent_id:
+                    # A definitive denial is cached for this exact request ID.
+                    # The Gate may have moved away and back while this attempt
+                    # was unresolved, so the live queue may already be empty.
+                    retained = [payload["destination"], *attempt["queue"]]
+                    self.state.request_queue = deque(retained + [
+                        peer for peer in self.state.request_queue if peer not in retained])
+                    self.gate_attempt = None
+                    self.adopt_gate_state(authority)
+                    return False
                 if not self.adopt_gate_state(authority):
                     return False
-                self.gate_attempt = None
-                self.state.request_queue.clear()
-                if observed != target:
-                    # A replay's allowed=true is historical. Never notify based
-                    # on historical success when current authority moved again.
+                if not result["allowed"] or observed != target:
+                    self.handoff_blocked = "GATE_OUTCOME_SUPERSEDED"
+                    self.state.has_token = False
                     self.persist()
+                    self.emit("HANDOFF_DELIVERY_BLOCKED", reason=self.handoff_blocked,
+                              transfer_id=payload["request_id"])
                     return False
                 self.pending = pb.TokenTransferMessage(sender_id=self.state.agent_id,
                     receiver_id=payload["destination"], epoch=target[0], revision=target[1],
                     holder=target[2], transfer_id=payload["request_id"], request_queue=attempt["queue"])
+                self.gate_attempt = None
                 self.last_handoff = payload["request_id"]
                 self.persist()
         message = self.pending
@@ -633,6 +882,11 @@ class Agent(rpc.CraneAgentServicer):
         async with self.lock:
             if result.accepted and self.pending is message:
                 self.pending = None
+                try:
+                    self.persist()
+                except Exception:
+                    self.pending = message
+                    raise
             return result.accepted
 
     async def rejoin_loop(self):
@@ -711,11 +965,8 @@ class Agent(rpc.CraneAgentServicer):
             if authority is None:
                 return
             async with self.lock:
-                old_epoch = self.state.current_epoch
                 if not self.adopt_gate_state(authority):
                     return
-                if old_epoch != self.state.current_epoch:
-                    self.state.request_queue.clear()
                 if not self.automatic_recovery_needed():
                     return
                 controller_fallback = self.state.mode == Mode.CENTRAL
@@ -752,7 +1003,6 @@ class Agent(rpc.CraneAgentServicer):
                 async with self.lock:
                     old_epoch = self.state.current_epoch
                     if self.adopt_gate_state(authority) and old_epoch != self.state.current_epoch:
-                        self.state.request_queue.clear()
                         self.pending = None
                         self.last_handoff = ""
                         self.received.clear()
@@ -802,6 +1052,8 @@ class Agent(rpc.CraneAgentServicer):
             await asyncio.sleep(self.interval)
 
     async def start(self, address, auto_transfer=True, *, interceptors=()):
+        if self.server is not None:
+            raise RuntimeError("Agent already started")
         self.server = grpc.aio.server(interceptors=interceptors)
         rpc.add_CraneAgentServicer_to_server(self, self.server)
         port = self.server.add_insecure_port(address)
@@ -809,19 +1061,61 @@ class Agent(rpc.CraneAgentServicer):
             raise RuntimeError("Cannot bind agent address")
         await self.server.start()
         self.emit("AGENT_STARTED", mode=self.state.mode.name)
+        if self.incoming_pending:
+            self.emit("HANDOFF_DELIVERY_WAITING", pending_state=dict(self.incoming_pending))
+        if self.handoff_blocked:
+            self.emit("HANDOFF_DELIVERY_BLOCKED", reason=self.handoff_blocked,
+                      transfer_id=(self.pending.transfer_id if self.pending
+                                   else self.gate_attempt["command"]["request_id"]))
         if self.gate:
             await self.reconcile_from_gate()
-        self.tasks = [asyncio.create_task(self.heartbeat_loop()),
-                      asyncio.create_task(self.monitor_loop())]
+        def start_worker(loop):
+            return asyncio.create_task(self.run_background(loop), name=loop.__name__)
+
+        self.tasks = [start_worker(self.heartbeat_loop), start_worker(self.monitor_loop)]
         if auto_transfer:
-            self.tasks.append(asyncio.create_task(self.transfer_loop()))
+            self.tasks.append(start_worker(self.transfer_loop))
         if self.gate:
-            self.tasks.append(asyncio.create_task(self.rejoin_loop()))
+            self.tasks.append(start_worker(self.rejoin_loop))
         if self.controller_probe:
-            self.tasks.append(asyncio.create_task(self.controller_watch_loop()))
+            self.tasks.append(start_worker(self.controller_watch_loop))
         if self.gate and self.recovery_config is not None:
-            self.tasks.append(asyncio.create_task(self.recovery_loop()))
+            self.tasks.append(start_worker(self.recovery_loop))
         return port
+
+    async def run_background(self, loop):
+        """Retry persistence failures; make unexpected worker loss fail closed."""
+        retry_delay = self.interval
+        maximum_delay = max(5.0, self.interval)
+        last_failure = None
+        while True:
+            try:
+                await loop()
+                raise RuntimeError("Background loop returned unexpectedly")
+            except PersistenceError as error:
+                async with self.lock:
+                    self.state.has_token = False
+                    self.state.mode = Mode.REJOINING
+                    self.authority_refresh_needed = True
+                    previous_failure = self.background_failure
+                    self.background_failure = previous_failure or loop.__name__
+                    self.emit("BACKGROUND_RETRY", worker=loop.__name__, detail=str(error))
+                    self.background_failure = previous_failure
+                now = time.monotonic()
+                if last_failure is not None and now - last_failure > maximum_delay * 2:
+                    retry_delay = self.interval
+                last_failure = now
+                await asyncio.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, maximum_delay)
+            except Exception as error:
+                async with self.lock:
+                    self.background_failure = loop.__name__
+                    self.state.has_token = False
+                    self.state.mode = Mode.REJOINING
+                    self.authority_refresh_needed = True
+                    self.emit("BACKGROUND_FAILED", worker=loop.__name__,
+                              error_type=type(error).__name__, detail=str(error))
+                raise
 
     async def close(self):
         for task in self.tasks:

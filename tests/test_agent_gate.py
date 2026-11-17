@@ -2,6 +2,8 @@
 import asyncio
 from contextlib import asynccontextmanager
 import json
+import os
+from pathlib import Path
 
 import grpc
 import pytest
@@ -140,17 +142,24 @@ def test_lost_committed_reply_resolves_from_getstate(h, tmp_path):
     async def scenario():
         async with cluster(h, tmp_path) as ([a, b], events):
             real_transfer = a.gate.transfer
+            calls = 0
             async def lost(payload):
+                nonlocal calls
+                calls += 1
                 result = await real_transfer(payload)
                 assert result["allowed"]
-                raise RuntimeError("Injected lost response after commit")
+                if calls == 1:
+                    raise RuntimeError("Injected lost response after commit")
+                return result
             a.gate.transfer = lost
             assert (await b.request_token()).accepted
+            assert not await a.transfer_next()
+            assert not a.state.has_token and not b.state.has_token
             assert await a.transfer_next()
             assert not a.state.has_token and b.state.has_token
             assert h.state["holder"] == "crane-2"
             assert any(e["event"] == "GATE_TRANSFER_UNCERTAIN" for e in events)
-            assert any(e["event"] == "GATE_TRANSFER_RESOLVED" and e["result"] == "COMMITTED" for e in events)
+            assert any(e["event"] == "GATE_TRANSFER_ACCEPTED" and e["replayed"] for e in events)
     asyncio.run(scenario())
 
 
@@ -191,6 +200,7 @@ def test_committed_but_gate_unreachable_keeps_sender_suspended(h, tmp_path):
             assert not a.state.has_token and not b.state.has_token
             assert a.state.mode == Mode.REJOINING and h.state["holder"] == "crane-2"
             a.gate.state = real_state
+            a.gate.transfer = real_transfer
             assert await a.transfer_next()
             assert b.state.has_token and not a.state.has_token
     asyncio.run(scenario())
@@ -211,6 +221,53 @@ def test_concurrent_handoffs_and_fifo_through_three_members(h, tmp_path):
             assert h.state["holder"] == "crane-3" and h.state["revision"] == 3
             transitions = [e for e in h.gate.events() if e["operation"] == "TransferHolder"]
             assert len(transitions) == 2
+    asyncio.run(scenario())
+
+
+def test_receiver_retry_preserves_queue_after_second_persistence_failure(h, tmp_path, monkeypatch):
+    h.ready()
+    async def scenario():
+        async with cluster(h, tmp_path, count=3) as ([a, b, c], events):
+            assert (await b.request_token()).accepted
+            assert (await c.request_token()).accepted
+            real_replace = os.replace
+            receiver_writes = 0
+            def fail_second_receiver_write(source, destination):
+                nonlocal receiver_writes
+                if Path(destination) == b.path:
+                    receiver_writes += 1
+                    if receiver_writes == 2:
+                        raise PermissionError(13, "injected receiver persistence failure")
+                return real_replace(source, destination)
+            with monkeypatch.context() as patcher:
+                patcher.setattr(os, "replace", fail_second_receiver_write)
+                assert not await a.transfer_next()
+            assert receiver_writes == 2 and a.pending
+            transfer_id = a.pending.transfer_id
+            original_transfer = pb.TokenTransferMessage()
+            original_transfer.CopyFrom(a.pending)
+            assert h.state["holder"] == "crane-2" and h.state["revision"] == 2
+            assert not a.state.has_token and not b.state.has_token
+            assert b.state.mode == Mode.REJOINING and list(b.state.request_queue) == ["crane-3"]
+            assert not b.received
+            assert not any(e["event"] == "TOKEN_TRANSFER_RECEIVED" for e in events)
+            assert await b.reconcile_from_gate()
+            request = pb.TokenRequestMessage(agent_id="crane-1", epoch=0, revision=2, request_id="later")
+            assert not (await b.TokenRequest(request, None)).accepted
+            assert await a.transfer_next()
+            assert (await b.TokenRequest(request, None)).accepted
+            assert list(b.state.request_queue) == ["crane-3", "crane-1"]
+            assert b.state.has_token and not a.state.has_token and not c.state.has_token
+            received = [e for e in events if e["event"] == "TOKEN_TRANSFER_RECEIVED"]
+            assert len(received) == 1 and received[0]["transfer_id"] == transfer_id
+            assert (await b.TokenTransfer(original_transfer, None)).accepted
+            assert list(b.state.request_queue) == ["crane-3", "crane-1"]
+            assert await b.transfer_next()
+            assert h.state["holder"] == "crane-3" and c.state.has_token
+            assert not a.state.has_token and not b.state.has_token
+            assert list(c.state.request_queue) == ["crane-1"]
+            assert not (await b.TokenTransfer(original_transfer, None)).accepted
+            assert c.state.has_token and not b.state.has_token
     asyncio.run(scenario())
 
 
