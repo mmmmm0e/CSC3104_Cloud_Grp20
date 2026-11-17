@@ -49,7 +49,8 @@ def test_majority_partition_recovers_and_fences_old_holder(h, tmp_path, with_gat
                 # Do not let the automatic installer race that manual workflow;
                 # automatic recovery is covered by test_auto_recovery.py.
                 workers = [task for task in agents[identity].tasks
-                           if task.get_coro().__name__ == "recovery_loop"]
+                           if task.get_name() == "recovery_loop"]
+                assert len(workers) == int(with_gate)
                 for task in workers:
                     task.cancel()
                 await asyncio.gather(*workers, return_exceptions=True)

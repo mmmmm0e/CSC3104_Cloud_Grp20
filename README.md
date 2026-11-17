@@ -156,8 +156,10 @@ known holder can announce an outgoing handoff, but never set local `has_token`.
 Only receipt of a valid TokenTransfer grants local ownership.
 
 Persistence uses flushed JSON plus atomic file replacement for epoch/holder/token
-and reserved opaque vote storage. Restart always blocks ownership. Queue, transfer
-retry and deduplication history are in-memory for this milestone. Recovery votes are
+and reserved opaque vote storage. Restart always blocks ownership. Gate-enabled
+agents persist their local queue, handoff retries and receipt identities, but this
+is not a replicated queue; see [handoff durability limits](docs/HANDOFF_DURABILITY_DESIGN.md).
+Recovery votes are
 durable and exposed through `VoteRecovery`; a member will reproduce an identical vote
 but will not sign a conflicting proposal for the same target epoch. Use one process
 and one state file per agent.

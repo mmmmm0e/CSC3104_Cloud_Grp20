@@ -133,7 +133,7 @@ def test_controller_return_retries_snapshot_without_replacing_new_holder(h, monk
 
 
 @pytest.mark.parametrize("with_gate", [False, True])
-def test_controller_reconciles_agents_from_gate_state(h, with_gate):
+def test_controller_reconciles_agents_from_gate_state(h, tmp_path, with_gate):
     assert h.install(mode="CENTRAL")["allowed"]
     server = RunningServer(h.gate, "127.0.0.1:0")
     try:
@@ -148,6 +148,7 @@ def test_controller_reconciles_agents_from_gate_state(h, with_gate):
                     "crane-1",
                     epoch=0,
                     mode=Mode.REJOINING,
+                    state_file=tmp_path / "agent.json",
                     gate=GateClient(grpc.insecure_channel(f"127.0.0.1:{server.port}"),
                                     h.config, h.keys, "crane-2") if with_gate else None,
                 )
@@ -233,7 +234,7 @@ def test_agent_starts_controller_watch_only_when_configured(with_probe):
         try:
             await agent.start("127.0.0.1:0", auto_transfer=False)
             watchers = [task for task in agent.tasks
-                        if task.get_coro().__name__ == "controller_watch_loop"]
+                        if task.get_name() == "controller_watch_loop"]
             assert len(watchers) == int(with_probe)
             if with_probe:
                 await asyncio.wait_for(called.wait(), timeout=1)

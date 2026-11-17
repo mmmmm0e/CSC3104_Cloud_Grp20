@@ -86,7 +86,7 @@ class WorkloadService(rpc.CraneWorkloadServicer):
                     reason = "REQUEST_ID_CONFLICT"
                 elif agent.gate is None or agent.path is None:
                     reason = "GATE_UNAVAILABLE"
-                elif state.mode == Mode.REJOINING or agent.authority_refresh_needed:
+                elif agent.background_failure or state.mode == Mode.REJOINING or agent.authority_refresh_needed:
                     reason = "AUTHORITY_UNCERTAIN"
                 elif agent.pending or agent.gate_attempt:
                     reason = "TRANSFER_PENDING"
@@ -106,11 +106,8 @@ class WorkloadService(rpc.CraneWorkloadServicer):
                 else:
                     async with agent.lock:
                         if central_refresh and not agent.pending and not agent.gate_attempt:
-                            previous = (agent.state.current_epoch, agent.state.revision, agent.state.token_holder)
-                            if agent.adopt_gate_state(authority) and previous != (
-                                    agent.state.current_epoch, agent.state.revision, agent.state.token_holder):
-                                agent.state.request_queue.clear()
-                        if (agent.state.mode == Mode.REJOINING or agent.authority_refresh_needed
+                            agent.adopt_gate_state(authority)
+                        if (agent.background_failure or agent.state.mode == Mode.REJOINING or agent.authority_refresh_needed
                                 or agent.pending or agent.gate_attempt or not agent.state.has_token
                                 or (agent.state.current_epoch, agent.state.revision) !=
                                    (request.expected_epoch, request.expected_revision)):
@@ -121,7 +118,8 @@ class WorkloadService(rpc.CraneWorkloadServicer):
                             try:
                                 agent.persist()
                             except OSError:
-                                del agent.workload_requests[request.request_id]
+                                # A failed replace can leave the binding durable.
+                                # Keep it in memory until a later write succeeds.
                                 reason = "STATE_UNAVAILABLE"
                     if reason is None:
                         try:
@@ -135,7 +133,7 @@ class WorkloadService(rpc.CraneWorkloadServicer):
                         # another process, so verify both again after the I/O.
                         current = await agent.query_gate()
                         async with agent.lock:
-                            safe = (current is not None and not agent.authority_refresh_needed
+                            safe = (current is not None and not agent.background_failure and not agent.authority_refresh_needed
                                 and not agent.pending and not agent.gate_attempt
                                 and agent.state.mode != Mode.REJOINING and agent.state.has_token
                                 and agent.state.token_holder == agent.state.agent_id

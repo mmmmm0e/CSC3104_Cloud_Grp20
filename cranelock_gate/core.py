@@ -92,6 +92,31 @@ class Gate:
                 or state["mode"] not in {"CENTRAL", "LOCAL", "UNINITIALIZED"}
                 or (state["epoch"] >= 0 and state["holder"] not in self.config.members)):
             raise RuntimeError("Invalid persisted state")
+        transition = state.get("authority_transition")
+        if transition is not None and (type(transition) is not dict
+                or set(transition) != {"kind", "epoch", "revision", "holder", "actor_id", "request_id"}
+                or type(transition["kind"]) is not str or transition["kind"] not in {"INSTALL", "TRANSFER"}
+                or not integer(transition["epoch"]) or not integer(transition["revision"])
+                or type(transition["holder"]) is not str
+                or (transition["epoch"], transition["revision"], transition["holder"]) !=
+                   (state["epoch"], state["revision"], state["holder"])
+                or type(transition["actor_id"]) is not str or transition["actor_id"] not in self.config.keys
+                or type(transition["request_id"]) is not str
+                or not 1 <= len(transition["request_id"]) <= 128):
+            raise RuntimeError("Invalid persisted authority transition")
+        handoff = state.get("last_handoff")
+        if handoff is not None and (type(handoff) is not dict
+                or set(handoff) != {"epoch", "revision", "holder", "actor_id", "request_id"}
+                or not integer(handoff["epoch"]) or not integer(handoff["revision"])
+                or (handoff["epoch"], handoff["revision"]) > (state["epoch"], state["revision"])
+                or type(handoff["holder"]) is not str or handoff["holder"] not in self.config.members
+                or type(handoff["actor_id"]) is not str or handoff["actor_id"] not in self.config.members
+                or handoff["actor_id"] == handoff["holder"]
+                or type(handoff["request_id"]) is not str or not 1 <= len(handoff["request_id"]) <= 128):
+            raise RuntimeError("Invalid persisted handoff identity")
+        if (transition is not None and transition["kind"] == "TRANSFER" and handoff is not None
+                and handoff != {k: transition[k] for k in ("epoch", "revision", "holder", "actor_id", "request_id")}):
+            raise RuntimeError("Inconsistent persisted handoff identity")
 
     def close(self):
         with self.lock:
@@ -275,6 +300,9 @@ class Gate:
         actor = command["actor_id"]
         if operation == "InstallAuthority":
             self._install(command, state, now)
+            state["authority_transition"] = dict(kind="INSTALL", epoch=state["epoch"],
+                revision=state["revision"], holder=state["holder"], actor_id=actor,
+                request_id=command["request_id"])
         elif operation == "TransferHolder":
             self._authority_check(command, state)
             destination = command["destination"]
@@ -283,6 +311,11 @@ class Gate:
             self._clear_required(state)
             state["holder"] = destination
             state["revision"] += 1
+            state["authority_transition"] = dict(kind="TRANSFER", epoch=state["epoch"],
+                revision=state["revision"], holder=state["holder"], actor_id=actor,
+                request_id=command["request_id"])
+            state["last_handoff"] = dict(epoch=state["epoch"], revision=state["revision"],
+                holder=state["holder"], actor_id=actor, request_id=command["request_id"])
         elif operation == "RequestGrant":
             self._authority_check(command, state)
             self._clear_required(state)

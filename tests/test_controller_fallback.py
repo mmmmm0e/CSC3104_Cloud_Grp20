@@ -207,7 +207,7 @@ def test_controller_return_does_not_overwrite_local_transfer(h, tmp_path, commit
                 assert not await asyncio.wait_for(transfer, 2)
                 if committed:
                     # The old notification is fenced by the restored revision.
-                    # Resolve it as the normal automatic transfer worker would.
+                    # Retain it for resolution rather than dropping its queue.
                     assert holder.pending is not None
                     assert not await holder.transfer_next()
                 await until(lambda: all(agent.state.mode == Mode.CENTRAL
@@ -215,7 +215,10 @@ def test_controller_return_does_not_overwrite_local_transfer(h, tmp_path, commit
                 assert (h.state["epoch"], h.state["revision"], h.state["holder"]) == (
                     1, 4 if committed else 3, "crane-2" if committed else "crane-1")
                 assert holder.state.has_token == (not committed)
-                assert agents["crane-2"].state.has_token == committed
+                assert not agents["crane-2"].state.has_token
+                if committed:
+                    assert holder.handoff_blocked == "DELIVERY_SUPERSEDED"
+                    assert agents["crane-2"].incoming_pending
                 assert holder.gate_attempt is None
         finally:
             await heartbeat.close()
