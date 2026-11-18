@@ -115,16 +115,27 @@ def run_experiment(settings, output):
         require(result)
         lane = Lane(client, clock, emit)
         require(lane.observe())
-        rng = random.Random(settings.seed)
+        # Independent random generators ensure comparable arrival traces
+# when the number of simulated cranes changes.
+        arrival_rng = random.Random(settings.seed)
+        assignment_rng = random.Random(settings.seed ^ 0xC0FFEE)
+
         schedule = []
-        time = rng.expovariate(settings.arrival_rate)
+        time = arrival_rng.expovariate(settings.arrival_rate)
+
         while time < settings.duration:
             index = len(requests)
-            row = dict(request_id=f"request-{index + 1}", crane=rng.choice(list(config.members)),
-                       requested_at=time, entered_at=None, exited_at=None, status="waiting")
+            row = dict(
+                request_id=f"request-{index + 1}",
+                crane=assignment_rng.choice(list(config.members)),
+                requested_at=time,
+                entered_at=None,
+                exited_at=None,
+                status="waiting",
+            )
             requests.append(row)
             heapq.heappush(schedule, (time, 1, index))
-            time += rng.expovariate(settings.arrival_rate)
+            time += arrival_rng.expovariate(settings.arrival_rate)
         waiting = deque()
         while schedule:
             time, kind, index = heapq.heappop(schedule)
