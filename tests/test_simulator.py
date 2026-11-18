@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+import csv
 
 from cranelock_sim.experiment import Experiment, LocalGateClient, run_experiment
 from cranelock_sim.lane import Lane, SafetyViolation
@@ -138,3 +139,31 @@ def test_existing_output_is_never_overwritten(tmp_path):
 def test_invalid_workloads_are_rejected(field, value):
     with pytest.raises(ValueError):
         Experiment(**{field: value})
+
+def test_arrival_trace_matches_across_crane_counts(tmp_path):
+    arrival_traces = {}
+
+    for cranes in (3, 5, 10):
+        output = tmp_path / f"cranes-{cranes}"
+
+        settings = Experiment(
+            cranes=cranes,
+            duration=8,
+            arrival_rate=4,
+            seed=20,
+        )
+
+        run_experiment(settings, output)
+
+        with (output / "requests.csv").open(
+            newline="", encoding="utf-8"
+        ) as stream:
+            rows = list(csv.DictReader(stream))
+
+        arrival_traces[cranes] = [
+            (row["request_id"], row["requested_at"])
+            for row in rows
+        ]
+
+    assert arrival_traces[3] == arrival_traces[5]
+    assert arrival_traces[5] == arrival_traces[10]
