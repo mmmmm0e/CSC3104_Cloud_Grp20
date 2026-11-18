@@ -1,292 +1,162 @@
 # CraneLock
 
-For the integrated Docker deployment, host/container endpoints, development
-credential provisioning, failure controls and shutdown, see
-[the platform handoff](docs/PLATFORM_HANDOFF.md).
+CraneLock is a CSC3104 Cloud & Distributed Computing coursework prototype for
+coordinating multiple simulated cranes that share a single lane. The research
+problem is how to retain coordinated access when a central scheduler or token
+holder fails, while preventing a change in digital authority from being mistaken
+for physical clearance. The system schedules centrally in **CENTRAL** mode and
+can recover to peer coordination in **LOCAL** mode.
 
-Recovery retry review (Moe): see [retry behavior, safety limits and failure tests](docs/RECOVERY_RETRY.md).
-Votes stay immutable across gate revision changes; identical retries are supported.
-The real-container validation harness is available as:
+## Architecture and behavior
 
-```powershell
-.\.venv\Scripts\python.exe scripts/validate_recovery_containers.py
-```
+- **Crane Agents** exchange gRPC token requests, handoffs and heartbeats. Requests
+  are coordinated through a FIFO queue; agents persist coordination state and
+  retry incomplete handoffs conservatively.
+- **Controller and recovery**: the controller schedules CENTRAL authority. If
+  controller heartbeats fail, configured agents can automatically fall back to
+  LOCAL coordination. On LOCAL holder failure, agents can collect signed votes
+  from a strict majority to install a new recovery epoch. A returning controller
+  reconciles authority and can restore CENTRAL mode.
+- **Trusted Gate**: one Gate enforces authority using epoch and revision fencing,
+  validates entry, and persists authority and occupancy state. A new epoch or
+  token does not clear an occupied or unknown lane. Entry requires valid Gate
+  authorization and fresh trusted physical clearance.
+- **Physical lane simulator**: an independent simulated lane models entry,
+  occupancy and exit, and supplies trusted observations to the Gate. It is not
+  a real crane or sensor integration.
+- **Evaluation and deployment**: workload runners record events and metrics;
+  a local dashboard displays saved results. Docker Compose runs the integrated
+  Gate, controller and three Agents, with monitoring; Kubernetes manifests and
+  operations are also provided.
 
-This requires Docker. Preparation without runtime validation is available with
-`--prepare-only`; it must not be reported as a passed container experiment.
+Agents restart conservatively in `REJOINING` and reconcile with the Gate before
+participating. The Gate retains durable state and treats occupancy conservatively
+on restart. Recovery and controller return depend on the required services,
+quorum and physical evidence; progress is not guaranteed in every failure.
 
-This repository contains the normal-operation crane agent (`cranelock`) and the
-trusted access gate (`cranelock_gate`). Normal gate-authorized token handoff and
-gate-based restart reconciliation are now available in opt-in gate mode.
-See [agent/gate integration and exact local demo](docs/AGENT_GATE.md) for setup,
-authority rules, failure behavior, validation and team integration decisions.
-The separate protobuf services and original standalone baseline are preserved.
-For per-agent recovery credentials, optional controller-probe adapters and Arif's
-startup requirements, see [standalone agent launcher](docs/AGENT_LAUNCHER.md).
+## Setup and developer commands
 
-Install both components and test dependencies with `python -m pip install -e ".[dev]"`
-(or `python -m pip install -r requirements.txt`), then run `python -m pytest -q`.
-Run `python scripts/generate_proto.py` to regenerate bindings for both protocols.
-
-Member 4's first evaluation milestone is available with
-`python -m cranelock_sim --cranes 3 --duration 60 --seed 20`.
-It runs seeded normal traffic through the signed gate core and exports physical
-traces, request CSV and summary metrics. See [evaluation instructions and scope](docs/EVALUATION.md).
-Its logical FIFO scheduler does not yet measure the distributed CraneLock protocol.
-Run `python -m cranelock_sim --mode agents` for the three-agent normal-handoff
-integration: real loopback gRPC token requests/transfers, gate entry checks and
-physical lane movements, with two rounds of A/B/C crossings.
-Run `python -m cranelock_sim --mode recovery` for holder failure before entry and
-during occupancy. It prints live `[PASS]` checks and measures actual heartbeat
-detection, quorum recovery, old-permission fencing and safe replacement entry.
-Run `python -m cranelock_sim --mode partition` to keep all agents alive while
-blocking peer RPCs across a majority/minority split or three isolated agents.
-The live checks verify majority recovery, stale-holder fencing, occupancy blocking
-and refusal to install replacement authority without a quorum.
-Run `python -m cranelock_sim --mode restart` to restart the failed holder from
-its old state after recovery, verify REJOINING blocks participation, then reconcile
-from accepted gate authority and complete a new token-authorized crossing.
-Run `python -m cranelock_sim --mode compare` for paired normal/holder-failure
-comparisons of the team's central authority implementation, basic-token agents and CraneLock.
-Install `.[evaluation]` for PNG/SVG graphs. See [baseline comparison scope and metrics](docs/EVALUATION.md#run-the-comparisons).
-View saved experiments with `python -m cranelock_sim.dashboard`, then open
-`http://127.0.0.1:8765`. The local dashboard includes model charts, run filters,
-recorded lane playback and evidence downloads. See [dashboard instructions](docs/EVALUATION.md#open-the-dashboard).
-
-Gate safety evidence (exclusive access under failures) is in
-[docs/SAFETY_PROOF.md](docs/SAFETY_PROOF.md); mutual-TLS deployment is in
-[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#mutual-tls-outside-isolated-development).
-
-Both demos default to port 50051. Run them separately or configure distinct ports
-when running them together.
-
-## CraneLock — normal crane-agent milestone
-
-The crane agent provides normal-operation token coordination and its shared contract.
-
-Python 3.12+ is intended; validation here used CPython 3.14 on Windows. No existing
-formatter, linter, or type checker was configured. Dependencies use pip and a venv.
-
-### Setup (PowerShell, repository root)
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe scripts/generate_proto.py
-.\.venv\Scripts\python.exe -m pytest -q
-```
-
-On this workstation the default MSYS Python has no pip. To create the environment:
-
-```powershell
-& "$env:LOCALAPPDATA\Python\pythoncore-3.14-64\python.exe" -m venv .venv
-```
-
-Generated modules are checked in; regenerate them after changing the proto. Do not
-edit generated code. The schema uses package `cranelock.v1` and stable numbered
-fields; add future recovery/gate/controller services without replacing this API.
-
-### Standalone baseline two-process demo (without the gate)
-
-Use a **fresh demo directory** for each new simulated cluster. All agents must agree
-on initial epoch, holder and complete membership. Only one configured initial
-holder is allowed. These commands use epoch 1 and LOCAL mode; CENTRAL is also
-represented, but controller decisions and automatic mode transitions are deferred.
-
-Terminal 1:
-
-```powershell
-.\.venv\Scripts\python.exe -m cranelock run --id crane-a --listen 127.0.0.1:50051 --peer crane-b=127.0.0.1:50052 --holder crane-a --state-file run/demo1/a.json
-```
-
-Terminal 2 (B requests after 15 seconds):
-
-```powershell
-.\.venv\Scripts\python.exe -m cranelock run --id crane-b --listen 127.0.0.1:50052 --peer crane-a=127.0.0.1:50051 --holder crane-a --state-file run/demo1/b.json --request-after 15
-```
-
-Terminal 3, before and after the 15-second delay:
-
-```powershell
-.\.venv\Scripts\python.exe -m cranelock state 127.0.0.1:50051
-.\.venv\Scripts\python.exe -m cranelock state 127.0.0.1:50052
-```
-
-Initially A reports `has_token: true`. B sends TokenRequest, A queues B, and the
-automatic transfer worker hands off the token. Afterwards A reports false and B
-true. Logs contain request/transfer IDs and holder-change events.
-
-Press **Ctrl+C in Terminal 2** to stop B. After roughly 2–2.5 seconds since its last
-received heartbeat, A emits `PEER_SUSPECTED` and `TOKEN_HOLDER_SUSPECTED`. State shows
-`SUSPECTED_UNAVAILABLE`; A never regenerates the token. Change timing with
-`--interval 0.5 --timeout 2`. Repeat `--peer ID=HOST:PORT` for arbitrary membership.
-
-In standalone mode, restarting with an existing state file intentionally enters REJOINING with
-`has_token=false`. There is no CLI bypass. `Agent.reconcile()` is a trusted Python
-integration hook whose caller must supply authoritative epoch/holder information.
-Do not delete state files to rejoin an existing cluster. For a separate fresh demo,
-stop both agents and use a new path such as `run/demo2/a.json` and `run/demo2/b.json`.
-
-### Files and behavior
-
-| File | Purpose |
-| --- | --- |
-| `cranelock/agent.py` | State model, async lock, FIFO, heartbeats, suspicion, transfer and persistence |
-| `cranelock/__main__.py` | Agent process, delayed token request and state query CLI |
-| `cranelock/__init__.py` | Package marker |
-| `proto/cranelock/protocol.proto` | Shared Heartbeat, TokenRequest, TokenTransfer, GetAgentState contract |
-| `cranelock/protocol_pb2.py` | Generated protobuf messages |
-| `cranelock/protocol_pb2_grpc.py` | Generated gRPC bindings |
-| `scripts/generate_proto.py` | Reproducible protobuf generation |
-| `tests/test_agent.py` | Ownership, FIFO, concurrent requests, timing, epochs, restart and retry tests |
-| `tests/test_process_demo.py` | Two real CLI processes, handoff, peer termination and suspicion |
-| `requirements.txt` | Pinned direct runtime/build/test dependencies |
-| `.gitignore` | Exclude local environment, caches and demo state |
-| `README.md` | Modified setup, architecture, demo and integration notes |
-
-One asyncio lock protects mutable coordination state. RPC network waits happen
-outside it. The queue deduplicates by requesting agent and moves with the token.
-The sender persists relinquishment before sending; retry uses the same transfer
-ID. The receiver handles duplicate deliveries. An uncertain transfer can leave
-zero usable owners; safety takes priority over availability until recovery.
-
-Epochs must match for requests/transfers. Higher heartbeat epochs do not
-automatically grant authority; older heartbeats are rejected. Heartbeats from the
-known holder can announce an outgoing handoff, but never set local `has_token`.
-Only receipt of a valid TokenTransfer grants local ownership.
-
-Persistence uses flushed JSON plus atomic file replacement for epoch/holder/token
-and reserved opaque vote storage. Restart always blocks ownership. Gate-enabled
-agents persist their local queue, handoff retries and receipt identities, but this
-is not a replicated queue; see [handoff durability limits](docs/HANDOFF_DURABILITY_DESIGN.md).
-Recovery votes are
-durable and exposed through `VoteRecovery`; a member will reproduce an identical vote
-but will not sign a conflicting proposal for the same target epoch. Use one process
-and one state file per agent.
-
-Events are JSON lines with Unix and monotonic timestamps, agent/peer IDs, epoch,
-and operation IDs where relevant. `Agent(event_sink=...)` is the recovery/evaluation
-hook; callbacks run synchronously and must be fast and nonthrowing. Failure events
-include last-seen time and observed detection latency. Monotonic clocks measure
-durations on one host; do not subtract monotonic timestamps from different hosts.
-
-### Limits and team integration decisions
-
-- **Moe (Recovery):** confirm authoritative reconciliation API, persistent vote
-  format, higher-epoch handling, and consumption of TOKEN_HOLDER_SUSPECTED. No
-  replacement token, certificate, majority vote or signing is implemented.
-- **Max (Gate):** normal handoff and restart integration are documented in
-  [the gate integration guide](docs/AGENT_GATE.md). Grant/entry integration remains deferred.
-- **Darius (Evaluation):** confirm JSON event fields, operation IDs, clock alignment
-  and detection-latency definition. Current heartbeat fanout is O(N²) per round.
-- **Kirby (Controller):** confirm CENTRAL command semantics and who authorizes
-  LOCAL transitions and rejoining. Automatic controller-failure/return logic is deferred.
-- **Arif (Platform):** confirm ports, peer configuration, persistent storage path,
-  shutdown behavior and eventual authentication. This is plaintext trusted-peer
-  local demo gRPC; IDs are validated against configured membership, not authenticated.
-
-Normal holder announcements can be missed across multiple rapid handoffs or
-partitions. A stale holder view then safely rejects transfers; robust discovery
-and reconciliation need a later agreed protocol. Persistence is conservative,
-not a durable distributed transfer transaction. No claim is made that this alone
-solves partitions, crash recovery or gate safety. Initial bootstrap configuration
-must be consistent; it is not a consensus algorithm.
-
-Tests cover the eleven requested behaviors across scenario tests, plus uncertain
-transfer retry, duplicate reception and restart blocking.
-
-The next milestone after the standalone baseline is now implemented in opt-in gate
-mode; see [the integration guide](docs/AGENT_GATE.md) for its remaining boundaries.
-Do not add quorum or gate algorithms inside this agent.
-
-## CraneLock: Member 3 trusted access gate
-
-Standalone Python service for a **single simulated lane**, with signed gRPC requests,
-strict-majority recovery certificates, fencing, durable SQLite state and fail-closed
-occupancy handling. The agent package now produces quorum certificates; controller and
-yard-simulator integration are still represented by development clients.
-
-### Run on Windows / PowerShell
-
-From this directory:
+Use Python 3.12 or later and pip. Docker Desktop with Linux containers is needed
+for the integrated deployment; Kubernetes setup has additional prerequisites in
+[platform operations](docs/PLATFORM_OPERATIONS.md). From the repository root,
+for example in PowerShell:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 .\.venv\Scripts\python.exe -m pytest -q
+```
+
+On Linux/macOS use `.venv/bin/python` in place of the Windows executable. The
+last command runs the full Python test suite. Generated protobuf bindings are
+checked in; after changing a protocol, regenerate them with
+`python scripts/generate_proto.py` from the activated environment. Optional
+plotting dependencies are available with `python -m pip install -e ".[dev,evaluation]"`.
+
+For a new integrated deployment, follow the [platform handoff](docs/PLATFORM_HANDOFF.md)
+for provisioning, initialization, startup and convergence checks. Existing
+installations must retain their identities and volumes; do not reinitialize them
+as a recovery procedure. [Deployment](docs/DEPLOYMENT.md) covers persistence,
+TLS and the standalone Gate; [platform operations](docs/PLATFORM_OPERATIONS.md)
+covers monitoring, fault controls and Kubernetes.
+
+## Evaluation
+
+### Integrated Docker workload
+
+After completing the platform handoff and confirming a healthy CENTRAL baseline,
+run a single normal workload against the existing integrated services:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/integrated.py state
+.\.venv\Scripts\python.exe scripts/integrated.py check
+.\.venv\Scripts\python.exe scripts/external_workload.py --new-empty-simulation --workload-config demo-data/integrated/workload/config.json --scenario normal --requests 18 --seed 20
+```
+
+The workload uses a newly declared empty **simulated** lane and must run without
+another active workload. For controller-outage and holder-failure commands, their
+prerequisites, and checks between runs, see [integrated container testing](docs/EVALUATION.md#test-the-integrated-containers).
+Those fault scenarios stop and restart the affected services and retain their
+volumes; they should be run only on a suitable test deployment. Results are saved
+under `run/deployed-evaluation`.
+
+### Logical scalability and dashboard
+
+The logical experiment varies simulated crane count and demand through a FIFO
+scheduler and the Gate. For the controlled 18-configuration matrix, run:
+
+```powershell
+foreach ($rate in 2, 5) {
+    foreach ($cranes in 3, 5, 10) {
+        foreach ($seed in 7, 20, 3104) {
+            .\.venv\Scripts\python.exe -m cranelock_sim --mode logical --cranes $cranes --duration 60 --arrival-rate $rate --crossing-time 0.5 --seed $seed
+        }
+    }
+}
+```
+
+Arrival rates are aggregate requests per simulated second. Each run creates a new
+results directory under `run/evaluation`. This logical model does not measure
+networked Agent performance or recovery. To browse saved results, run
+`.\.venv\Scripts\python.exe -m cranelock_sim.dashboard` and open
+`http://127.0.0.1:8765`; see the [evaluation guide](docs/EVALUATION.md) for
+other scenarios, dashboard scope and comparison commands.
+
+### Validation evidence
+
+During the **17–18 November 2026** validation period, the reported full Python
+suite result was **443 passed, 1 skipped, 0 failed**. The integrated CraneLock-only
+workload completed **9/9 experiments** (normal, controller outage and holder
+failure, each with seeds 7, 20 and 3104): **162/162 simulated crossings** completed
+with zero detected lane overlaps. The controlled logical matrix completed
+**18/18 experiments**, using 3, 5 and 10 cranes, aggregate arrival rates of 2 and
+5 requests per second, and the same three seeds. These results were gathered across
+the validation period; they were not all rerun on commit `8390b36`. Raw newer
+workload and logical experiment artifacts are local under the ignored `run/`
+directory and are not included in the repository.
+
+An **earlier, separate 27-case Docker comparison** tested central lock, basic
+token and CraneLock across three scenarios and three seeds. It used a distinct
+experiment deployment, not the newer integrated CraneLock-only workload. Its
+provenance and results, together with an earlier integrated dataset, are in
+[Docker evaluation results](docs/DEPLOYED_RESULTS.md); do not pool the datasets.
+Observed results are bounded simulation evidence, not a general safety proof or
+an availability guarantee.
+
+## Scope and limitations
+
+- Membership is fixed for a run. The integrated Docker tests use three deployed
+  Agent processes; the 5- and 10-crane experiments are logical simulations only.
+- The design assumes one trusted Gate and trusted simulated physical observations.
+  Gate unavailability, missing quorum or uncertain clearance can prevent progress.
+- Agent and Gate state is persistent, but the handoff queue is not replicated.
+  Permanent loss of an Agent's local storage does not permit full queue recovery;
+  controller reassignment can also leave previously accepted requests unresolved.
+  See [handoff durability](docs/HANDOFF_DURABILITY_DESIGN.md).
+- This is a coursework simulation, with no industrial safety certification or
+  real crane, sensor or actuator integration. The safety evidence depends on the
+  assumptions documented in [Gate safety evidence](docs/SAFETY_PROOF.md).
+
+## Standalone demos and documentation
+
+The standalone Gate demo is separate from the integrated deployment. For a new
+local demo directory, run:
+
+```powershell
 .\.venv\Scripts\python.exe -m cranelock_gate.demo setup --directory demo-data
 .\.venv\Scripts\python.exe -m cranelock_gate.demo run --directory demo-data
 ```
 
-Skip `setup` when `demo-data` already exists. It refuses to overwrite identities
-or a database. The demo can be repeated with the same directory: each run starts a new
-authority epoch and demonstrates unknown-lane blocking, valid admission, stale-holder
-rejection, recovery during occupancy and explicit clearance.
+Skip setup if that directory is already provisioned. The demo uses local
+development identities; see [standalone deployment](docs/DEPLOYMENT.md#local-standalone-validation).
+The [agent launcher guide](docs/AGENT_LAUNCHER.md) and
+[agent/Gate integration guide](docs/AGENT_GATE.md) describe additional standalone
+and integration examples.
 
-On Linux/macOS, replace `.\.venv\Scripts\python.exe` with `.venv/bin/python`.
-
-### Run as a persistent service
-
-```powershell
-.\.venv\Scripts\python.exe -m cranelock_gate.server serve --config demo-data/config.json --database demo-data/gate.sqlite
-```
-
-In another terminal:
-
-```powershell
-.\.venv\Scripts\python.exe -m cranelock_gate.demo run --directory demo-data --target 127.0.0.1:50051
-```
-
-The gRPC port is `50051`; Prometheus metrics are at `http://127.0.0.1:9090/metrics`.
-The server prints a listening message. Press Ctrl+C to stop it; Windows Ctrl+Break is
-also supported. Shutdown prints `Stopping gate...` and `Gate stopped.`.
-The development demo uses plaintext loopback. Network listeners require mutual TLS
-unless explicitly enabled for an isolated simulation.
-
-### Team handoff
-
-The integrated container deployment and monitoring are documented in
-[platform handoff](docs/PLATFORM_HANDOFF.md). After setup and convergence, run
-`python scripts/external_workload.py --new-empty-simulation --scenario normal` to
-exercise sustained requests against those external services. See
-[deployed testing](docs/EVALUATION.md#test-the-integrated-containers) for failure
-cases, credentials, evidence scope and prerequisites. This runner does not replace
-the separately labelled local dashboard comparisons.
-
-For the evaluation role, [benefits and costs](docs/EVALUATION.md#read-the-measurements) compares actual
-team-controller adapter outage, lost-token recovery and healthy-operation overhead.
-Run `python -m cranelock_sim --mode benefits --duration 5 --output run/evaluation/benefits-autonomous-validated`,
-then `python -m cranelock_sim.dashboard`. The dashboard explains paired gains and
-costs. Central permissions use `cranelock.controller.CentralController`. The v4
-runner starts independent gate, controller and crane processes; crane workers
-perform automatic recovery and LOCAL token handoff. The harness submits demand,
-injects process failures and models physical lane occupancy. CENTRAL assignment
-uses a test transport. This is a one-host loopback evaluation; container/cloud
-deployment and actual port networking need separate runtime evidence.
-
-- [Contract and signing format](docs/CONTRACT.md): Member 1's proposed shared proto,
-  Member 2's certificate format, and Member 4/5 integration rules.
-- [Deployment and failure testing](docs/DEPLOYMENT.md): Docker, Kubernetes, persistence,
-  health checks, TLS and Member 6 handoff.
-- [Report draft](docs/GATE_REPORT.md): gate Design and Implementation sections,
-  with tested outcomes separated from outstanding integration claims.
-- [Protobuf service](proto/cranelock_gate/v1/gate.proto): seven RPC methods.
-
-Bindings are checked in. After changing the proto, regenerate them:
-
-```powershell
-.\.venv\Scripts\python.exe scripts/generate_proto.py
-```
-
-### Safety boundary
-
-Run exactly **one active gate with one persistent database**. A quorum certificate
-changes digital authority; it never proves that the physical lane is empty. Only the
-trusted simulator may accept entry, and only fresh simulator evidence or a trusted
-operator may establish clearance. Every physical entry must pass this gate. Clients
-must stop on transport failure, denial, or replay acknowledgements.
-
-This is a coursework simulator, not an industrial crane safety controller. End-to-end
-CraneLock safety and performance remain unverified until the real member components
-are integrated. The Docker image and restart behaviour were validated locally;
-Kubernetes execution remains unverified. See [validation results](docs/VALIDATION.md).
+- [Architecture review](docs/ARCHITECTURE_REVIEW.md) — historical design review
+  and context; its milestone-status observations predate the integrated baseline.
+- [Safety evidence](docs/SAFETY_PROOF.md) and [recovery safety](docs/RECOVERY_SAFETY.md).
+- [Evaluation and dashboard](docs/EVALUATION.md) and [historical Docker results](docs/DEPLOYED_RESULTS.md).
+- [Deployment and TLS](docs/DEPLOYMENT.md), [platform handoff](docs/PLATFORM_HANDOFF.md)
+  and [platform operations](docs/PLATFORM_OPERATIONS.md).
+- [Handoff durability](docs/HANDOFF_DURABILITY_DESIGN.md) and [recovery retries](docs/RECOVERY_RETRY.md).
