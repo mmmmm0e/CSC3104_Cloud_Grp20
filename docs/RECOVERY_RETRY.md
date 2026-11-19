@@ -1,6 +1,7 @@
 # Recovery retries and failure validation
 
-Date: 3 November 2026. Scope: the current `moe` branch.
+The retry contract below describes the current implementation. The validation
+record at the end describes the 3 November 2026 run.
 
 ## Finding
 
@@ -8,8 +9,8 @@ A vote signs the entire canonical recovery proposal, including `expected_epoch`
 and `expected_revision`. Suppose an agent saves a vote for target epoch 1 against
 gate snapshot `(0, 1)`. A normal handoff or CENTRAL authority change then advances
 the gate to `(0, 2)`. The original certificate cannot be installed because its
-expected revision is stale. Changing its revision to 2 produces a different signed
-proposal for the same target epoch, so the saved vote must reject it.
+expected revision is stale. A proposal against revision 2 needs fresh votes
+because the expected revision is part of the signed payload.
 
 Previously this was a permanent stop: the old vote blocked every later proposal for
 that target epoch. Because CENTRAL handoffs advance the revision without changing the
@@ -25,7 +26,8 @@ digest-only votes stay locked.
 
 ## Implemented retry contract
 
-The implementation retains one immutable SHA-256 proposal digest per target epoch.
+The implementation retains one active SHA-256 proposal digest per target epoch.
+Only the live-verified revision advance described above can replace it.
 New state files additionally retain the exact proposal in `vote_proposals`; both are
 written by the same atomic, fsynced state-file update before returning a signature.
 Restart validates that saved proposals match their digests. Legacy digest-only files
@@ -40,7 +42,7 @@ report generic `CONFLICTING_VOTE` instead of the revision-specific blocked reaso
 | --- | --- |
 | No vote yet; supplied gate snapshot is already stale | Reject before consuming a vote. |
 | Same proposal, unchanged gate authority, temporary peer loss | Retry identical bytes; signatures remain valid and a returning voter may complete the quorum. |
-| Another holder is proposed for an already-voted target epoch | Reject `CONFLICTING_VOTE`; retain the original vote. |
+| Another holder is proposed for the same Gate snapshot | Reject `CONFLICTING_VOTE`; retain the original vote. |
 | Same target epoch, strictly newer live-verified gate revision (Gate-enabled) | Replace the vote with the newer proposal and continue collecting; the older certificate can no longer install. |
 | Same target epoch, changed revision without Gate verification, or older revision | Emit `RECOVERY_RETRY_BLOCKED` with `STALE_VOTE_REVISION`; retain the original vote. |
 | Gate changes while votes are being collected | Discard the local collection result and emit `GATE_CHANGED_DURING_VOTING`; a later attempt re-votes for the newer snapshot. |
@@ -67,11 +69,9 @@ This section records the original reasoning. It has been superseded by the
 monotonic-revision supersession described above, which relies on the Gate's atomic
 expected-snapshot check rather than one immutable vote per target epoch.
 
-The safety argument is still one vote per target epoch, not one vote per revision.
-We do not change that key, clear votes or skip to another epoch locally. Advancing
-authority requires a certificate the gate accepts. A controller return at the same
-epoch may restore CENTRAL service, but does not erase existing locks for a future
-LOCAL recovery at that target epoch.
+The original implementation locked one vote per target epoch. A controller return
+at the same epoch could restore CENTRAL service while leaving those votes locked
+for a later LOCAL recovery attempt.
 
 Consequently, a quorum with stale or split locked votes may remain unable to recover
 even after all peers reconnect. The implementation guarantees fail-closed behavior;
@@ -79,12 +79,8 @@ it does not guarantee eventual progress in this condition. An independently vali
 next-epoch certificate may resolve it if sufficient unconflicted votes exist, but
 such a certificate is not guaranteed to exist.
 
-To remove this limitation, the team must agree on a revised protocol with the gate
-owner. Options include a gate-issued recovery attempt that freezes normal authority
-changes during collection, or gate-verified attempt supersession with an updated
-voting invariant. Either changes the contract and proof. Simply allowing votes per
-revision would invalidate the existing claim that conflicting same-epoch certificates
-cannot both form, and is not implemented by this change.
+The current implementation permits the live-verified revision advance described
+above. Same-revision conflicts can still stall recovery.
 
 ## Failure tests
 
@@ -149,10 +145,10 @@ To prepare fixtures on a machine without Docker:
 .\.venv\Scripts\python.exe scripts/validate_recovery_containers.py --prepare-only
 ```
 
-Preparation is recorded as `runtime_validated: false` and `passed: false`.
-Docker was unavailable in the current session, so real container execution is still
-an acceptance check for the platform member. The generated Compose file was prepared
-and inspected; it was not validated by a Docker daemon here.
+Preparation records `runtime_validated: false` and `passed: false`. The original
+3 November run prepared and inspected the Compose file. See the
+[Docker evaluation results](DEPLOYED_RESULTS.md) for separate three-agent runtime
+evidence.
 
 ## Validation record
 

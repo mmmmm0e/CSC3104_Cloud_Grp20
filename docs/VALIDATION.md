@@ -2,6 +2,10 @@
 
 Date: 14 October 2026 (Asia/Singapore).
 
+This records the standalone Gate milestone. See the
+[platform validation record](Platform_Validation.md) and
+[Docker evaluation results](DEPLOYED_RESULTS.md) for later integrated evidence.
+
 ## Automated component checks
 
 `python -m pytest -q`: **57 passed** on the Windows Python 3.12 virtual environment.
@@ -32,7 +36,7 @@ The image and initialised Compose volume are retained for reuse. Test containers
 stopped after verification. Development signing keys and the host database are in
 the ignored `demo-data` directory; they are not production credentials.
 
-## Remaining validation
+## Validation outside this milestone
 
 Kubernetes deployment, real member-component integration, distributed voting discipline,
 full-system physical safety traces, controller queue reconciliation, baseline comparisons

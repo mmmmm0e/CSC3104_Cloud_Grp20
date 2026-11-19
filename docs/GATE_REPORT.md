@@ -1,8 +1,8 @@
 # Member 3 report draft
 
-This text describes the implemented standalone component. Shorten it when integrating
-the group's six-page article. Add actual integrated measurements once Member 4 supplies
-them; do not describe these standalone outcomes as whole-system results.
+Historical draft describing the standalone Gate component. See the
+[platform validation record](Platform_Validation.md) and
+[deployed workload results](DEPLOYED_RESULTS.md) for later integrated evidence.
 
 ## System Design: trusted access gate, fencing and occupancy
 

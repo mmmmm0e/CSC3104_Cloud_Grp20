@@ -1,10 +1,10 @@
 # CraneLock architecture and proposal review
 
-Originally reviewed 3 November 2026; updated 12 November 2026. This is an evidence
-review, not a deployment certificate. The original review was read-only; subsequent
-merges and verification are recorded separately below.
+Historical review from 3–12 November 2026. The branch status and open work below
+describe those snapshots. See the [current platform handoff](PLATFORM_HANDOFF.md)
+and [completed Docker comparison](DEPLOYED_RESULTS.md) for later work.
 
-## Latest status: 12 November 2026
+## Status as of 12 November 2026
 
 Integrated platform main `02da358` into `darius`, preserving the local automatic
 comparison runner and its dashboard. Arif's committed platform evidence now covers

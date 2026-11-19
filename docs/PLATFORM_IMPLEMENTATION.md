@@ -4,11 +4,12 @@ CraneLock components are packaged as Python 3.12 Docker images. A gate image run
 the trusted access service, while a shared agent image runs either a crane-agent
 launcher or the native controller launcher. Compose connects one gate, one
 controller and three fixed-membership agents over a private project network.
-Host gRPC and dashboard ports bind only to loopback. The gate and controller use
-mutual TLS; each process receives its own Ed25519 application-signing key through
-a read-only mount. Development transport client certificates are shared per
-service destination and do not bind certificates to individual signing identities.
-Peer-agent RPCs retain the existing trusted-network plaintext transport.
+The integrated Compose and Kubernetes profiles use mutual TLS for Gate, controller,
+workload and crane-to-crane RPCs. Each crane has its own peer certificate, and the
+receiving agent verifies that the caller certificate matches the claimed crane
+identity. Ed25519 application-signing keys authenticate signed protocol messages.
+Published Compose gRPC and monitoring ports bind to loopback. See the
+[peer TLS configuration](AGENT_LAUNCHER.md#agent-to-agent-mutual-tls).
 
 Each crane stores epoch, holder, revision and durable voting information in its
 own named volume. The gate uses one SQLite database volume and one active process.
@@ -24,9 +25,10 @@ separate volumeClaimTemplates and credential mounts. The gate Deployment uses
 Recreate and a single persistent claim. Explicit initialization and bootstrap Jobs
 run before normal controller/agent startup. Service-specific readiness, startup and
 liveness probes measure responsiveness without treating unknown lane occupancy as
-an unhealthy process. Validation uses a dedicated single-node kind cluster and
-local/block-backed storage; replicated-gate availability and node-loss recovery
-are not evaluated by this deployment.
+an unhealthy process. A fatal agent worker failure exits the process so Kubernetes
+can restart the container. Temporary persistence failures use the retry path.
+Validation uses a dedicated single-node kind cluster and local storage.
+Replicated-gate availability and node-loss recovery are outside its scope.
 
 Prometheus scrapes gate, controller and agent metrics. Optional agent telemetry
 samples cached authority, mode, local queue and suspicions and counts selected
@@ -50,7 +52,8 @@ corresponding component and physical events.
 
 Deployment evidence includes real controller outage/return, LOCAL majority
 replacement after holder loss, stale-permission rejection, conservative restarts,
-provisioned monitoring and Kubernetes pod/PVC checks. Exact pass/fail results and
-local artifact paths are recorded in Platform_Validation.md. End-to-end workload,
-physical-safety and scalability evaluation must use a runner connected to these
-external services, rather than the simulator's separately constructed processes.
+provisioned monitoring and Kubernetes pod/PVC checks. See the
+[platform validation record](Platform_Validation.md) and
+[deployed workload results](DEPLOYED_RESULTS.md) for evidence and scope. The
+logical scalability runs measure simulated lane capacity. Deployment validation
+uses fixed three-agent membership.

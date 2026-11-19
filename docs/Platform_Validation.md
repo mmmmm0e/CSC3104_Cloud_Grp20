@@ -1,5 +1,9 @@
 # Platform validation
 
+This is a dated record of deployment milestones. Transport settings and open
+items describe the builds tested at each milestone. See the
+[current platform handoff](PLATFORM_HANDOFF.md) for deployment instructions.
+
 Date: 21 October 2026
 Environment: macOS, Python 3.12.14
 
@@ -215,7 +219,7 @@ Earlier failed validation attempts remain in that directory and are not counted
 as passes. Historical logs include multiple attempts; use timestamps, authority
 versions and the named successful summaries above to identify the final evidence.
 
-## Remaining shared project work
+## Merge verification and handoff on 11 November 2026
 
 Merge verification on 11 November 2026: preserved main's --enable-recovery alias
 alongside explicit recovery-config/recovery-key, and tested both CLI styles.

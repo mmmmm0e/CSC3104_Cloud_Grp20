@@ -8,8 +8,9 @@ yard simulator or generate physical lane movements by itself.
 For provisioned monitoring, fault experiments, Kubernetes and shutdown, see
 [platform operations](PLATFORM_OPERATIONS.md). A minimal external crossing example
 is available as `python scripts/external_smoke.py --new-empty-simulation --workload-config demo-data/integrated/workload/config.json`.
-Submission instructions are in `output/pdf/GROUP20_INSTRUCTIONS.pdf`; report material
-is in `docs/PLATFORM_IMPLEMENTATION.md`.
+The coursework testing instructions are submitted separately as
+`GROUP20_INSTRUCTIONS.pdf`. See the [evaluation guide](EVALUATION.md#test-the-integrated-containers)
+for workload commands and expected results.
 
 Run commands from the repository root with Docker Desktop running and Python 3.12+
 in the project virtual environment. The helper also works from another directory
@@ -181,8 +182,9 @@ Container recreation may remove old container logs, so export before recreating.
 Do not subtract unrelated host/container monotonic clocks. Preserve workload seed,
 run boundaries, authority versions, gate decisions and physical traces together.
 
-Network partitions, delay/reordering and lost occupancy updates are not implemented
-by this helper. The single-process simulator scenarios remain separate evidence.
+Use `scripts/faults.py` for container network partitions, packet delay/reordering
+and missing occupancy updates. See [platform fault procedures](PLATFORM_OPERATIONS.md#container-failure-experiments).
+Local simulator scenarios provide separate evidence.
 
 ## Shutdown and resume
 

@@ -2,8 +2,8 @@
 
 ## Protocol
 
-For a gate snapshot `(e, r)`, a proposer constructs exactly one canonical authority
-payload naming epoch `e+1`, the replacement holder, lane, fixed membership, and the
+For a gate snapshot `(e, r)`, a proposer constructs a canonical authority
+payload naming epoch `e+1`, the proposed holder, lane, fixed membership, and the
 expected snapshot `(e, r)`. The proposer signs it with Ed25519. A member votes only
 when it is active at epoch `e`, locally suspects the current holder, authenticates the
 proposer, and has not durably voted for a different payload for the same snapshot
@@ -33,8 +33,8 @@ permission to vote, not proof by itself and not authority to enter the lane.
 ## Why conflicting recoveries cannot both be accepted
 
 Any two strict majorities intersect in at least one member. An honest member durably
-records one proposal per target epoch before releasing its signature and will reject
-a different proposal for the same snapshot `(e, r)` after retries or restart.
+records its vote before releasing its signature and rejects a different proposal
+for the same snapshot `(e, r)` after retries or restart.
 Therefore two different payloads for the same snapshot cannot both collect valid
 strict majorities.
 

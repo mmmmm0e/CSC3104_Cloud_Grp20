@@ -20,9 +20,9 @@ download evidence** for individual results. These results are not pooled with
 the three-system comparisons below. Restart the server after updating its code.
 Use `--deployed-root PATH` if the Docker evidence is saved elsewhere.
 
-The recommended set is the Docker comparison when available; otherwise use
-`benefits-autonomous-validated` for local-process results. Select a scenario in the
-main dropdown. Request count and sequence filters are inside **Test settings and
+Select the Docker comparison if you have generated those results, or select your
+local-process run. Select a scenario in the main dropdown. Request count and
+sequence filters are inside **Test settings and
 saved experiments**. A sequence (seed) repeats the same requests; it is not a crane.
 
 - The summary explains why each system continues or stalls.
@@ -74,10 +74,9 @@ retains the earlier fixed-window healthy/holder-failure comparison.
 | Basic token | Cranes pass one token | Continues locally; no controller recovery needed | Stalls because it cannot replace the missing token |
 | CraneLock | Starts centrally in the benefits experiment | Detects missing heartbeats, obtains majority votes and installs LOCAL authority | Can replace the token with majority-approved recovery |
 
-Central authority uses `cranelock/controller.py`, now integrated with platform main
-snapshot `02da358`. Saved `benefits-autonomous-validated` results still record
-`21fac92`; they have not been relabelled or converted into container results.
-Future local comparisons record `02da358`. The `benefits-v4` runner starts five independent processes:
+Central authority uses `cranelock/controller.py`. New results record a
+SHA-256 fingerprint of that file as controller provenance. Older results may
+record a commit ID. The `benefits-v4` runner starts five independent processes:
 a controller, a gate and three crane agents. Agents use the supported CLI with
 gate integration, their own signing keys and automatic recovery enabled for CraneLock.
 
@@ -122,9 +121,8 @@ Generate a fresh full matrix (the directory must not already exist):
 .\.venv\Scripts\python.exe -m cranelock_sim --mode benefits --duration 5 --output run/evaluation/benefits-autonomous-validated --no-plots
 ```
 
-Old saved comparison sets have been removed after validating their replacement.
-Running pytest verifies behavior; it does not populate the dashboard. Teammates
-must run the experiment command to generate their own local results.
+Run the experiment command to populate the dashboard. Use a different output
+directory when repeating it.
 
 ## Test the integrated containers
 

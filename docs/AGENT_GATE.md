@@ -1,5 +1,10 @@
 # Crane agent / Trusted Access Gate integration
 
+This records the October standalone integration milestone and its local demo.
+For the current integrated deployment, use the [platform handoff](PLATFORM_HANDOFF.md).
+See [handoff durability](HANDOFF_DURABILITY_DESIGN.md) and
+[recovery safety](RECOVERY_SAFETY.md) for the current protocol.
+
 Milestone validation: 22 October 2026, Windows, CPython 3.14. Existing baseline:
 64 tests passed after installing the repository's current dependencies. Final result:
 **82 passed in 21.34 seconds** (64 existing plus 18 new integration scenarios).
@@ -55,11 +60,13 @@ Normal A -> B sequence:
 1. B refreshes its holder view using `GetState`, then requests the token from A.
 2. A queues B, preserving FIFO and suppressing duplicate agent IDs.
 3. A reads `GetState`, checks it is still holder, and suspends local ownership.
-4. A calls existing signed `TransferHolder(epoch=E, revision=R, destination=B)`.
+4. A durably saves the exact signed transfer and remaining queue, then sends
+   `TransferHolder(epoch=E, revision=R, destination=B)` to the Gate.
 5. The gate checks its own authorization/occupancy rules and commits `(E,R+1,B)`.
 6. A persists that authoritative tuple and sends it to B with the remaining FIFO.
-7. B queries `GetState` itself; only an exact epoch/revision/holder match can grant
-   ownership through this notification. Duplicate delivery does not reset its queue.
+7. B reads the Gate's handoff record and verifies that the transfer matches and B is
+   still the current holder. B saves the queue before acknowledging. Duplicate
+   delivery does not reset its queue.
 
 Rejection does not grant B ownership. A adopts current gate state and may resume as
 holder only if the gate still names A. The queued request remains for a later
@@ -73,8 +80,10 @@ For uncertain RPC outcomes, query `GetState`:
 - Retry the **identical payload and request ID** to resolve its durable Gate
   decision. A state read, including `(E,R+1,B)`, does not identify which command
   produced that state or exclude an earlier command still reaching the Gate.
-- If that exact command succeeded and current authority is `(E,R+1,B)`, notify B.
-- Later/different authority: reconcile it; never act on historical `allowed=true`.
+- Notify B if the Gate records that exact transfer and still names B as holder.
+  A controller return can advance the revision while this delivery is pending.
+- If the transfer has been superseded or the holder has changed, reconcile with
+  the Gate. A historical `allowed=true` alone cannot authorize delivery.
 - Gate unavailable, uninitialized, incompatible or older than local state: retain
   fail-closed REJOINING. Never invent authority or silently roll state back.
 
@@ -85,7 +94,8 @@ state file and retry while that outbox remains current.
 
 Epoch/revision comparisons are lexicographic. A higher epoch adopts its gate
 revision; equal epoch requires nondecreasing revision. At equal versions, the gate
-corrects a conflicting local holder. No quorum epoch generation is implemented.
+corrects a conflicting local holder. The standalone demo uses handoff only.
+Quorum recovery is described in the [recovery safety argument](RECOVERY_SAFETY.md).
 
 All gate-enabled starts enter REJOINING with ownership disabled, including fresh
 starts. Successful `GetState` reconciliation activates the gate's mode and derives
@@ -118,7 +128,7 @@ Prepare the gate using Max's existing development setup:
 .\.venv\Scripts\python.exe -m cranelock_gate.demo setup --directory run/gate-demo1
 ```
 
-Terminal 1 — start the unchanged gate on a distinct port:
+Terminal 1 — start the Gate on a distinct port:
 
 ```powershell
 .\.venv\Scripts\python.exe -m cranelock_gate.server serve --config run/gate-demo1/config.json --database run/gate-demo1/gate.sqlite --bind 127.0.0.1:50060 --metrics-port 9090
@@ -194,8 +204,9 @@ The agent accepts `--gate-tls-ca`, `--gate-tls-cert`, `--gate-tls-key` together 
 requires mutual TLS for non-loopback gate targets. Reuse Max's certificate/config
 instructions. The adapter retains only its own configured signing key. The combined
 fixture key file is suitable only for this local demo; deployment must supply each
-agent with a file containing only its own key. Peer agent gRPC remains the original
-trusted-network plaintext protocol; authenticating peers is a separate milestone.
+agent with a file containing only its own key. The local demo uses loopback
+peer RPCs. Integrated Compose and Kubernetes use
+[peer mutual TLS](AGENT_LAUNCHER.md#agent-to-agent-mutual-tls).
 
 ## Validation and remaining limits
 
@@ -233,7 +244,7 @@ Remaining limits:
   manifests still launch standalone agents. Upgrading them needs membership/key/
   gate-address agreement with Arif and Max; no files were silently renamed.
 
-Team confirmations:
+Team confirmations from the October milestone:
 
 - **Moe:** opaque persistent vote format and authoritative higher-epoch integration;
   preserve this gate reconciliation boundary without embedding quorum logic here.
