@@ -30,7 +30,10 @@ def test_controller_outage_automatically_preserves_healthy_holder_and_occupancy(
             assert h.grant()["reason"] == "LANE_BUSY"
             assert h.call("crane-1", "RequestGrant", epoch=0, revision=1)["reason"] == "STALE_EPOCH"
             assert [identity for identity, a in agents.items() if a.state.has_token] == ["crane-1"]
-            assert all(a.state.revision == 2 and set(a.vote_state) == {"1"} for a in agents.values())
+            assert all(a.state.revision == 2 and set(a.vote_state) <= {"1"} for a in agents.values())
+            # A strict majority must have voted; the third vote may still be in flight
+            # when the certificate installs, so requiring all three was timing-dependent.
+            assert sum(set(a.vote_state) == {"1"} for a in agents.values()) >= 2
             healthy = True
             await until(lambda: not any(a.controller_suspected for a in agents.values()))
             assert all(a.state.mode == Mode.LOCAL for a in agents.values())

@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+import time
 
 import pytest
 
@@ -79,7 +80,9 @@ def test_actual_holder_detection_quorum_fencing_and_safe_progress(tmp_path, scen
         removal = next(event["time"] for event in events if event["event"] == "trusted_simulator_removal")
         new_entry = next(event["time"] for event in entries if event["crane"] == "crane-2")
         assert new_entry > removal > blocked
-        assert summary["blocked_until_clearance_seconds"] >= 0.05
+        # asyncio may wake a sleep up to one clock tick early (about 16 ms on Windows).
+        tick = time.get_clock_info("monotonic").resolution
+        assert summary["blocked_until_clearance_seconds"] >= 0.05 - tick - 0.001
     else:
         assert summary["blocked_until_clearance_seconds"] is None
     assert not (output / "failure.json").exists()
