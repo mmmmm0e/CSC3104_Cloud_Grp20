@@ -2,847 +2,1157 @@
   "id": null,
   "uid": "cranelock-integrated",
   "title": "CraneLock Integrated Platform",
+  "description": "Live view: who has the token, who is in charge, and whether cranes may enter the lane.",
   "schemaVersion": 41,
-  "version": 1,
+  "version": 3,
   "refresh": "5s",
   "time": {
     "from": "now-15m",
     "to": "now"
   },
   "timezone": "browser",
-  "panels": [
-    {
-      "id": 1,
-      "title": "Service scrape reachability",
-      "type": "stat",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "cranelock-prometheus"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 0,
-        "w": 8,
-        "h": 5
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "up",
-          "instant": true,
-          "legendFormat": "{{agent_id}} {{instance}} {{mode}} {{event}}"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "values": false
-        },
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "No current data",
-          "decimals": 0,
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "DOWN",
-                  "color": "red"
-                },
-                "1": {
-                  "text": "UP",
-                  "color": "green"
-                }
-              }
-            }
-          ]
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 2,
-      "title": "Gate storage health",
-      "type": "stat",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "cranelock-prometheus"
-      },
-      "gridPos": {
-        "x": 8,
-        "y": 0,
-        "w": 8,
-        "h": 5
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "cranelock_gate_available and on(instance) (up{job=\"gate\"} == 1)",
-          "instant": true,
-          "legendFormat": "{{agent_id}} {{instance}} {{mode}} {{event}}"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "values": false
-        },
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "No current data",
-          "decimals": 0,
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 3,
-      "title": "Lane clearance unknown",
-      "type": "stat",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "cranelock-prometheus"
-      },
-      "gridPos": {
-        "x": 16,
-        "y": 0,
-        "w": 8,
-        "h": 5
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "cranelock_gate_lane_unknown",
-          "instant": true,
-          "legendFormat": "{{agent_id}} {{instance}} {{mode}} {{event}}"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "values": false
-        },
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "No current data",
-          "decimals": 0,
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "Occupancy known"
-                },
-                "1": {
-                  "text": "UNKNOWN - blocked",
-                  "color": "orange"
-                }
-              }
-            }
-          ]
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 4,
-      "title": "Cached token ownership",
-      "type": "stat",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "cranelock-prometheus"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 5,
-        "w": 8,
-        "h": 5
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "cranelock_agent_has_token",
-          "instant": true,
-          "legendFormat": "{{agent_id}} {{instance}} {{mode}} {{event}}"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "values": false
-        },
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "No current data",
-          "decimals": 0,
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 5,
-      "title": "Agent authority epochs",
-      "type": "stat",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "cranelock-prometheus"
-      },
-      "gridPos": {
-        "x": 8,
-        "y": 5,
-        "w": 8,
-        "h": 5
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "cranelock_agent_epoch",
-          "instant": true,
-          "legendFormat": "{{agent_id}} {{instance}} {{mode}} {{event}}"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "values": false
-        },
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "No current data",
-          "decimals": 0,
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 6,
-      "title": "Agent modes",
-      "type": "stat",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "cranelock-prometheus"
-      },
-      "gridPos": {
-        "x": 16,
-        "y": 5,
-        "w": 8,
-        "h": 5
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "cranelock_agent_mode",
-          "instant": true,
-          "legendFormat": "{{agent_id}} {{instance}} {{mode}} {{event}}"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "values": false
-        },
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "No current data",
-          "decimals": 0,
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 7,
-      "title": "Pending requests",
-      "type": "stat",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "cranelock-prometheus"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 10,
-        "w": 8,
-        "h": 5
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "cranelock_agent_queue_length",
-          "instant": true,
-          "legendFormat": "{{agent_id}} {{instance}} {{mode}} {{event}}"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "values": false
-        },
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "No current data",
-          "decimals": 0,
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 8,
-      "title": "Suspected peers",
-      "type": "stat",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "cranelock-prometheus"
-      },
-      "gridPos": {
-        "x": 8,
-        "y": 10,
-        "w": 8,
-        "h": 5
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "cranelock_agent_suspected_peers",
-          "instant": true,
-          "legendFormat": "{{agent_id}} {{instance}} {{mode}} {{event}}"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "values": false
-        },
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "No current data",
-          "decimals": 0,
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 9,
-      "title": "Controller suspected",
-      "type": "stat",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "cranelock-prometheus"
-      },
-      "gridPos": {
-        "x": 16,
-        "y": 10,
-        "w": 8,
-        "h": 5
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "cranelock_agent_controller_suspected",
-          "instant": true,
-          "legendFormat": "{{agent_id}} {{instance}} {{mode}} {{event}}"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "values": false
-        },
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "No current data",
-          "decimals": 0,
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 10,
-      "title": "Controller successful heartbeats",
-      "type": "stat",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "cranelock-prometheus"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 15,
-        "w": 8,
-        "h": 5
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "cranelock_controller_heartbeats_total",
-          "instant": true,
-          "legendFormat": "{{agent_id}} {{instance}} {{mode}} {{event}}"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "values": false
-        },
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "No current data",
-          "decimals": 0,
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 11,
-      "title": "Local recovery event counts",
-      "type": "stat",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "cranelock-prometheus"
-      },
-      "gridPos": {
-        "x": 8,
-        "y": 15,
-        "w": 8,
-        "h": 5
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "cranelock_agent_events_total",
-          "instant": true,
-          "legendFormat": "{{agent_id}} {{instance}} {{mode}} {{event}}"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "values": false
-        },
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "No current data",
-          "decimals": 0,
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 12,
-      "title": "Local install duration p95",
-      "type": "stat",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "cranelock-prometheus"
-      },
-      "gridPos": {
-        "x": 16,
-        "y": 15,
-        "w": 8,
-        "h": 5
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le,agent_id) (rate(cranelock_agent_recovery_seconds_bucket[5m])))",
-          "instant": true,
-          "legendFormat": "{{agent_id}} {{instance}} {{mode}} {{event}}"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "values": false
-        },
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "No current data",
-          "decimals": 3,
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "s"
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 13,
-      "title": "Grants since process restart",
-      "type": "stat",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "cranelock-prometheus"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 20,
-        "w": 8,
-        "h": 5
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "cranelock_gate_grants_total",
-          "instant": true,
-          "legendFormat": "{{agent_id}} {{instance}} {{mode}} {{event}}"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "values": false
-        },
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "No current data",
-          "decimals": 0,
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 14,
-      "title": "Entries since process restart",
-      "type": "stat",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "cranelock-prometheus"
-      },
-      "gridPos": {
-        "x": 8,
-        "y": 20,
-        "w": 8,
-        "h": 5
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "cranelock_gate_entries_total",
-          "instant": true,
-          "legendFormat": "{{agent_id}} {{instance}} {{mode}} {{event}}"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "values": false
-        },
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "No current data",
-          "decimals": 0,
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 15,
-      "title": "Cumulative unknown safety stop",
-      "type": "stat",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "cranelock-prometheus"
-      },
-      "gridPos": {
-        "x": 16,
-        "y": 20,
-        "w": 8,
-        "h": 5
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "cranelock_gate_safety_stop_seconds",
-          "instant": true,
-          "legendFormat": "{{agent_id}} {{instance}} {{mode}} {{event}}"
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "values": false
-        },
-        "textMode": "auto",
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "No current data",
-          "decimals": 3,
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "s"
-        },
-        "overrides": []
-      }
-    }
-  ],
   "annotations": {
     "list": []
   },
   "tags": [
     "platform",
     "local-simulation"
+  ],
+  "panels": [
+    {
+      "title": "Who has the token?",
+      "description": "Only the crane holding the token (a talking stick) may ask to enter the lane.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cranelock-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cranelock_agent_has_token == 1",
+          "instant": true,
+          "legendFormat": "{{agent_id}}"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "textMode": "name",
+        "colorMode": "background_solid",
+        "graphMode": "none",
+        "text": {
+          "titleSize": 14,
+          "valueSize": 40
+        },
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "showPercentChange": false,
+        "wideLayout": false
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Nobody",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "semi-dark-green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "id": 1
+    },
+    {
+      "title": "Who is in charge?",
+      "description": "Manager: the controller hands out the token. Cranes: the manager is missing, so the cranes pass the token among themselves.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cranelock-prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 8,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(sum by (agent_id) (cranelock_agent_mode{mode=\"CENTRAL\"}) + 2 * sum by (agent_id) (cranelock_agent_mode{mode=\"LOCAL\"}) + 3 * sum by (agent_id) (cranelock_agent_mode{mode=\"REJOINING\"}))",
+          "instant": true,
+          "legendFormat": "Mode"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "background_solid",
+        "graphMode": "none",
+        "text": {
+          "titleSize": 14,
+          "valueSize": 40
+        },
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "showPercentChange": false,
+        "wideLayout": false
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "semi-dark-green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "Manager",
+                  "color": "semi-dark-blue",
+                  "index": 0
+                },
+                "2": {
+                  "text": "Cranes",
+                  "color": "semi-dark-orange",
+                  "index": 1
+                },
+                "3": {
+                  "text": "Catching up",
+                  "color": "semi-dark-purple",
+                  "index": 2
+                },
+                "0": {
+                  "text": "Unknown",
+                  "color": "semi-dark-red",
+                  "index": 3
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "id": 2
+    },
+    {
+      "title": "Can cranes enter the lane?",
+      "description": "Even with the token, a crane may only enter when the lane camera confirms the lane is clear. If the camera is unsure (for example after a restart), nobody may enter. That is the safe choice.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cranelock-prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 8,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cranelock_gate_lane_unknown",
+          "instant": true,
+          "legendFormat": "Lane"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "background_solid",
+        "graphMode": "none",
+        "text": {
+          "titleSize": 14,
+          "valueSize": 40
+        },
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "showPercentChange": false,
+        "wideLayout": false
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Gate off",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "semi-dark-green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Yes",
+                  "color": "semi-dark-green",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Not confirmed clear",
+                  "color": "semi-dark-orange",
+                  "index": 1
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "id": 3
+    },
+    {
+      "title": "Which parts are switched on?",
+      "description": "Turns OFF within about 5 seconds when you stop or kill a part.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cranelock-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 24,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{instance=~\"gate:.*\"}",
+          "instant": true,
+          "legendFormat": "gate"
+        },
+        {
+          "refId": "B",
+          "expr": "up{instance=~\"controller:.*\"}",
+          "instant": true,
+          "legendFormat": "controller"
+        },
+        {
+          "refId": "C",
+          "expr": "up{instance=~\"crane-1:.*\"}",
+          "instant": true,
+          "legendFormat": "crane-1"
+        },
+        {
+          "refId": "D",
+          "expr": "up{instance=~\"crane-2:.*\"}",
+          "instant": true,
+          "legendFormat": "crane-2"
+        },
+        {
+          "refId": "E",
+          "expr": "up{instance=~\"crane-3:.*\"}",
+          "instant": true,
+          "legendFormat": "crane-3"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "colorMode": "background_solid",
+        "graphMode": "none",
+        "text": {
+          "titleSize": 18,
+          "valueSize": 30
+        },
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "showPercentChange": false,
+        "wideLayout": false
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "semi-dark-green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "ON",
+                  "color": "semi-dark-green",
+                  "index": 0
+                },
+                "0": {
+                  "text": "OFF",
+                  "color": "semi-dark-red",
+                  "index": 1
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "id": 4
+    },
+    {
+      "title": "Who held the token (last 15 minutes)",
+      "description": "A green bar shows which crane held the token. Watch it jump between cranes.",
+      "type": "state-timeline",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cranelock-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 24,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "cranelock_agent_has_token{agent_id=\"crane-1\"}",
+          "legendFormat": "crane-1",
+          "interval": "5s"
+        },
+        {
+          "refId": "B",
+          "expr": "cranelock_agent_has_token{agent_id=\"crane-2\"}",
+          "legendFormat": "crane-2",
+          "interval": "5s"
+        },
+        {
+          "refId": "C",
+          "expr": "cranelock_agent_has_token{agent_id=\"crane-3\"}",
+          "legendFormat": "crane-3",
+          "interval": "5s"
+        }
+      ],
+      "options": {
+        "showValue": "never",
+        "mergeValues": true,
+        "rowHeight": 0.7,
+        "alignValue": "center",
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "semi-dark-green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "HAS TOKEN",
+                  "color": "semi-dark-green",
+                  "index": 0
+                },
+                "0": {
+                  "text": "-",
+                  "color": "transparent",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "custom": {
+            "lineWidth": 0,
+            "fillOpacity": 85
+          }
+        },
+        "overrides": []
+      },
+      "id": 5
+    },
+    {
+      "type": "row",
+      "title": "More details (click to open)",
+      "collapsed": true,
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 24,
+        "h": 1
+      },
+      "panels": [
+        {
+          "title": "Who was in charge (last 15 minutes)",
+          "description": "Blue: manager in charge. Orange: cranes in charge (manager missing). Purple: catching up after a restart.",
+          "type": "state-timeline",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cranelock-prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 19,
+            "w": 24,
+            "h": 6
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (agent_id) (cranelock_agent_mode{mode=\"CENTRAL\",agent_id=\"crane-1\"}) + 2 * sum by (agent_id) (cranelock_agent_mode{mode=\"LOCAL\",agent_id=\"crane-1\"}) + 3 * sum by (agent_id) (cranelock_agent_mode{mode=\"REJOINING\",agent_id=\"crane-1\"})",
+              "legendFormat": "crane-1",
+              "interval": "5s"
+            },
+            {
+              "refId": "B",
+              "expr": "sum by (agent_id) (cranelock_agent_mode{mode=\"CENTRAL\",agent_id=\"crane-2\"}) + 2 * sum by (agent_id) (cranelock_agent_mode{mode=\"LOCAL\",agent_id=\"crane-2\"}) + 3 * sum by (agent_id) (cranelock_agent_mode{mode=\"REJOINING\",agent_id=\"crane-2\"})",
+              "legendFormat": "crane-2",
+              "interval": "5s"
+            },
+            {
+              "refId": "C",
+              "expr": "sum by (agent_id) (cranelock_agent_mode{mode=\"CENTRAL\",agent_id=\"crane-3\"}) + 2 * sum by (agent_id) (cranelock_agent_mode{mode=\"LOCAL\",agent_id=\"crane-3\"}) + 3 * sum by (agent_id) (cranelock_agent_mode{mode=\"REJOINING\",agent_id=\"crane-3\"})",
+              "legendFormat": "crane-3",
+              "interval": "5s"
+            }
+          ],
+          "options": {
+            "showValue": "never",
+            "mergeValues": true,
+            "rowHeight": 0.7,
+            "alignValue": "center",
+            "legend": {
+              "showLegend": false,
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "transparent",
+                    "value": null
+                  },
+                  {
+                    "color": "semi-dark-blue",
+                    "value": 1
+                  },
+                  {
+                    "color": "semi-dark-orange",
+                    "value": 2
+                  },
+                  {
+                    "color": "semi-dark-purple",
+                    "value": 3
+                  }
+                ]
+              },
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "1": {
+                      "text": "Manager",
+                      "color": "semi-dark-blue",
+                      "index": 0
+                    },
+                    "2": {
+                      "text": "Cranes",
+                      "color": "semi-dark-orange",
+                      "index": 1
+                    },
+                    "3": {
+                      "text": "Catching up",
+                      "color": "semi-dark-purple",
+                      "index": 2
+                    }
+                  }
+                }
+              ],
+              "custom": {
+                "lineWidth": 0,
+                "fillOpacity": 85
+              }
+            },
+            "overrides": []
+          },
+          "id": 7
+        },
+        {
+          "title": "Does each crane think the manager is missing?",
+          "description": "Each crane listens for the manager's 'I am alive' messages.",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cranelock-prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 25,
+            "w": 12,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "cranelock_agent_controller_suspected{agent_id=\"crane-1\"}",
+              "instant": true,
+              "legendFormat": "crane-1"
+            },
+            {
+              "refId": "B",
+              "expr": "cranelock_agent_controller_suspected{agent_id=\"crane-2\"}",
+              "instant": true,
+              "legendFormat": "crane-2"
+            },
+            {
+              "refId": "C",
+              "expr": "cranelock_agent_controller_suspected{agent_id=\"crane-3\"}",
+              "instant": true,
+              "legendFormat": "crane-3"
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "values": false
+            },
+            "textMode": "value_and_name",
+            "colorMode": "background_solid",
+            "graphMode": "none",
+            "text": {
+              "titleSize": 14,
+              "valueSize": 22
+            },
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "showPercentChange": false,
+            "wideLayout": false
+          },
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "No data",
+              "decimals": 0,
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "semi-dark-green",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "No",
+                      "color": "semi-dark-green",
+                      "index": 0
+                    },
+                    "1": {
+                      "text": "Yes",
+                      "color": "semi-dark-red",
+                      "index": 1
+                    }
+                  }
+                }
+              ]
+            },
+            "overrides": []
+          },
+          "id": 8
+        },
+        {
+          "title": "Other cranes each crane can't hear",
+          "description": "How many other cranes this crane thinks are dead. 0 is normal.",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cranelock-prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 25,
+            "w": 12,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "cranelock_agent_suspected_peers{agent_id=\"crane-1\"}",
+              "instant": true,
+              "legendFormat": "crane-1"
+            },
+            {
+              "refId": "B",
+              "expr": "cranelock_agent_suspected_peers{agent_id=\"crane-2\"}",
+              "instant": true,
+              "legendFormat": "crane-2"
+            },
+            {
+              "refId": "C",
+              "expr": "cranelock_agent_suspected_peers{agent_id=\"crane-3\"}",
+              "instant": true,
+              "legendFormat": "crane-3"
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "values": false
+            },
+            "textMode": "value_and_name",
+            "colorMode": "background_solid",
+            "graphMode": "none",
+            "text": {
+              "titleSize": 14,
+              "valueSize": 22
+            },
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "showPercentChange": false,
+            "wideLayout": false
+          },
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "No data",
+              "decimals": 0,
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "semi-dark-green",
+                    "value": null
+                  },
+                  {
+                    "color": "semi-dark-orange",
+                    "value": 1
+                  }
+                ]
+              },
+              "mappings": []
+            },
+            "overrides": []
+          },
+          "id": 9
+        },
+        {
+          "title": "Page number (epoch)",
+          "description": "Goes up by one each time control changes hands by a vote. All cranes should match.",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cranelock-prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 29,
+            "w": 12,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "cranelock_agent_epoch{agent_id=\"crane-1\"}",
+              "instant": true,
+              "legendFormat": "crane-1"
+            },
+            {
+              "refId": "B",
+              "expr": "cranelock_agent_epoch{agent_id=\"crane-2\"}",
+              "instant": true,
+              "legendFormat": "crane-2"
+            },
+            {
+              "refId": "C",
+              "expr": "cranelock_agent_epoch{agent_id=\"crane-3\"}",
+              "instant": true,
+              "legendFormat": "crane-3"
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "values": false
+            },
+            "textMode": "value_and_name",
+            "colorMode": "background_solid",
+            "graphMode": "none",
+            "text": {
+              "titleSize": 14,
+              "valueSize": 22
+            },
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "showPercentChange": false,
+            "wideLayout": false
+          },
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "No data",
+              "decimals": 0,
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "semi-dark-blue",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": []
+            },
+            "overrides": []
+          },
+          "id": 10
+        },
+        {
+          "title": "Requests waiting in each crane's queue",
+          "description": "Crossing requests waiting, served first come, first served.",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cranelock-prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 29,
+            "w": 12,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "cranelock_agent_queue_length{agent_id=\"crane-1\"}",
+              "instant": true,
+              "legendFormat": "crane-1"
+            },
+            {
+              "refId": "B",
+              "expr": "cranelock_agent_queue_length{agent_id=\"crane-2\"}",
+              "instant": true,
+              "legendFormat": "crane-2"
+            },
+            {
+              "refId": "C",
+              "expr": "cranelock_agent_queue_length{agent_id=\"crane-3\"}",
+              "instant": true,
+              "legendFormat": "crane-3"
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "values": false
+            },
+            "textMode": "value_and_name",
+            "colorMode": "background_solid",
+            "graphMode": "none",
+            "text": {
+              "titleSize": 14,
+              "valueSize": 22
+            },
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "showPercentChange": false,
+            "wideLayout": false
+          },
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "No data",
+              "decimals": 0,
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "semi-dark-blue",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": []
+            },
+            "overrides": []
+          },
+          "id": 11
+        },
+        {
+          "title": "Votes that changed who is in charge",
+          "description": "Times the cranes voted and the Gate accepted the result (since the cranes started).",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cranelock-prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 33,
+            "w": 6,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(cranelock_agent_events_total{event=\"RECOVERY_AUTHORITY_INSTALL_RESULT\",outcome=\"True\"}) or vector(0)",
+              "instant": true,
+              "legendFormat": "Votes"
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "values": false
+            },
+            "textMode": "value",
+            "colorMode": "background_solid",
+            "graphMode": "none",
+            "text": {
+              "titleSize": 14,
+              "valueSize": 22
+            },
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "showPercentChange": false,
+            "wideLayout": false
+          },
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "No data",
+              "decimals": 0,
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "semi-dark-purple",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": []
+            },
+            "overrides": []
+          },
+          "id": 12
+        },
+        {
+          "title": "Permission slips given",
+          "description": "Times the Gate let a crane enter (since the Gate started).",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cranelock-prometheus"
+          },
+          "gridPos": {
+            "x": 6,
+            "y": 33,
+            "w": 6,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(cranelock_gate_grants_total) or vector(0)",
+              "instant": true,
+              "legendFormat": "Slips"
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "values": false
+            },
+            "textMode": "value",
+            "colorMode": "background_solid",
+            "graphMode": "none",
+            "text": {
+              "titleSize": 14,
+              "valueSize": 22
+            },
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "showPercentChange": false,
+            "wideLayout": false
+          },
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "No data",
+              "decimals": 0,
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "semi-dark-green",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": []
+            },
+            "overrides": []
+          },
+          "id": 13
+        },
+        {
+          "title": "Crossings completed",
+          "description": "Times a crane actually entered the lane (since the Gate started).",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cranelock-prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 33,
+            "w": 6,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(cranelock_gate_entries_total) or vector(0)",
+              "instant": true,
+              "legendFormat": "Crossings"
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "values": false
+            },
+            "textMode": "value",
+            "colorMode": "background_solid",
+            "graphMode": "none",
+            "text": {
+              "titleSize": 14,
+              "valueSize": 22
+            },
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "showPercentChange": false,
+            "wideLayout": false
+          },
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "No data",
+              "decimals": 0,
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "semi-dark-green",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": []
+            },
+            "overrides": []
+          },
+          "id": 14
+        },
+        {
+          "title": "Gate's record book",
+          "description": "If the Gate cannot save its records, it refuses everything rather than risk forgetting.",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "cranelock-prometheus"
+          },
+          "gridPos": {
+            "x": 18,
+            "y": 33,
+            "w": 6,
+            "h": 4
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "cranelock_gate_available",
+              "instant": true,
+              "legendFormat": "Gate"
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "values": false
+            },
+            "textMode": "value",
+            "colorMode": "background_solid",
+            "graphMode": "none",
+            "text": {
+              "titleSize": 14,
+              "valueSize": 22
+            },
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "showPercentChange": false,
+            "wideLayout": false
+          },
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "Gate off",
+              "decimals": 0,
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "semi-dark-green",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "1": {
+                      "text": "Working",
+                      "color": "semi-dark-green",
+                      "index": 0
+                    },
+                    "0": {
+                      "text": "PROBLEM",
+                      "color": "semi-dark-red",
+                      "index": 1
+                    }
+                  }
+                }
+              ]
+            },
+            "overrides": []
+          },
+          "id": 15
+        }
+      ],
+      "id": 6
+    }
   ]
 }

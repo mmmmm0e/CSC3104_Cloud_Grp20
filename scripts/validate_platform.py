@@ -63,7 +63,9 @@ def monitoring():
     token=base64.b64encode(('admin:'+password).encode()).decode()
     request=urllib.request.Request('http://127.0.0.1:3001/api/dashboards/uid/cranelock-integrated',headers={'Authorization':'Basic '+token})
     dashboard=json.load(urllib.request.urlopen(request,timeout=4))
-    if len(dashboard['dashboard']['panels'])<10 or not dashboard['meta']['provisioned']:
+    # Count panels inside folded rows too; the main view is deliberately short.
+    panels=[p for top in dashboard['dashboard']['panels'] for p in [top,*top.get('panels',[])] if p.get('type')!='row']
+    if len(panels)<10 or not dashboard['meta']['provisioned']:
         raise RuntimeError('Dashboard not fully provisioned')
     record_fault('stop','controller')
     try:

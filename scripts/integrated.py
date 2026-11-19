@@ -212,7 +212,8 @@ def endpoints():
     }
 
 
-GRAFANA_URL = "http://127.0.0.1:3001/d/cranelock-integrated"
+# Kiosk mode hides Grafana's menus for presenting; press Esc to leave it.
+GRAFANA_URL = "http://127.0.0.1:3001/d/cranelock-integrated?kiosk"
 
 
 def open_grafana(url=GRAFANA_URL):
