@@ -37,6 +37,13 @@ def load_controller_probe(spec):
     return probe
 
 
+# issue the optional demo request while workers are supervised
+async def request_token_after(agent, delay):
+    await asyncio.sleep(delay)
+    reply = await agent.request_token()
+    agent.emit("TOKEN_REQUEST_RESULT", accepted=reply.accepted, reason=reply.reason)
+
+
 async def main(argv=None):
     parser = argparse.ArgumentParser(description="CraneLock normal-operation demo")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -239,6 +246,7 @@ async def main(argv=None):
         parser.error("Agent state or startup configuration is invalid or unreadable")
     telemetry = None
     workload_server = workload_service = None
+    request_task = None
     try:
         if args.metrics_port is not None:
             from .telemetry import AgentMetrics
@@ -249,12 +257,15 @@ async def main(argv=None):
             from .workload import start_workload
             workload_server, workload_service, _ = await start_workload(
                 agent, args.workload_listen, workload_credentials, workload_allowed)
+        tasks = list(agent.tasks)
         if args.request_after is not None:
-            await asyncio.sleep(args.request_after)
-            reply = await agent.request_token()
-            agent.emit("TOKEN_REQUEST_RESULT", accepted=reply.accepted, reason=reply.reason)
-        await asyncio.Event().wait()
+            request_task = asyncio.create_task(request_token_after(agent, args.request_after))
+            tasks.append(request_task)
+        await asyncio.gather(*tasks)
     finally:
+        if request_task is not None:
+            request_task.cancel()
+            await asyncio.gather(request_task, return_exceptions=True)
         try:
             if workload_server:
                 await workload_server.stop(0)

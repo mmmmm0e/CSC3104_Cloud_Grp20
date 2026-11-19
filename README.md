@@ -1,4 +1,4 @@
-# CraneLock
+# CraneLock | CSC3104 Group 20
 
 CraneLock is a CSC3104 Cloud & Distributed Computing coursework prototype for
 coordinating multiple simulated cranes that share a single lane. The research
@@ -6,6 +6,35 @@ problem is how to retain coordinated access when a central scheduler or token
 holder fails, while preventing a change in digital authority from being mistaken
 for physical clearance. The system schedules centrally in **CENTRAL** mode and
 can recover to peer coordination in **LOCAL** mode.
+
+## Final submission
+
+The CSC3104 final submission consists of the following four items. One team
+member submits them through the LMS on behalf of Group 20 by 23:59 on
+Friday, 20 November 2026.
+
+| Item | Group 20 submission |
+| --- | --- |
+| System | [CraneLock source repository](https://github.com/mmmmm0e/CSC3104_Cloud_Grp20), with Docker build files, launch scripts, tests, and seeded experiment runners. |
+| Research article | `GROUP20.pdf` in IEEE or ACM proceedings format, around 3,000 words and at most six pages. The abstract is at most 200 words. |
+| Testing instructions | `GROUP20_INSTRUCTIONS.pdf`, a separate PDF with the steps for installing, running, and testing the system. |
+| Video presentation | A 10–15 minute video covering the implemented functions and the reasons for the design choices. Submit the recording or a link that the assessor can access. |
+
+The article should cover motivation, system design, implementation, quantitative
+evaluation, related work, conclusions, and references. Each member also submits a
+peer evaluation individually.
+
+## Research contribution
+
+CraneLock combines majority-approved token recovery with a trusted gate that
+checks both the current authority and the physical lane state. The distinction
+matters during an outage: a new holder can be installed while the lane is still
+occupied, but access waits for valid clearance. We evaluate this design against a
+central lock and a basic token system with the same seeded requests. The
+[comparison results](docs/DEPLOYED_RESULTS.md) show when each baseline stalled
+and how many simulated crossings each system completed. See the
+[recovery safety argument](docs/RECOVERY_SAFETY.md) for the assumptions behind the
+design and the [evaluation guide](docs/EVALUATION.md) to reproduce the tests.
 
 ## Architecture and behavior
 
@@ -53,12 +82,29 @@ checked in; after changing a protocol, regenerate them with
 `python scripts/generate_proto.py` from the activated environment. Optional
 plotting dependencies are available with `python -m pip install -e ".[dev,evaluation]"`.
 
-For a new integrated deployment, follow the [platform handoff](docs/PLATFORM_HANDOFF.md)
-for provisioning, initialization, startup and convergence checks. Existing
-installations must retain their identities and volumes; do not reinitialize them
-as a recovery procedure. [Deployment](docs/DEPLOYMENT.md) covers persistence,
-TLS and the standalone Gate; [platform operations](docs/PLATFORM_OPERATIONS.md)
-covers monitoring, fault controls and Kubernetes.
+### Start the integrated Docker deployment
+
+With Docker running in Linux-container mode, use these commands for a fresh
+deployment. The first two commands generate local development credentials and
+initialize a new Gate database. For an existing deployment, keep its identities
+and volumes and start at `up`.
+
+```powershell
+.\.venv\Scripts\python.exe scripts/integrated.py provision
+.\.venv\Scripts\python.exe scripts/integrated.py init
+.\.venv\Scripts\python.exe scripts/integrated.py up
+.\.venv\Scripts\python.exe scripts/integrated.py status
+.\.venv\Scripts\python.exe scripts/integrated.py state
+.\.venv\Scripts\python.exe scripts/integrated.py check
+```
+
+Before submitting workload, confirm that the Gate and agents agree on `CENTRAL`
+authority, that peers are available, and that only the Gate's current holder
+reports ownership. The [platform handoff](docs/PLATFORM_HANDOFF.md) covers
+provisioning, convergence, and upgrades. The [platform operations guide](docs/PLATFORM_OPERATIONS.md)
+contains the single-node kind setup and tests, monitoring, and fault controls.
+Use `.\.venv\Scripts\python.exe scripts/integrated.py stop` to stop the Compose
+services and retain their volumes.
 
 ## Evaluation
 
@@ -74,11 +120,38 @@ run a single normal workload against the existing integrated services:
 ```
 
 The workload uses a newly declared empty **simulated** lane and must run without
-another active workload. For controller-outage and holder-failure commands, their
+another active workload. A successful normal run of the command above reports
+18 completed crossings and no detected overlap. For controller-outage and
+holder-failure commands, their
 prerequisites, and checks between runs, see [integrated container testing](docs/EVALUATION.md#test-the-integrated-containers).
 Those fault scenarios stop and restart the affected services and retain their
 volumes; they should be run only on a suitable test deployment. Results are saved
 under `run/deployed-evaluation`.
+
+### Verify recovery and show the demo
+
+Run these local scenarios from the repository root. These commands use the local
+simulator and do not need the Docker deployment.
+
+| Scenario | Command after activating the virtual environment | What to verify |
+| --- | --- | --- |
+| Holder failure | `python -m cranelock_sim --mode recovery` | A majority installs replacement authority and the Gate rejects stale permissions. An occupied lane blocks the replacement until clearance. |
+| Partition without a majority | `python -m cranelock_sim --mode partition --scenario no-majority` | Isolated members cannot install replacement authority. |
+| Agent restart | `python -m cranelock_sim --mode restart` | The restarted agent reconciles with Gate authority before it resumes participation. |
+
+For a short dashboard demonstration, generate a recorded controller outage
+comparison. Choose a new output directory if the example path already exists.
+
+```powershell
+.\.venv\Scripts\python.exe -m cranelock_sim --mode benefits --scenario controller-outage --seed 20 --loads 6 --duration 5 --no-plots --output run/evaluation/submission-demo
+.\.venv\Scripts\python.exe -m cranelock_sim.dashboard
+```
+
+Open [the evaluation dashboard](http://127.0.0.1:8765), select the saved test,
+and choose **CraneLock** in **Lane playback**. Click **Jump to controller
+stopping** and step forward to show the switch to `LOCAL` and a later lane
+entry. The browser replays saved events. For live metrics from the running
+Compose stack, use `.\.venv\Scripts\python.exe scripts/integrated.py grafana`.
 
 ### Logical scalability and dashboard
 
@@ -114,6 +187,10 @@ with zero detected lane overlaps. The controlled logical matrix completed
 the validation period; they were not all rerun on commit `8390b36`. Raw newer
 workload and logical experiment artifacts are local under the ignored `run/`
 directory and are not included in the repository.
+
+A separate live kind check exercised the fatal-worker shutdown fix in a single
+agent pod built with the local fix. The injected failure made the container exit with code `1`. Kubernetes
+restarted the container once in the same pod and reported it Ready again.
 
 An **earlier, separate 27-case Docker comparison** tested central lock, basic
 token and CraneLock across three scenarios and three seeds. It used a distinct

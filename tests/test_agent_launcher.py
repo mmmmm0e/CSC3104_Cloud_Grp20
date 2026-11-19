@@ -111,6 +111,33 @@ def test_launcher_passes_optional_features_and_closes_on_start_failure(
         assert agent.controller_probe is (probe if features == "controller" else None)
 
 
+# a dead worker must take down the rpc server even during a delayed request
+@pytest.mark.parametrize("extra", [[], ["--request-after", "60"]])
+def test_launcher_exits_and_closes_server_on_fatal_worker_failure(options, monkeypatch, extra):
+    base, _, _ = options
+    instances = []
+
+    class FailingAgent(Agent):
+        async def start(self, address):
+            await super().start(address)
+            instances.append(self)
+
+        async def heartbeat_loop(self):
+            raise RuntimeError("fatal heartbeat failure")
+
+    monkeypatch.setattr(launcher, "Agent", FailingAgent)
+
+    async def scenario():
+        with pytest.raises(RuntimeError, match="fatal heartbeat failure"):
+            await asyncio.wait_for(launcher.main(base + extra), timeout=3)
+        agent, = instances
+        assert agent.state.mode == Mode.REJOINING
+        assert all(task.done() for task in agent.tasks)
+        await asyncio.wait_for(agent.server.wait_for_termination(), timeout=1)
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("invalid", [
     "missing_config", "bad_config", "membership", "missing_key", "bad_key", "wrong_key",
     "shared_keys", "partial_recovery", "no_gate", "different_lane", "different_member_key",
