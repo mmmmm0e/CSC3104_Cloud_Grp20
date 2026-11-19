@@ -3,6 +3,10 @@ services:
     build:
       context: ..
     image: cranelock-gate:0.1.0
+    # Local development only: plaintext, published on host loopback. The image
+    # default requires mutual TLS; compose.tls.yaml restores that.
+    command: [serve, --config, /config/config.json, --database, /data/gate.sqlite,
+              --bind, "0.0.0.0:50051", --allow-insecure-development]
     ports:
       - "127.0.0.1:50051:50051"
       - "127.0.0.1:9090:9090"

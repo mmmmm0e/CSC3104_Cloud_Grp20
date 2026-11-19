@@ -183,8 +183,32 @@ automatically by these launcher options.
 
 Missing, malformed or mismatched configuration exits with an argparse error
 (status 2), before serving agent RPCs. A gate client created during validation is
-closed on a later validation failure. The existing one-vote-per-target-epoch
-rule and stale-snapshot availability limitation are unchanged.
+closed on a later validation failure. Vote rules, including re-voting for a
+strictly newer live Gate revision, are described in [recovery retries](RECOVERY_RETRY.md).
+
+## Agent-to-agent mutual TLS
+
+Peer RPCs (heartbeats, token requests and transfers, recovery votes) are plaintext
+unless configured, and the launcher prints a warning when any peer or listen address is
+not loopback. To authenticate and encrypt them, generate a separate peer set and
+pass all three `--peer-tls-*` options to every agent:
+
+```powershell
+.\.venv\Scripts\python.exe -m cranelock_gate.tls --directory demo-data/peer-tls --agent crane-1 --agent crane-2 --agent crane-3 --name localhost --name 127.0.0.1
+.\.venv\Scripts\python.exe -m cranelock run --id crane-1 ... --peer-tls-ca demo-data/peer-tls/ca.pem --peer-tls-cert demo-data/peer-tls/crane-1.pem --peer-tls-key demo-data/peer-tls/crane-1-key.pem
+```
+
+Each agent certificate has URI SAN `urn:cranelock:agent:<id>` and DNS SAN `<id>`.
+A dialling agent pins the TLS server name to the expected peer ID, and the server
+rejects with `PERMISSION_DENIED` any request whose claimed sender (`agent_id`,
+`sender_id` or `proposer_id`) differs from the client certificate. The generated
+`monitor.pem` may read `GetAgentState` (`python -m cranelock state ADDRESS
+--tls-ca ... --tls-cert monitor.pem --tls-key monitor-key.pem --server-name crane-1`,
+or `python -m cranelock.controller --tls-*`) but cannot act as a peer. All agents
+in a membership must use the same setting. The integrated Compose and Kubernetes
+deployments enable it: `scripts/integrated.py provision` (or `provision-peer-tls`
+for an older experiment) writes `demo-data/integrated/tls/agents`, and every crane
+mounts its own certificate at `/peer-tls`.
 
 ## Process lifecycle integration test
 

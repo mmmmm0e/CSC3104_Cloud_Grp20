@@ -278,11 +278,13 @@ def test_received_handoff_survives_higher_epoch_hint_and_install(h, tmp_path):
             assert list(receiver.state.request_queue) == ["crane-3"]
             assert h.install("crane-2", epoch=1, mode="LOCAL")["allowed"]
             # The receiver has not yet observed the installation: even then,
-            # the old message must be checked against current Gate authority.
-            assert not (await receiver.TokenTransfer(message, None)).accepted
+            # the old message is checked against current Gate authority. The
+            # Gate still records it as the latest handoff to the still-current
+            # holder, so a duplicate is acknowledged without changing the queue.
+            assert (await receiver.TokenTransfer(message, None)).accepted
             assert await receiver.reconcile_from_gate()
             assert receiver.state.has_token and not receiver.incoming_pending
-            assert not (await receiver.TokenTransfer(message, None)).accepted
+            assert (await receiver.TokenTransfer(message, None)).accepted
             assert list(receiver.state.request_queue) == ["crane-3"]
             next_receiver = Agent("crane-3", {"crane-1": "localhost:1", "crane-2": "localhost:2"},
                 "crane-2", epoch=0, gate=client(h, server, "crane-3"),
@@ -398,7 +400,9 @@ def test_receipt_survives_controller_reassignment_away_and_back(h, tmp_path):
             assert h.install("crane-2", epoch=0, mode="CENTRAL")["allowed"]
             assert await receiver.reconcile_from_gate()
             assert receiver.state.has_token and not receiver.incoming_pending
-            assert not (await receiver.TokenTransfer(message, None)).accepted
+            # Still the Gate's latest handoff to the current holder: duplicate no-op.
+            assert (await receiver.TokenTransfer(message, None)).accepted
+            assert receiver.state.has_token and not receiver.state.request_queue
             assert h.install("crane-1", epoch=0, mode="CENTRAL")["allowed"]
             assert await receiver.reconcile_from_gate() and not receiver.state.has_token
             later = h.call("crane-1", "TransferHolder", epoch=0, revision=5, destination="crane-2")
@@ -600,6 +604,46 @@ def test_denied_old_command_restores_queue_if_authority_returns_to_sender(h, tmp
         server.close()
 
 
+def test_install_keeping_holder_does_not_strand_pending_notification(h, tmp_path):
+    """A controller install that keeps the destination as holder (e.g. CENTRAL
+    restored mid-handoff) must not block delivery of the committed handoff."""
+    h.ready()
+    server = RunningServer(h.gate, "127.0.0.1:0")
+    async def scenario():
+        sender = Agent("crane-1", {"crane-2": "localhost:1", "crane-3": "localhost:2"},
+                       "crane-1", epoch=0, gate=client(h, server, "crane-1"),
+                       state_file=tmp_path / "sender.json", event_sink=lambda event: None)
+        receiver = Agent("crane-2", {"crane-1": "localhost:1", "crane-3": "localhost:2"},
+                         "crane-1", epoch=0, gate=client(h, server, "crane-2"),
+                         state_file=tmp_path / "receiver.json", event_sink=lambda event: None)
+        try:
+            assert await sender.reconcile_from_gate() and await receiver.reconcile_from_gate()
+            for peer in ("crane-2", "crane-3"):
+                assert (await sender.TokenRequest(pb.TokenRequestMessage(
+                    agent_id=peer, epoch=0, revision=1), None)).accepted
+            sender.stubs["crane-2"] = DirectReceiver(receiver, accept=False)
+            assert not await sender.transfer_next()
+            transfer_id = sender.pending.transfer_id
+            assert h.install("crane-2", epoch=0, mode="CENTRAL")["allowed"]
+            assert await receiver.reconcile_from_gate()
+            assert receiver.incoming_pending and not receiver.state.has_token
+            retry = DirectReceiver(receiver)
+            sender.stubs["crane-2"] = retry
+            assert await sender.transfer_next()
+            assert [m.transfer_id for m in retry.messages] == [transfer_id]
+            assert sender.pending is None and not sender.handoff_blocked
+            assert receiver.state.has_token and not receiver.incoming_pending
+            assert list(receiver.state.request_queue) == ["crane-3"]
+            assert (receiver.state.current_epoch, receiver.state.revision) == (0, 3)
+        finally:
+            await sender.close()
+            await receiver.close()
+    try:
+        asyncio.run(scenario())
+    finally:
+        server.close()
+
+
 def test_superseded_pending_notification_stays_durable_and_never_sent_stale(h, tmp_path):
     h.ready()
     server = RunningServer(h.gate, "127.0.0.1:0")
@@ -621,7 +665,8 @@ def test_superseded_pending_notification_stays_durable_and_never_sent_stale(h, t
             sender.stubs["crane-2"] = DirectReceiver(receiver, accept=False)
             assert not await sender.transfer_next()
             transfer_id = sender.pending.transfer_id
-            assert h.install("crane-2", epoch=0, mode="CENTRAL")["allowed"]
+            # The controller reassigns the lane elsewhere: this handoff is superseded.
+            assert h.install("crane-3", epoch=0, mode="CENTRAL")["allowed"]
             retry = DirectReceiver(receiver)
             sender.stubs["crane-2"] = retry
             assert not await sender.transfer_next()

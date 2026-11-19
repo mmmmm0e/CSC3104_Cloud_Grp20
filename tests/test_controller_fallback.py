@@ -204,21 +204,22 @@ def test_controller_return_does_not_overwrite_local_transfer(h, tmp_path, commit
                 await until(lambda: any(e["event"] == "CONTROLLER_RECONCILIATION_DEFERRED"
                                         for e in events))
                 release.set()
-                assert not await asyncio.wait_for(transfer, 2)
-                if committed:
-                    # The old notification is fenced by the restored revision.
-                    # Retain it for resolution rather than dropping its queue.
-                    assert holder.pending is not None
-                    assert not await holder.transfer_next()
+                # A committed handoff is still the Gate's latest handoff after
+                # CENTRAL is restored with the same holder, so it is delivered
+                # rather than stranded; an uncommitted one is simply denied.
+                assert await asyncio.wait_for(transfer, 2) == committed
                 await until(lambda: all(agent.state.mode == Mode.CENTRAL
                                         for agent in agents.values()))
                 assert (h.state["epoch"], h.state["revision"], h.state["holder"]) == (
                     1, 4 if committed else 3, "crane-2" if committed else "crane-1")
                 assert holder.state.has_token == (not committed)
-                assert not agents["crane-2"].state.has_token
                 if committed:
-                    assert holder.handoff_blocked == "DELIVERY_SUPERSEDED"
-                    assert agents["crane-2"].incoming_pending
+                    receiver = agents["crane-2"]
+                    await until(lambda: receiver.state.has_token)
+                    assert holder.pending is None and not holder.handoff_blocked
+                    assert not receiver.incoming_pending
+                else:
+                    assert not agents["crane-2"].state.has_token
                 assert holder.gate_attempt is None
         finally:
             await heartbeat.close()
@@ -294,8 +295,13 @@ def test_fallback_waits_for_gate_and_serializes_attempts(h, tmp_path, failure):
                 assert all(a.state.mode == Mode.CENTRAL for a in agents.values())
                 assert responses and all(r["reason"] == "STALE_REVISION" for r in responses)
                 assert h.state["epoch"] == 0 and h.state["holder"] == "crane-2"
-                # Persisted votes cannot be rewritten for a different snapshot.
-                await until(lambda: any(e.get("reason") == "CONFLICTING_VOTE" for e in events))
+                # The stale certificate can never install. Votes may move to the
+                # strictly newer live snapshot, so fallback still completes,
+                # retaining the Gate's current holder.
+                await until(lambda: h.state["epoch"] == 1)
+                assert (h.state["mode"], h.state["holder"]) == ("LOCAL", "crane-2")
+                assert all(a.vote_proposals["1"]["expected_revision"] == 2 for a in agents.values())
+                await until(lambda: all(a.state.mode == Mode.LOCAL for a in agents.values()))
             else:
                 await until(lambda: any(e["event"] == "RECOVERY_AUTHORITY_INSTALL_RESULT" for e in events))
                 assert h.state["mode"] == "CENTRAL" and h.state["epoch"] == 0

@@ -60,8 +60,10 @@ def initialize(database, config, now):
     path = Path(database)
     path.parent.mkdir(parents=True, exist_ok=True)
     lease = ProcessLease(path)
+    created = False
     try:
         path.touch(exist_ok=False)
+        created = True
         db = connect(path)
         try:
             db.executescript("""
@@ -84,6 +86,17 @@ def initialize(database, config, now):
             db.commit()
         finally:
             db.close()
+    except BaseException:
+        # A partially created database would block a later init (the file
+        # exists) and fail Gate startup. Remove only what this call created;
+        # an existing database is never touched because touch() refused it.
+        if created:
+            for leftover in (path, Path(f"{path}-wal"), Path(f"{path}-shm"), Path(f"{path}-journal")):
+                try:
+                    leftover.unlink(missing_ok=True)
+                except OSError:
+                    pass
+        raise
     finally:
         lease.close()
 

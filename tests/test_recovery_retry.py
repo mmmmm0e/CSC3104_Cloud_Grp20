@@ -145,7 +145,8 @@ def test_invalid_legacy_vote_state_is_rejected(h, votes):
         recovery.validate_saved(h.config, votes, {})
 
 
-# a revision race during collection cannot produce a refreshed conflicting vote
+# a revision race during collection abandons that attempt; once the live Gate has
+# moved past the old snapshot, a vote for the newer revision replaces it
 def test_gate_changes_after_own_vote_before_certificate(h, tmp_path):
     async def scenario():
         assert h.install()["allowed"]
@@ -168,11 +169,32 @@ def test_gate_changes_after_own_vote_before_certificate(h, tmp_path):
             agent.stubs["crane-3"] = RacingPeer()
             assert await agent.propose_recovery(state, "crane-2") is None
             digest = dict(agent.vote_state)
+            stale_payload = agent.vote_proposals["1"]
+            assert stale_payload["expected_revision"] == 1
             assert await agent.reconcile_from_gate()
             agent.suspected.add("crane-3")
-            assert await agent.propose_recovery(h.state, "crane-2") is None
-            assert agent.recovery_blocked[-1] == "STALE_VOTE_REVISION" and agent.vote_state == digest
-            assert h.state["epoch"] == 0 and h.state["holder"] == "crane-3"
+
+            class HonestPeer:
+                async def VoteRecovery(self, message, timeout):
+                    return pb.RecoveryVote(accepted=True, voter_id="crane-3", signature=recovery.sign(
+                        h.keys["crane-3"], recovery.parse_proposal(message.proposal_json, h.config)))
+
+            agent.stubs["crane-3"] = HonestPeer()
+            certificate = await agent.propose_recovery(h.state, "crane-2")
+            assert certificate is not None
+            assert certificate["payload"]["expected_revision"] == h.state["revision"] == 2
+            assert agent.vote_state != digest and agent.vote_proposals["1"] == certificate["payload"]
+            # the abandoned certificate can never install: the Gate moved past its snapshot
+            stale = recovery.certificate(stale_payload, {m: recovery.sign(h.keys[m], stale_payload)
+                                                        for m in ("crane-2", "crane-3")})
+            assert h.call("crane-2", "InstallAuthority", certificate=stale, expected_epoch=0,
+                          expected_revision=1)["reason"] == "STALE_REVISION"
+            assert h.call("crane-2", "InstallAuthority", certificate=certificate, expected_epoch=0,
+                          expected_revision=2)["allowed"]
+            assert (h.state["epoch"], h.state["holder"]) == (1, "crane-2")
+            # a vote can never move back to an older revision
+            assert recovery.retry_block(agent.vote_state, agent.vote_proposals, stale_payload,
+                                        allow_supersede=True) == "STALE_VOTE_REVISION"
         finally:
             await agent.close()
             server.close()

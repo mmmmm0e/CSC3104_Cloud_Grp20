@@ -6,7 +6,10 @@ For a gate snapshot `(e, r)`, a proposer constructs exactly one canonical author
 payload naming epoch `e+1`, the replacement holder, lane, fixed membership, and the
 expected snapshot `(e, r)`. The proposer signs it with Ed25519. A member votes only
 when it is active at epoch `e`, locally suspects the current holder, authenticates the
-proposer, and has not durably voted for a different payload at target epoch `e+1`.
+proposer, and has not durably voted for a different payload for the same snapshot
+`(e, r)`. A Gate-enabled member may move its vote for target epoch `e+1` only to a
+strictly newer revision `r2 > r` of the same epoch, and only after a live Gate read
+confirms the Gate is at `(e, r2)`.
 The vote is fsynced before its signature is returned. A certificate contains distinct
 valid member signatures and is usable only with at least `floor(N/2)+1` signatures.
 In CENTRAL mode, voting instead requires suspicion of the configured controller;
@@ -30,9 +33,19 @@ permission to vote, not proof by itself and not authority to enter the lane.
 ## Why conflicting recoveries cannot both be accepted
 
 Any two strict majorities intersect in at least one member. An honest member durably
-records one proposal digest per target epoch before releasing its signature and will
-reject a different proposal for that epoch after retries or restart. Therefore two
-different payloads for the same `e+1` cannot both collect valid strict majorities.
+records one proposal per target epoch before releasing its signature and will reject
+a different proposal for the same snapshot `(e, r)` after retries or restart.
+Therefore two different payloads for the same snapshot cannot both collect valid
+strict majorities.
+
+Payloads for the same `e+1` but different expected revisions `r < r2` can both form,
+but at most one can ever be installed. The Gate accepts a certificate only when its
+expected `(e, r)` equals the Gate's durable current state, and Gate revisions never
+decrease. A member moves its vote from `r` to `r2` only after reading that the Gate
+is already at `(e, r2)`; from then on no certificate for `(e, r)` can match the Gate
+again. If the `(e, r2)` certificate installs, the epoch becomes `e+1` and every other
+certificate expecting epoch `e` is stale. Votes never move to an older revision, to
+another holder at the same revision, or from legacy digest-only records.
 Even if a delayed proposal was valid when created, the gate's atomic expected
 epoch/revision comparison permits only the proposal matching its current snapshot.
 The first accepted authority change makes every competing or delayed certificate
@@ -59,12 +72,13 @@ that gate.
 
 Identical proposals may be retried without changing the durable vote. The exact
 proposal is retained alongside its digest and validated after restart. A proposal
-for another holder or expected revision at the same target epoch remains conflicting.
+for another holder at the same snapshot, or an older revision, remains conflicting.
 Live gate checks before voting and after collection reduce stale attempts, while the
 gate's atomic expected-snapshot check closes the remaining installation race.
 
-A changed gate revision can permanently invalidate already signed proposals while
-their target-epoch locks remain. A returning majority alone does not remove this
-limitation. The system retains votes and blocks rather than signing another proposal
-for that target epoch. See [recovery retry contract and failure tests](RECOVERY_RETRY.md)
-for the chosen safe strategy, container validation command and future protocol options.
+A changed gate revision invalidates already signed proposals. Gate-enabled members
+then re-vote for the newer, live-verified snapshot, so an abandoned attempt (for
+example a controller returning after votes were collected) no longer blocks every
+later recovery at that epoch. Standalone voters without a Gate, and legacy
+digest-only vote records, cannot verify the newer snapshot and keep the original
+lock. See [recovery retry contract and failure tests](RECOVERY_RETRY.md).

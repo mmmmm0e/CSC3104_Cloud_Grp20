@@ -1,3 +1,6 @@
+# Crane-to-crane RPCs use mutual TLS: each crane presents its own certificate
+# (demo-data/integrated/tls/agents, created by integrated.py provision or
+# provision-peer-tls) and rejects peers claiming another identity.
 services:
   crane-1:
     image: cranelock-agent:integrated
@@ -58,6 +61,12 @@ services:
       - /workload/server-key.pem
       - --workload-allowlist
       - /workload/allowlist.json
+      - --peer-tls-ca
+      - /peer-tls/ca.pem
+      - --peer-tls-cert
+      - /peer-tls/agent.pem
+      - --peer-tls-key
+      - /peer-tls/agent-key.pem
     volumes:
       - crane-1-data:/data
       - type: bind
@@ -92,6 +101,24 @@ services:
       - ../demo-data/integrated/tls/controller/ca.pem:/controller-tls/ca.pem:ro
       - ../demo-data/integrated/tls/controller/client.pem:/controller-tls/client.pem:ro
       - ../demo-data/integrated/tls/controller/client-key.pem:/controller-tls/client-key.pem:ro
+      - type: bind
+        source: ../demo-data/integrated/tls/agents/ca.pem
+        target: /peer-tls/ca.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../demo-data/integrated/tls/agents/crane-1.pem
+        target: /peer-tls/agent.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../demo-data/integrated/tls/agents/crane-1-key.pem
+        target: /peer-tls/agent-key.pem
+        read_only: true
+        bind:
+          create_host_path: false
     depends_on:
       gate:
         condition: service_healthy
@@ -156,6 +183,12 @@ services:
       - /workload/server-key.pem
       - --workload-allowlist
       - /workload/allowlist.json
+      - --peer-tls-ca
+      - /peer-tls/ca.pem
+      - --peer-tls-cert
+      - /peer-tls/agent.pem
+      - --peer-tls-key
+      - /peer-tls/agent-key.pem
     volumes:
       - crane-2-data:/data
       - type: bind
@@ -190,6 +223,24 @@ services:
       - ../demo-data/integrated/tls/controller/ca.pem:/controller-tls/ca.pem:ro
       - ../demo-data/integrated/tls/controller/client.pem:/controller-tls/client.pem:ro
       - ../demo-data/integrated/tls/controller/client-key.pem:/controller-tls/client-key.pem:ro
+      - type: bind
+        source: ../demo-data/integrated/tls/agents/ca.pem
+        target: /peer-tls/ca.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../demo-data/integrated/tls/agents/crane-2.pem
+        target: /peer-tls/agent.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../demo-data/integrated/tls/agents/crane-2-key.pem
+        target: /peer-tls/agent-key.pem
+        read_only: true
+        bind:
+          create_host_path: false
     depends_on:
       gate:
         condition: service_healthy
@@ -255,6 +306,12 @@ services:
       - /workload/server-key.pem
       - --workload-allowlist
       - /workload/allowlist.json
+      - --peer-tls-ca
+      - /peer-tls/ca.pem
+      - --peer-tls-cert
+      - /peer-tls/agent.pem
+      - --peer-tls-key
+      - /peer-tls/agent-key.pem
     volumes:
       - crane-3-data:/data
       - type: bind
@@ -289,6 +346,24 @@ services:
       - ../demo-data/integrated/tls/controller/ca.pem:/controller-tls/ca.pem:ro
       - ../demo-data/integrated/tls/controller/client.pem:/controller-tls/client.pem:ro
       - ../demo-data/integrated/tls/controller/client-key.pem:/controller-tls/client-key.pem:ro
+      - type: bind
+        source: ../demo-data/integrated/tls/agents/ca.pem
+        target: /peer-tls/ca.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../demo-data/integrated/tls/agents/crane-3.pem
+        target: /peer-tls/agent.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../demo-data/integrated/tls/agents/crane-3-key.pem
+        target: /peer-tls/agent-key.pem
+        read_only: true
+        bind:
+          create_host_path: false
     depends_on:
       gate:
         condition: service_healthy

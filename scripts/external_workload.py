@@ -9,7 +9,7 @@ import subprocess
 
 import grpc
 
-from integrated import ROOT, compose, endpoints, record_fault, validation_lock
+from integrated import ROOT, compose, endpoints, peer_channel, record_fault, validation_lock
 from cranelock import protocol_pb2 as pb, protocol_pb2_grpc as rpc
 from cranelock_gate.client import Client
 from cranelock_gate.config import Config
@@ -56,14 +56,21 @@ class ExternalDeployment:
             connection, stub = workload_channel(address, ca, cert, key)
             stack.enter_context(connection)
             self.workloads[identity] = stub
-        self.stubs = {identity: rpc.CraneAgentStub(stack.enter_context(grpc.insecure_channel(endpoint["host"])))
-                      for identity, endpoint in manifest["agents"].items()}
+        self.stack, self.stubs = stack, {}
+
+    def stub(self, crane, identity="monitor"):
+        """Peer mTLS stub to ``crane``, presenting ``identity``'s certificate."""
+        if (crane, identity) not in self.stubs:
+            channel = self.stack.enter_context(peer_channel(crane, identity))
+            self.stubs[crane, identity] = rpc.CraneAgentStub(channel)
+        return self.stubs[crane, identity]
 
     def agent(self, identity):
-        return self.stubs[identity].GetAgentState(pb.Empty(), timeout=2)
+        return self.stub(identity).GetAgentState(pb.Empty(), timeout=2)
 
     def request(self, holder, identity, state, request_id):
-        return self.stubs[holder].TokenRequest(pb.TokenRequestMessage(agent_id=identity,
+        # Queue requests claim to come from ``identity``, so present its certificate.
+        return self.stub(holder, identity).TokenRequest(pb.TokenRequestMessage(agent_id=identity,
             epoch=state["epoch"], revision=state["revision"], request_id=request_id), timeout=.5)
 
     def fault(self, action, service):

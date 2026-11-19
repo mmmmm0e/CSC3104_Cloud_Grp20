@@ -26,7 +26,7 @@ class ControllerError(RuntimeError):
 class AgentStateMonitor:
     # Polls live state from configured crane-agent gRPC endpoints
 
-    def __init__(self, agents, *, timeout=2.0):
+    def __init__(self, agents, *, timeout=2.0, credentials=None):
         if not isinstance(agents, Mapping) or not agents:
             raise ValueError("agents must map agent IDs to gRPC addresses")
         if timeout <= 0:
@@ -36,7 +36,10 @@ class AgentStateMonitor:
                for agent_id, address in agents.items()):
             raise ValueError("Agent IDs and gRPC addresses must be nonempty strings")
         self.timeout = timeout
-        self.channels = {agent_id: grpc.insecure_channel(address)
+        # With agent peer mTLS, pin each endpoint to the expected agent identity.
+        self.channels = {agent_id: (grpc.secure_channel(address, credentials, options=(
+                                        ("grpc.ssl_target_name_override", agent_id),))
+                                    if credentials else grpc.insecure_channel(address))
                          for agent_id, address in agents.items()}
         self.stubs = {agent_id: agent_rpc.CraneAgentStub(channel)
                       for agent_id, channel in self.channels.items()}
@@ -393,7 +396,18 @@ def main():
     parser.add_argument("--agent", action="append", required=True, metavar="ID=HOST:PORT")
     parser.add_argument("--interval", type=float, default=1.0)
     parser.add_argument("--timeout", type=float, default=2.0)
+    parser.add_argument("--tls-ca", help="Agent peer CA (enables mutual TLS)")
+    parser.add_argument("--tls-cert", help="Client certificate, e.g. the peer set's monitor.pem")
+    parser.add_argument("--tls-key")
     args = parser.parse_args()
+    tls = [args.tls_ca, args.tls_cert, args.tls_key]
+    credentials = None
+    if any(tls):
+        if not all(tls):
+            parser.error("Provide --tls-ca, --tls-cert and --tls-key together")
+        from pathlib import Path
+        credentials = grpc.ssl_channel_credentials(
+            Path(args.tls_ca).read_bytes(), Path(args.tls_key).read_bytes(), Path(args.tls_cert).read_bytes())
     if args.interval <= 0 or args.timeout <= 0:
         parser.error("--interval and --timeout must be positive")
     agents = {}
@@ -405,7 +419,7 @@ def main():
             parser.error(f"Invalid or duplicate --agent {value!r}")
         agents[agent_id] = address
 
-    monitor = AgentStateMonitor(agents, timeout=args.timeout)
+    monitor = AgentStateMonitor(agents, timeout=args.timeout, credentials=credentials)
     try:
         phase = "startup"
         while True:

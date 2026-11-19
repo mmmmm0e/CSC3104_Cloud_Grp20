@@ -32,6 +32,12 @@ docker compose -f deploy/compose.yaml ps
 .\.venv\Scripts\python.exe -m cranelock_gate.demo run --directory demo-data --target 127.0.0.1:50051
 ```
 
+The Gate image's default command requires mutual TLS with certificates mounted at
+`/tls`. `deploy/compose.yaml` opts in to plaintext explicitly with
+`--allow-insecure-development` (published on host loopback only); layer
+`deploy/compose.tls.yaml` on top to restore mutual TLS. Running the image directly
+without either a `/tls` mount or an explicit command therefore fails closed.
+
 The host `demo-data/config.json` must already exist (use demo setup). The Compose named
 volume uses its own database, distinct from the host demo database. Run container init
 once only, before starting the container. A later init attempt must fail rather than

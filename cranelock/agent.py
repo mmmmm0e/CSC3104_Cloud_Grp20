@@ -14,6 +14,7 @@ import grpc
 from . import protocol_pb2 as pb
 from . import protocol_pb2_grpc as rpc
 from . import recovery
+from .peer_tls import agent_uri, context_uri
 
 
 class Mode(IntEnum):
@@ -41,12 +42,16 @@ class Agent(rpc.CraneAgentServicer):
     def __init__(self, agent_id, peers, holder, *, epoch=1, mode=Mode.LOCAL,
                  interval=0.5, timeout=2.0, state_file=None, clock=time.monotonic,
                  event_sink=None, gate=None, revision=0,
-                 recovery_config=None, recovery_private_key=None, controller_probe=None):
+                 recovery_config=None, recovery_private_key=None, controller_probe=None,
+                 peer_tls=None):
         if not agent_id or epoch < 0 or revision < 0 or interval <= 0 or timeout <= interval:
             raise ValueError("Require ID, nonnegative epoch/revision and 0 < interval < timeout")
         if agent_id in peers or not holder or holder not in {agent_id, *peers}:
             raise ValueError("Holder must be a member; peers must exclude self")
         self.peers = dict(peers)
+        self.peer_tls = peer_tls
+        if peer_tls is not None:
+            peer_tls.validate_for(agent_id)
         self.interval, self.timeout, self.clock = interval, timeout, clock
         self.path = Path(state_file) if state_file else None
         if gate is not None and self.path is None:
@@ -189,7 +194,8 @@ class Agent(rpc.CraneAgentServicer):
         self.last_seen = {peer: clock() for peer in peers}
         self.suspected = set()
         self.holder_suspicion = None
-        self.channels = {p: grpc.aio.insecure_channel(a) for p, a in peers.items()}
+        self.channels = {p: (peer_tls.channel(p, a) if peer_tls else grpc.aio.insecure_channel(a))
+                         for p, a in peers.items()}
         self.stubs = {p: rpc.CraneAgentStub(c) for p, c in self.channels.items()}
         self.tasks = []
         self.server = None
@@ -273,6 +279,15 @@ class Agent(rpc.CraneAgentServicer):
                     raise PersistenceError(str(error)) from error
                 raise
 
+    async def authenticate_peer(self, context, claimed_id):
+        """With peer mTLS, the claimed member ID must match the client certificate."""
+        if self.peer_tls is None:
+            return
+        if context_uri(context) != agent_uri(claimed_id):
+            self.emit("PEER_AUTHENTICATION_FAILED", claimed_id or None)
+            await context.abort(grpc.StatusCode.PERMISSION_DENIED,
+                                "Peer certificate does not match claimed identity")
+
     def reply(self, accepted, reason=""):
         return pb.Reply(accepted=accepted, reason=reason, epoch=self.state.current_epoch,
                         revision=self.state.revision)
@@ -311,6 +326,7 @@ class Agent(rpc.CraneAgentServicer):
             self.emit("MODE_CHANGED", mode=mode.name)
 
     async def Heartbeat(self, request, context):
+        await self.authenticate_peer(context, request.agent_id)
         async with self.lock:
             if self.gate and request.agent_id in self.peers:
                 # Liveness is independent of authority freshness. A healthy
@@ -345,6 +361,7 @@ class Agent(rpc.CraneAgentServicer):
             return self.reply(True)
 
     async def TokenRequest(self, request, context):
+        await self.authenticate_peer(context, request.agent_id)
         async with self.lock:
             if (not self.valid(request.epoch) or request.revision != self.state.revision
                     or not self.state.has_token or self.pending or self.gate_attempt):
@@ -359,6 +376,7 @@ class Agent(rpc.CraneAgentServicer):
             return self.reply(True)
 
     async def TokenTransfer(self, request, context):
+        await self.authenticate_peer(context, request.sender_id)
         if self.gate:
             return await self.receive_gate_transfer(request)
         async with self.lock:
@@ -412,12 +430,16 @@ class Agent(rpc.CraneAgentServicer):
                 raise recovery.RecoveryError("CONTROLLER_NOT_SUSPECTED")
         elif self.state.token_holder not in self.suspected:
             raise recovery.RecoveryError("HOLDER_NOT_SUSPECTED")
-        recovery.remember_proposal(self.vote_state, self.vote_proposals, payload)
+        # Gate-enabled callers verify this exact snapshot against the live Gate
+        # before voting, so a strictly newer revision may replace an abandoned vote.
+        recovery.remember_proposal(self.vote_state, self.vote_proposals, payload,
+                                   allow_supersede=self.gate is not None)
         self.persist()
         return payload, recovery.sign(self.recovery_private_key, payload)
 
     # handles a peer recovery proposal
     async def VoteRecovery(self, request, context):
+        await self.authenticate_peer(context, request.proposer_id)
         if self.gate and self.recovery_config is not None:
             try:
                 payload = recovery.parse_proposal(request.proposal_json, self.recovery_config)
@@ -451,7 +473,8 @@ class Agent(rpc.CraneAgentServicer):
         holder = holder or self.state.agent_id
         payload = recovery.proposal(self.recovery_config, gate_state, holder)
         async with self.lock:
-            blocked = recovery.retry_block(self.vote_state, self.vote_proposals, payload)
+            blocked = recovery.retry_block(self.vote_state, self.vote_proposals, payload,
+                                           allow_supersede=self.gate is not None)
             if blocked:
                 key = (payload["epoch"], payload["expected_revision"], blocked)
                 if self.recovery_blocked != key:
@@ -729,6 +752,24 @@ class Agent(rpc.CraneAgentServicer):
                     return False
                 return self.state.mode == Mode.CENTRAL
 
+    @staticmethod
+    def gate_handoff_still_current(authority, epoch, revision, holder, sender_id, transfer_id):
+        """True when the Gate's most recent handoff is exactly this transfer and
+        its destination still holds authority.
+
+        A later controller (re)installation can raise the revision without
+        moving the holder, e.g. CENTRAL being restored while the queue
+        notification is still in flight. The Gate updates ``last_handoff`` only
+        on TransferHolder, so a match proves no other handoff happened since and
+        the queue still belongs to the current holder. Lane access is still
+        fenced by the Gate's current epoch/revision, not by this notification.
+        """
+        handoff = authority.get("last_handoff")
+        return (type(handoff) is dict and authority.get("holder") == holder
+                and (handoff.get("epoch"), handoff.get("revision"), handoff.get("holder"),
+                     handoff.get("actor_id"), handoff.get("request_id"))
+                == (epoch, revision, holder, sender_id, transfer_id))
+
     async def receive_gate_transfer(self, request):
         async with self.authority_lock:
             async with self.lock:
@@ -736,18 +777,27 @@ class Agent(rpc.CraneAgentServicer):
                 if (self.state.mode == Mode.REJOINING or request.sender_id not in self.peers
                         or request.receiver_id != self.state.agent_id
                         or request.holder != self.state.agent_id or not request.transfer_id
-                        or (request.epoch, request.revision) <
-                           (self.state.current_epoch, self.state.revision)
                         or len(queue) != len(set(queue)) or any(p not in self.peers for p in queue)):
                     return self.reply(False, "Invalid transfer, epoch or revision")
+                # An older (epoch, revision) may still be the Gate's current
+                # handoff if only an installation followed it; decide after a
+                # live Gate read rather than rejecting it here.
+                older = ((request.epoch, request.revision) <
+                         (self.state.current_epoch, self.state.revision))
             authority = await self.query_gate()
             if authority is None:
                 return self.reply(False, "Cannot verify gate authority")
             async with self.lock:
-                matches = ((authority.get("epoch"), authority.get("revision"), authority.get("holder"))
-                           == (request.epoch, request.revision, request.holder))
+                exact = ((authority.get("epoch"), authority.get("revision"), authority.get("holder"))
+                         == (request.epoch, request.revision, request.holder))
+                matches = exact or self.gate_handoff_still_current(
+                    authority, request.epoch, request.revision, request.holder,
+                    request.sender_id, request.transfer_id)
+                if older and not matches:
+                    # Stale notification: reject without touching local authority.
+                    return self.reply(False, "Invalid transfer, epoch or revision")
                 transition = authority.get("authority_transition")
-                if matches and transition is not None and (type(transition) is not dict
+                if exact and transition is not None and (type(transition) is not dict
                         or transition.get("kind") != "TRANSFER"
                         or transition.get("actor_id") != request.sender_id
                         or transition.get("request_id") != request.transfer_id):
@@ -792,7 +842,10 @@ class Agent(rpc.CraneAgentServicer):
                 return False
             if self.pending:
                 if ((self.pending.epoch, self.pending.revision, self.pending.holder) !=
-                        (self.state.current_epoch, self.state.revision, self.state.token_holder)):
+                        (self.state.current_epoch, self.state.revision, self.state.token_holder)
+                        and not self.gate_handoff_still_current(
+                            authority, self.pending.epoch, self.pending.revision,
+                            self.pending.holder, self.state.agent_id, self.pending.transfer_id)):
                     self.handoff_blocked = "DELIVERY_SUPERSEDED"
                     self.state.has_token = False
                     self.persist()
@@ -859,7 +912,8 @@ class Agent(rpc.CraneAgentServicer):
                     return False
                 if not self.adopt_gate_state(authority):
                     return False
-                if not result["allowed"] or observed != target:
+                if not result["allowed"] or (observed != target and not self.gate_handoff_still_current(
+                        authority, *target, self.state.agent_id, payload["request_id"])):
                     self.handoff_blocked = "GATE_OUTCOME_SUPERSEDED"
                     self.state.has_token = False
                     self.persist()
@@ -946,6 +1000,20 @@ class Agent(rpc.CraneAgentServicer):
             or (self.state.mode == Mode.CENTRAL and self.controller_probe is not None
                 and self.controller_suspected))
 
+    def recovery_successor(self, failed_holder):
+        """Next member after the failed holder in sorted, wrapping order.
+
+        Every proposer derives the same successor from the same Gate snapshot,
+        so votes do not split. Rotating (rather than always taking the lowest
+        other ID) means repeated failures walk through the whole membership:
+        with crane-1 and crane-2 both down, recovery moves 1 -> 2 -> 3 instead
+        of alternating between the two unavailable members forever.
+        """
+        members = sorted(self.recovery_config.members)
+        if failed_holder not in members or len(members) < 2:
+            return None
+        return members[(members.index(failed_holder) + 1) % len(members)]
+
     async def recover_suspected_holder(self):
         """Recover a LOCAL holder or fall back after CENTRAL controller failure.
 
@@ -973,10 +1041,9 @@ class Agent(rpc.CraneAgentServicer):
                 if controller_fallback:
                     holder = self.state.token_holder
                 else:
-                    candidates = sorted(set(self.recovery_config.members) - {self.state.token_holder})
-                    if not candidates:
+                    holder = self.recovery_successor(self.state.token_holder)
+                    if holder is None:
                         return
-                    holder = candidates[0]
                 saved = self.vote_proposals.get(str(authority["epoch"] + 1))
                 if saved and (saved["expected_epoch"], saved["expected_revision"]) == (
                         authority["epoch"], authority["revision"]):
@@ -1056,7 +1123,8 @@ class Agent(rpc.CraneAgentServicer):
             raise RuntimeError("Agent already started")
         self.server = grpc.aio.server(interceptors=interceptors)
         rpc.add_CraneAgentServicer_to_server(self, self.server)
-        port = self.server.add_insecure_port(address)
+        port = (self.server.add_secure_port(address, self.peer_tls.server_credentials())
+                if self.peer_tls else self.server.add_insecure_port(address))
         if not port:
             raise RuntimeError("Cannot bind agent address")
         await self.server.start()

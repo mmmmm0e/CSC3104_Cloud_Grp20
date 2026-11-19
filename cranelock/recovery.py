@@ -72,11 +72,34 @@ def record_vote(vote_state, payload):
     vote_state[target] = digest
 
 
+# whether payload may replace the saved vote for its target epoch
+def supersedes(vote_state, proposals, payload):
+    """A vote may move only to a strictly newer revision of the same snapshot epoch.
+
+    The Gate installs a LOCAL certificate only when its expected (epoch,
+    revision) equals the Gate's current state, and Gate revisions never
+    decrease. Once the Gate is at a newer revision, a certificate formed from
+    the older vote can never be installed, so re-voting for the newer snapshot
+    cannot create two installable certificates for one target epoch. Callers
+    must have verified the newer snapshot against the live Gate first.
+    Same-revision changes (e.g. another holder) remain conflicting.
+    Legacy digest-only votes carry no revision and stay locked.
+    """
+    target = str(payload["epoch"])
+    saved = proposals.get(target)
+    return (saved is not None
+            and vote_state.get(target) == hashlib.sha256(canonical(saved)).hexdigest()
+            and saved["expected_epoch"] == payload["expected_epoch"]
+            and payload["expected_revision"] > saved["expected_revision"])
+
+
 # explains why a changed proposal cannot replace a durable vote
-def retry_block(vote_state, proposals, payload):
+def retry_block(vote_state, proposals, payload, allow_supersede=False):
     target = str(payload["epoch"])
     previous = vote_state.get(target)
     if previous is None or previous == hashlib.sha256(canonical(payload)).hexdigest():
+        return None
+    if allow_supersede and supersedes(vote_state, proposals, payload):
         return None
     saved = proposals.get(target)
     if saved and saved["expected_revision"] != payload["expected_revision"]:
@@ -85,8 +108,11 @@ def retry_block(vote_state, proposals, payload):
 
 
 # retains the exact proposal alongside its immutable digest
-def remember_proposal(vote_state, proposals, payload):
-    record_vote(vote_state, payload)
+def remember_proposal(vote_state, proposals, payload, allow_supersede=False):
+    if allow_supersede and supersedes(vote_state, proposals, payload):
+        vote_state[str(payload["epoch"])] = hashlib.sha256(canonical(payload)).hexdigest()
+    else:
+        record_vote(vote_state, payload)
     proposals[str(payload["epoch"])] = json.loads(canonical(payload))
 
 

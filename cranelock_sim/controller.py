@@ -3,7 +3,10 @@ import threading
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
+import hashlib
+import importlib.util
 import json
+from pathlib import Path
 
 import grpc
 
@@ -12,7 +15,21 @@ from cranelock_gate.client import Client
 
 
 CONTROLLER_IMPLEMENTATION = "cranelock.controller.CentralController"
-CONTROLLER_SOURCE = "02da358"
+
+
+def _source_fingerprint():
+    """Identify the controller code actually used, recorded as provenance.
+
+    Results are pooled only when this matches, so it must change exactly when
+    the controller implementation changes: a content hash of its source, not a
+    hand-maintained commit ID (which went stale) or HEAD (which changes on
+    every unrelated commit). Works without git, e.g. in container images.
+    """
+    source = Path(importlib.util.find_spec("cranelock.controller").origin)
+    return "sha256:" + hashlib.sha256(source.read_bytes().replace(b"\r\n", b"\n")).hexdigest()[:12]
+
+
+CONTROLLER_SOURCE = _source_fingerprint()
 
 
 def encode(value):

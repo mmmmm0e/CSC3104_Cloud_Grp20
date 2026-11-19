@@ -7,7 +7,7 @@ import subprocess
 import sys
 import time
 
-from integrated import ROOT, BASE, COMPOSE, monitoring_secret
+from integrated import ROOT, BASE, COMPOSE, monitoring_secret, require_peer_tls, state_command
 from scripts.workload_credentials import CLIENT_FILES, CRANES, PORT, require_credentials, runner_config
 
 KUBE = ['kubectl', '--kubeconfig', str(ROOT / 'demo-data/kubeconfig'), '--context', 'kind-cranelock', '-n', 'cranelock']
@@ -47,6 +47,7 @@ def apply_input(value):
 
 def render(*, apply_inputs=True):
     workload_files = require_credentials(BASE)
+    require_peer_tls(BASE)
     monitoring_secret()
     config = json.loads(subprocess.run(COMPOSE + ['config', '--format', 'json'], capture_output=True, text=True, check=True).stdout)
     resources, inputs = [], []
@@ -110,7 +111,7 @@ def render(*, apply_inputs=True):
         if name == 'gate':
             probe = dict(exec={'command': service['healthcheck']['test'][1:]}, periodSeconds=5, timeoutSeconds=3, failureThreshold=12)
         elif name.startswith('crane-'):
-            probe = dict(exec={'command': ['python','-m','cranelock','state','127.0.0.1:50051']}, periodSeconds=5, timeoutSeconds=3, failureThreshold=12)
+            probe = dict(exec={'command': state_command(name)}, periodSeconds=5, timeoutSeconds=3, failureThreshold=12)
         elif name == 'controller':
             probe = dict(tcpSocket={'port': port}, periodSeconds=5, timeoutSeconds=3, failureThreshold=12)
         else:
@@ -231,7 +232,7 @@ def main():
                         kube('rollout','status',r['kind'].lower()+'/'+r['metadata']['name'],'--timeout=180s')
         elif args.action=='status': kube('get','pods,pvc,services')
         elif args.action=='check':
-            for i in (1,2,3): kube('exec',f'crane-{i}-0','--','python','-m','cranelock','state','127.0.0.1:50051')
+            for i in (1,2,3): kube('exec',f'crane-{i}-0','--',*state_command(f'crane-{i}'))
         elif args.action=='stop':
             kube('scale','deployment','--all','--replicas=0');kube('scale','statefulset','--all','--replicas=0')
             print('Namespace workloads stopped; PVCs retained. Kind control plane still running.')

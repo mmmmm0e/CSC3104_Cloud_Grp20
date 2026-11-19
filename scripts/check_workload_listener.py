@@ -5,7 +5,7 @@ from pathlib import Path
 
 import grpc
 
-from integrated import BASE, endpoints
+from integrated import BASE, peer_channel
 from cranelock import protocol_pb2 as pb, protocol_pb2_grpc as rpc
 from scripts.workload_credentials import CRANES
 
@@ -44,7 +44,7 @@ def check(config, negative, *, check_docker_peer=False):
             with grpc.secure_channel(address, credentials) as channel:
                 expect_status(lambda: rpc.CraneWorkloadStub(channel).RequestGrant(request, timeout=3), status)
         if check_docker_peer:
-            with grpc.insecure_channel(endpoints()['agents'][crane]['host']) as channel:
+            with peer_channel(crane) as channel:
                 peer = rpc.CraneAgentStub(channel).GetAgentState(pb.Empty(), timeout=3)
                 if peer.agent_id != crane:
                     raise ValueError(f'{crane}: peer listener returned an unexpected agent')

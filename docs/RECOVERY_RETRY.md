@@ -11,9 +11,17 @@ the gate to `(0, 2)`. The original certificate cannot be installed because its
 expected revision is stale. Changing its revision to 2 produces a different signed
 proposal for the same target epoch, so the saved vote must reject it.
 
-This is a deliberate safety stop and a real availability limitation. Refreshing the
-gate snapshot, waiting, restarting a process or obtaining another timeout does not
-cancel the earlier vote. A new command request ID also does not unlock it.
+Previously this was a permanent stop: the old vote blocked every later proposal for
+that target epoch. Because CENTRAL handoffs advance the revision without changing the
+epoch, a single abandoned fallback attempt could disable controller fallback for good.
+
+**Current behaviour:** a Gate-enabled member may replace its vote for target epoch
+`e+1` with one for a *strictly newer* revision of the same epoch `e`, after a live
+Gate read confirms that newer snapshot. The Gate can then never accept a certificate
+for the older revision, so this does not allow two installable certificates for one
+target epoch; see [recovery safety](RECOVERY_SAFETY.md). Same-revision proposals
+naming another holder, older revisions, standalone voters without a Gate, and legacy
+digest-only votes stay locked.
 
 ## Implemented retry contract
 
@@ -33,8 +41,9 @@ report generic `CONFLICTING_VOTE` instead of the revision-specific blocked reaso
 | No vote yet; supplied gate snapshot is already stale | Reject before consuming a vote. |
 | Same proposal, unchanged gate authority, temporary peer loss | Retry identical bytes; signatures remain valid and a returning voter may complete the quorum. |
 | Another holder is proposed for an already-voted target epoch | Reject `CONFLICTING_VOTE`; retain the original vote. |
-| Same target epoch, changed gate revision | Emit `RECOVERY_RETRY_BLOCKED` with `STALE_VOTE_REVISION`; retain the original vote and stop forming a refreshed proposal. |
-| Gate changes while votes are being collected | Discard the local collection result and emit `GATE_CHANGED_DURING_VOTING`; retain votes. |
+| Same target epoch, strictly newer live-verified gate revision (Gate-enabled) | Replace the vote with the newer proposal and continue collecting; the older certificate can no longer install. |
+| Same target epoch, changed revision without Gate verification, or older revision | Emit `RECOVERY_RETRY_BLOCKED` with `STALE_VOTE_REVISION`; retain the original vote. |
+| Gate changes while votes are being collected | Discard the local collection result and emit `GATE_CHANGED_DURING_VOTING`; a later attempt re-votes for the newer snapshot. |
 | Gate changes after the final read but before installation | The gate's atomic expected epoch/revision check rejects installation. |
 | Identical certificate submission after a lost reply | Reuse a request ID derived from actor and exact certificate; a committed command returns historical acknowledgement without another authority transition. |
 | Gate unavailable or installation outcome uncertain | Query the live gate; never infer ownership from votes, a timeout or a historical acknowledgement. |
@@ -52,7 +61,11 @@ recoverable. This changes only command deduplication. It never changes the signe
 proposal, unlocks votes or makes a stale certificate acceptable. Automatic recovery
 does not manufacture new proposal revisions to bypass a rejection.
 
-## Why changed-revision retries remain blocked
+## Why changed-revision retries were blocked (historical)
+
+This section records the original reasoning. It has been superseded by the
+monotonic-revision supersession described above, which relies on the Gate's atomic
+expected-snapshot check rather than one immutable vote per target epoch.
 
 The safety argument is still one vote per target epoch, not one vote per revision.
 We do not change that key, clear votes or skip to another epoch locally. Advancing
@@ -94,10 +107,12 @@ The new tests cover:
 ```
 
 The five-member RPC tests control the proposed healthy replacement explicitly.
-The existing automatic policy chooses a fixed successor independent of local failure
-views. That successor may itself be unavailable in other multi-failure combinations;
-these tests do not establish availability for every combination. This change preserves
-the current candidate policy and the team's existing mode-transition behavior.
+The automatic policy chooses a fixed successor independent of local failure views:
+the member *after* the failed holder in sorted, wrapping order. Previously it chose
+the lowest other ID, so with crane-1 and crane-2 both down recovery alternated
+between them forever. Rotation walks the whole membership, so a live member is
+reached after one further epoch per unavailable successor
+(`tests/test_review_fixes.py`).
 
 ## Real container validation
 

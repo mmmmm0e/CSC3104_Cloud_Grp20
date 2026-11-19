@@ -11,7 +11,7 @@ import urllib.request
 import grpc
 from cranelock import protocol_pb2 as pb, protocol_pb2_grpc as rpc
 from cranelock_gate.demo import load_keys
-from integrated import ROOT, BASE, gate_client, record_fault, check, validation_lock
+from integrated import ROOT, BASE, gate_client, record_fault, check, validation_lock, peer_channel
 import faults
 
 
@@ -29,7 +29,7 @@ def wait(predicate, label, timeout=40):
 def agents():
     values={}
     for i in (1,2,3):
-        with grpc.insecure_channel(f'127.0.0.1:{50100+i}') as channel:
+        with peer_channel(f'crane-{i}') as channel:
             s=rpc.CraneAgentStub(channel).GetAgentState(pb.Empty(),timeout=2)
         values[s.agent_id]=s
     return values

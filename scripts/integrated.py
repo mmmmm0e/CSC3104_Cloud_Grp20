@@ -14,6 +14,10 @@ from scripts.workload_credentials import PORT as WORKLOAD_PORT, host_endpoint, p
 
 BASE = ROOT / "demo-data/integrated"
 SERVICES = ("gate", "controller", "crane-1", "crane-2", "crane-3")
+CRANE_IDS = SERVICES[2:]
+PEER_TLS = BASE / "tls/agents"
+PEER_TLS_FILES = ("ca.pem", "monitor.pem", "monitor-key.pem") + tuple(
+    f"{crane}{suffix}.pem" for crane in CRANE_IDS for suffix in ("", "-key"))
 COMPOSE = ["docker", "compose", "-p", "cranelock-integrated",
            "-f", str(ROOT / "deploy/compose.integrated.yaml"),
            "-f", str(ROOT / "deploy/compose.integrated.agents.yaml"),
@@ -60,8 +64,50 @@ def provision(directory=BASE, *, include_test_identity=False):
     for service in ("gate", "controller"):
         write(directory / "tls" / service, names=[service, "localhost", "127.0.0.1"])
     provision_workload(directory, include_test_identity=include_test_identity)
+    provision_peer_tls(directory)
     print("Development configuration and credentials created. No authority or clearance installed.")
     return config
+
+
+def provision_peer_tls(directory=BASE):
+    """Issue one crane-to-crane mTLS identity per crane, plus a read-only monitor.
+
+    Adds only tls/agents/ to an existing experiment; refuses to overwrite it."""
+    from cranelock_gate.tls import write_agents
+    directory = Path(directory)
+    if not (directory / "config.json").is_file():
+        raise ValueError("Provision the experiment first")
+    return write_agents(directory / "tls/agents", CRANE_IDS)
+
+
+def require_peer_tls(directory=BASE):
+    target = Path(directory) / "tls/agents"
+    if not all((target / name).is_file() for name in PEER_TLS_FILES):
+        raise ValueError("Crane-to-crane TLS identities missing: run scripts/integrated.py provision-peer-tls")
+    return target
+
+
+def peer_channel(crane, identity="monitor", address=None):
+    """Host channel to a crane's peer port over mutual TLS.
+
+    ``identity`` is the certificate presented: the read-only ``monitor`` for
+    state queries, or a crane ID when acting as that crane (cranes reject peer
+    messages whose claimed sender differs from the certificate)."""
+    import grpc
+    directory = require_peer_tls()
+    credentials = grpc.ssl_channel_credentials(
+        (directory / "ca.pem").read_bytes(), (directory / f"{identity}-key.pem").read_bytes(),
+        (directory / f"{identity}.pem").read_bytes())
+    # Pin the expected crane identity rather than the dialled host name.
+    return grpc.secure_channel(address or endpoints()["agents"][crane]["host"], credentials,
+                               options=(("grpc.ssl_target_name_override", crane),))
+
+
+def state_command(crane):
+    """In-container `cranelock state` over the crane's own mounted peer identity."""
+    return ["python", "-m", "cranelock", "state", "127.0.0.1:50051",
+            "--tls-ca", "/peer-tls/ca.pem", "--tls-cert", "/peer-tls/agent.pem",
+            "--tls-key", "/peer-tls/agent-key.pem", "--server-name", crane]
 
 
 def monitoring_secret():
@@ -138,7 +184,7 @@ def endpoints():
         "gate": {"host": "localhost:50061", "internal": "gate:50051", "tls": True},
         "controller": {"host": "localhost:50062", "internal": "controller:50052", "tls": True},
         "agents": {f"crane-{i}": {"host": f"127.0.0.1:{50100+i}",
-                                     "internal": f"crane-{i}:50051", "tls": False}
+                                     "internal": f"crane-{i}:50051", "tls": True}
                    for i in (1, 2, 3)},
         "workload_agents": {crane: {"host": host_endpoint(crane),
                                     "internal": f"{crane}:{WORKLOAD_PORT}", "tls": True}
@@ -149,6 +195,7 @@ def endpoints():
         "signing_directory": str(BASE / "signing"),
         "gate_tls_directory": str(BASE / "tls/gate"),
         "controller_tls_directory": str(BASE / "tls/controller"),
+        "peer_tls_directory": str(PEER_TLS),
         "gate_metrics": "http://127.0.0.1:9190/metrics",
     }
 
@@ -164,7 +211,7 @@ def check():
         if authority["mode"] != "CENTRAL":
             raise ValueError("Expected CENTRAL baseline; inspect state before running checks.")
         for identity, endpoint in endpoints()["agents"].items():
-            with grpc.insecure_channel(endpoint["host"]) as agent_channel:
+            with peer_channel(identity) as agent_channel:
                 state = rpc.CraneAgentStub(agent_channel).GetAgentState(pb.Empty(), timeout=3)
             if (state.agent_id != identity or state.epoch != authority["epoch"]
                     or state.revision != authority["revision"]
@@ -172,7 +219,15 @@ def check():
                     or state.has_token != (identity == authority["holder"])
                     or any(peer.status != "AVAILABLE" for peer in state.peers)):
                 raise ValueError(f"{identity}: authority or peer convergence check failed; run state.")
-            print(f"PASS {identity}: host RPC, authority, token ownership and peer availability")
+            # A client without a crane-CA certificate must not reach the peer port.
+            with grpc.insecure_channel(endpoint["host"]) as plaintext:
+                try:
+                    rpc.CraneAgentStub(plaintext).GetAgentState(pb.Empty(), timeout=3)
+                except grpc.RpcError:
+                    pass
+                else:
+                    raise ValueError(f"{identity}: peer port accepted a plaintext client")
+            print(f"PASS {identity}: peer mutual TLS, authority, token ownership and peer availability")
         tls = BASE / "tls/controller"
         credentials = grpc.ssl_channel_credentials(
             root_certificates=(tls / "ca.pem").read_bytes(),
@@ -219,7 +274,8 @@ def record_fault(action, service):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("init", "bootstrap", "up", "status", "state", "check", "endpoints", "logs"):
+    for name in ("init", "bootstrap", "up", "status", "state", "check", "endpoints", "logs",
+                 "provision-peer-tls"):
         commands.add_parser(name)
     for name in ("provision", "provision-workload"):
         command = commands.add_parser(name)
@@ -234,6 +290,8 @@ def main(argv=None):
             provision(include_test_identity=args.with_test_identity)
         elif args.command == "provision-workload":
             print(provision_workload(BASE, include_test_identity=args.with_test_identity))
+        elif args.command == "provision-peer-tls":
+            print(provision_peer_tls(BASE))
         elif args.command == "init":
             # Explicitly new volumes only. initialize() refuses an existing database.
             compose("build", "gate", "controller")
@@ -245,6 +303,7 @@ def main(argv=None):
             bootstrap()
         elif args.command == "up":
             require_credentials(BASE)
+            require_peer_tls(BASE)
             monitoring_secret()
             compose("build", "gate", "controller")
             compose("up", "-d", "--wait", "--wait-timeout", "60")
@@ -260,7 +319,7 @@ def main(argv=None):
             finally:
                 channel.close()
             for service in SERVICES[2:]:
-                compose("exec", "-T", service, "python", "-m", "cranelock", "state", "127.0.0.1:50051")
+                compose("exec", "-T", service, *state_command(service))
         elif args.command == "endpoints":
             print(json.dumps(endpoints(), indent=2))
         elif args.command == "logs":

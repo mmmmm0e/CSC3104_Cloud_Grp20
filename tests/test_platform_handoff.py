@@ -107,3 +107,25 @@ def test_kubernetes_keeps_runner_key_out_of_pods_and_public_manifest(tmp_path, m
     assert "PRIVATE KEY" not in public and runner_key not in public
     for secret in (i for i in inputs if i["kind"] == "Secret"):
         assert all(value not in public for name, value in secret["data"].items() if name.endswith("-key.pem"))
+
+
+def test_peer_tls_identities_per_crane_and_upgrade_without_overwrite(tmp_path):
+    import shutil
+    from cranelock.peer_tls import agent_uri, certificate_uri
+    helper = load_helper()
+    directory = tmp_path / "experiment"
+    helper.provision(directory)
+    peer = helper.require_peer_tls(directory)
+    for crane in helper.CRANE_IDS:
+        assert certificate_uri((peer / f"{crane}.pem").read_bytes()) == agent_uri(crane)
+    assert certificate_uri((peer / "monitor.pem").read_bytes()) == "urn:cranelock:monitor"
+    # An experiment provisioned before peer mTLS gains only tls/agents.
+    shutil.rmtree(peer)
+    with pytest.raises(ValueError, match="provision-peer-tls"):
+        helper.require_peer_tls(directory)
+    signing = (directory / "signing/crane-1.json").read_bytes()
+    helper.provision_peer_tls(directory)
+    assert helper.require_peer_tls(directory) == peer
+    assert (directory / "signing/crane-1.json").read_bytes() == signing
+    with pytest.raises(FileExistsError):
+        helper.provision_peer_tls(directory)

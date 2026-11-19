@@ -15,4 +15,6 @@ USER 10001:10001
 WORKDIR /app
 EXPOSE 50051 9090
 ENTRYPOINT ["python", "-m", "cranelock_gate.server"]
-CMD ["serve", "--config", "/config/config.json", "--database", "/data/gate.sqlite", "--bind", "0.0.0.0:50051", "--allow-insecure-development"]
+# Fail closed by default: mutual TLS with certificates mounted at /tls.
+# Plaintext development use must opt in explicitly (see deploy/compose.yaml).
+CMD ["serve", "--config", "/config/config.json", "--database", "/data/gate.sqlite", "--bind", "0.0.0.0:50051",      "--tls-cert", "/tls/server.pem", "--tls-key", "/tls/server-key.pem", "--tls-ca", "/tls/ca.pem"]

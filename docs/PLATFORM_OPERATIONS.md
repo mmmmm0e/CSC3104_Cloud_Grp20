@@ -164,7 +164,7 @@ The existing filesystem lease prevents concurrent gate ownership on the same
 filesystem; this is not a highly available replicated gate.
 
 Services use the same internal names/ports as Compose (gate:50051,
-controller:50052, crane-1/2/3:50051 for peers and crane-1/2/3:50053 for mTLS workload).
+controller:50052, crane-1/2/3:50051 for mTLS peers and crane-1/2/3:50053 for mTLS workload).
 Monitoring uses prometheus:9090 and grafana:3000.
 
 On an existing experiment, run `python scripts/integrated.py provision-workload`

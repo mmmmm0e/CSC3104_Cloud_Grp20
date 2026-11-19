@@ -32,8 +32,8 @@ python scripts/integrated.py check
 ```
 
 Provisioning creates ignored files under `demo-data/integrated`: public configuration,
-development signing keys, one signing file per actor, and separate gate/controller
-and workload TLS sets. It refuses any existing experiment directory. Never commit these private
+development signing keys, one signing file per actor, and separate gate/controller,
+crane-to-crane and workload TLS sets. It refuses any existing experiment directory. Never commit these private
 files. Local setup generates new identities on each teammate's machine; do not
 combine agents from independently provisioned experiments.
 
@@ -57,6 +57,11 @@ Configuration and volumes already exist. Skip `provision`, `init` and `bootstrap
 On an existing experiment that does not yet have workload credentials, run
 `python scripts/integrated.py provision-workload` once. This only adds
 `demo-data/integrated/workload/`; it will not overwrite credentials or touch volumes.
+Crane-to-crane RPCs now require mutual TLS. On an experiment created before that
+change, run `python scripts/integrated.py provision-peer-tls` once. This only adds
+`demo-data/integrated/tls/agents/` (one certificate per crane plus a read-only
+`monitor` certificate for host tools); it refuses to overwrite and does not touch
+volumes. `up` refuses to start until these files exist.
 Then use:
 
 ```bash
@@ -84,7 +89,10 @@ retaining volumes. Agents must reconcile after recreation.
 | Gate metrics | http://127.0.0.1:9190/metrics | http://gate:9090/metrics | cranelock-integrated-gate-1 |
 
 Host ports bind to loopback only. Gate, controller and workload RPCs require mutual
-TLS. Agent peer RPCs on `50051` keep their existing plaintext trust model. Service names work only
+TLS. Agent peer RPCs on `50051` also require mutual TLS: each crane presents its own
+certificate from `tls/agents`, and a crane rejects any message whose claimed sender
+differs from the certificate. Host tools read crane state with the read-only
+`monitor` certificate. Service names work only
 inside this Compose network, not from the host. Each agent and gate has a separate
 named persistent volume. Controller authority resides at the gate, not a separate
 controller database. The gate/controller TLS client identities are shared
@@ -97,7 +105,8 @@ Machine-readable endpoint and credential-path information (no key contents):
 python scripts/integrated.py endpoints
 ```
 
-`check` verifies the host-published agent RPCs, gate mutual TLS, controller mutual-TLS
+`check` verifies the host-published agent RPCs over peer mutual TLS (and that a
+plaintext client is refused), gate mutual TLS, controller mutual-TLS
 heartbeat and consistent CENTRAL authority with available peers. Run it only at a
 healthy CENTRAL baseline, not during a LOCAL fault experiment. Its native controller
 heartbeat has the same restoration semantics as agent heartbeats; it is not a

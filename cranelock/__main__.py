@@ -5,6 +5,7 @@ import inspect
 import json
 import math
 from pathlib import Path
+import sys
 import grpc
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from google.protobuf.json_format import MessageToDict
@@ -74,11 +75,28 @@ async def main(argv=None):
     run.add_argument("--controller-tls-ca")
     run.add_argument("--controller-tls-cert")
     run.add_argument("--controller-tls-key")
+    run.add_argument("--peer-tls-ca", help="CA for agent-to-agent mutual TLS")
+    run.add_argument("--peer-tls-cert", help="This agent's peer certificate (URI SAN urn:cranelock:agent:ID)")
+    run.add_argument("--peer-tls-key")
     state = commands.add_parser("state")
     state.add_argument("address")
+    state.add_argument("--tls-ca")
+    state.add_argument("--tls-cert", help="Client certificate, e.g. the peer set's monitor.pem")
+    state.add_argument("--tls-key")
+    state.add_argument("--server-name", help="Expected agent ID in the server certificate")
     args = parser.parse_args(argv)
     if args.command == "state":
-        async with grpc.aio.insecure_channel(args.address) as channel:
+        tls = [args.tls_ca, args.tls_cert, args.tls_key]
+        if any(tls) and not (all(tls) and args.server_name):
+            parser.error("Provide --tls-ca, --tls-cert, --tls-key and --server-name together")
+        if all(tls):
+            credentials = grpc.ssl_channel_credentials(*(Path(path).read_bytes() for path in
+                                                        (args.tls_ca, args.tls_key, args.tls_cert)))
+            channel = grpc.aio.secure_channel(args.address, credentials, options=(
+                ("grpc.ssl_target_name_override", args.server_name),))
+        else:
+            channel = grpc.aio.insecure_channel(args.address)
+        async with channel:
             result = await rpc.CraneAgentStub(channel).GetAgentState(pb.Empty(), timeout=3)
             print(json.dumps(MessageToDict(result, preserving_proto_field_name=True,
                                           always_print_fields_with_no_presence=True), indent=2))
@@ -93,6 +111,21 @@ async def main(argv=None):
     peers = dict(p.split("=", 1) for p in args.peer)
     if len(peers) != len(args.peer):
         parser.error("Duplicate peer IDs")
+    peer_tls = None
+    peer_tls_files = [args.peer_tls_ca, args.peer_tls_cert, args.peer_tls_key]
+    if any(peer_tls_files):
+        if not all(peer_tls_files):
+            parser.error("Provide --peer-tls-ca, --peer-tls-cert and --peer-tls-key together")
+        from .peer_tls import PeerTLS
+        try:
+            peer_tls = PeerTLS.load(*peer_tls_files)
+            peer_tls.validate_for(args.id)
+        except (OSError, ValueError):
+            parser.error("Peer TLS files are unreadable or the certificate does not identify this agent")
+    elif any(address.rsplit(":", 1)[0] not in {"127.0.0.1", "localhost", "[::1]"}
+             for address in [args.listen, *peers.values()]):
+        print("WARNING: agent-to-agent RPCs are plaintext and unauthenticated; "
+              "use --peer-tls-* outside a trusted private network.", file=sys.stderr, flush=True)
     if not args.id or args.id in peers or args.holder not in {args.id, *peers}:
         parser.error("Require an ID, peers excluding self and a holder in the membership")
     recovery_config, recovery_key, controller_probe = None, None, None
@@ -197,7 +230,7 @@ async def main(argv=None):
         agent = Agent(args.id, peers, args.holder, epoch=args.epoch, mode=Mode[args.mode],
                       interval=args.interval, timeout=args.timeout, state_file=args.state_file, gate=gate,
                       recovery_config=recovery_config, recovery_private_key=recovery_key,
-                      controller_probe=controller_probe)
+                      controller_probe=controller_probe, peer_tls=peer_tls)
     except (OSError, ValueError, TypeError, KeyError):
         if heartbeat_client:
             await heartbeat_client.close()

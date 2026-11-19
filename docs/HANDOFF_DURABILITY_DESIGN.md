@@ -40,10 +40,18 @@ An epoch-changing recovery is independently certified and does not by itself
 prove delivery of an earlier queue. A still-current holder may preserve its own
 already-durable queue across such a change.
 
-If Gate authority moves past an unresolved command or notification, the sender
-must not replay a stale notification or silently discard its saved requests. It
-retains an observable, blocked handoff for operator/protocol resolution. This
-is an availability tradeoff, not automatic reconciliation of the old queue.
+A later installation that keeps the destination as holder (for example a
+controller restoring CENTRAL while the notification is in flight) does not
+supersede the handoff. The Gate's `last_handoff` still names this exact transfer
+and the current holder is its destination, so the sender keeps delivering and the
+receiver accepts the queue against that Gate record. Previously the sender blocked
+with `DELIVERY_SUPERSEDED` while the receiver waited for the queue forever.
+
+If Gate authority otherwise moves past an unresolved command or notification (a
+later handoff, or the holder reassigned elsewhere), the sender must not replay a
+stale notification or silently discard its saved requests. It retains an
+observable, blocked handoff for operator/protocol resolution. This is an
+availability tradeoff, not automatic reconciliation of the old queue.
 
 This local outbox only protects an agent that returns with its state file. It
 does **not** provide an end-to-end durable queue if the sender and its storage

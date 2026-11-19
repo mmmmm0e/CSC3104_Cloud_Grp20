@@ -387,11 +387,24 @@ def test_real_controller_process_failure_handoff_and_restoration(cluster, lose_n
         denied = cluster.gate.call(actor, "InstallAuthority", certificate=cert,
             expected_epoch=payload["expected_epoch"], expected_revision=payload["expected_revision"])
         assert not denied["allowed"] and denied["reason"] == reason
+    # The delayed copy is the Gate's latest handoff to the still-current holder,
+    # already durably received: it is acknowledged idempotently (so a sender
+    # whose ack was lost can finish) but must not change any agent state.
+    def view(state):
+        return (state.epoch, state.revision, state.has_token, state.token_holder,
+                state.mode, list(state.request_queue))
+    before = view(cluster.stubs["crane-3"].GetAgentState(pb.Empty(), timeout=1))
     stale_transfer = cluster.stubs["crane-3"].TokenTransfer(pb.TokenTransferMessage(sender_id="crane-2",
         receiver_id="crane-3", holder="crane-3", epoch=1, revision=4, transfer_id=transfer_id), timeout=1)
-    assert not stale_transfer.accepted
+    assert stale_transfer.accepted
+    # the same transfer identity can never smuggle in a different queue
+    forged = cluster.stubs["crane-3"].TokenTransfer(pb.TokenTransferMessage(sender_id="crane-2",
+        receiver_id="crane-3", holder="crane-3", epoch=1, revision=4, transfer_id=transfer_id,
+        request_queue=["crane-2"]), timeout=1)
+    assert not forged.accepted
+    assert view(cluster.stubs["crane-3"].GetAgentState(pb.Empty(), timeout=1)) == before
     failures.update(stale_central_certificate="STALE_EPOCH", delayed_local_certificate="STALE_REVISION",
-                    delayed_peer_transfer="REJECTED")
+                    delayed_peer_transfer="IDEMPOTENT_NO_OP")
     blocked = cluster.gate.call("crane-3", "RequestGrant", epoch=1, revision=5)
     assert blocked["reason"] == "LANE_BUSY" and not blocked["allowed"]
     failures["occupied_lane"] = blocked["reason"]

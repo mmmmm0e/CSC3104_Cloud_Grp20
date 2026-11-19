@@ -2,7 +2,7 @@
 import json
 import time
 
-from integrated import ROOT
+from integrated import ROOT, state_command
 from kubernetes import kube
 
 
@@ -11,7 +11,7 @@ def pods(app):
 
 
 def rpc(identity):
-    return json.loads(kube('exec',identity+'-0','--','python','-m','cranelock','state','127.0.0.1:50051',capture=True).stdout)
+    return json.loads(kube('exec',identity+'-0','--',*state_command(identity),capture=True).stdout)
 
 
 def gate_state():

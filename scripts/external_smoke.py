@@ -4,12 +4,11 @@ import json
 import time
 import uuid
 
-import grpc
 from cranelock import protocol_pb2 as pb, protocol_pb2_grpc as rpc
 from cranelock_sim.lane import Lane
 from cranelock_sim.workload_client import GrantAttempt, channel as workload_channel
 from pathlib import Path
-from integrated import ROOT, simulator_gate_client, validation_lock
+from integrated import ROOT, simulator_gate_client, validation_lock, peer_channel
 
 
 def main():
@@ -31,16 +30,17 @@ def main():
         if not lane.observe()['allowed']: raise RuntimeError('New model observation rejected')
         old=state['holder']
         receiver=next(identity for identity in sorted(sim.config.members) if identity!=old)
-        with grpc.insecure_channel('127.0.0.1:'+str(50100+int(old.rsplit('-',1)[1]))) as peer_channel:
-            reply=rpc.CraneAgentStub(peer_channel).TokenRequest(pb.TokenRequestMessage(
+        # The request claims to come from the receiver, so it must present the receiver's certificate.
+        with peer_channel(old,identity=receiver) as channel:
+            reply=rpc.CraneAgentStub(channel).TokenRequest(pb.TokenRequestMessage(
                 agent_id=receiver,epoch=state['epoch'],revision=state['revision'],request_id=str(uuid.uuid4())),timeout=3)
         if not reply.accepted: raise RuntimeError('Agent refused token request: '+reply.reason)
         emit('external_token_request',old_holder=old,requester=receiver)
         end=time.monotonic()+15
         while time.monotonic()<end:
             authority=sim.state()
-            with grpc.insecure_channel('127.0.0.1:'+str(50100+int(receiver.rsplit('-',1)[1]))) as peer_channel:
-                agent=rpc.CraneAgentStub(peer_channel).GetAgentState(pb.Empty(),timeout=2)
+            with peer_channel(receiver) as channel:
+                agent=rpc.CraneAgentStub(channel).GetAgentState(pb.Empty(),timeout=2)
             if authority['holder']==receiver and agent.has_token and agent.epoch==authority['epoch'] and agent.revision==authority['revision']: break
             # Fresh physical samples while the new model remains empty.
             lane.observe()

@@ -129,6 +129,10 @@ an availability guarantee.
   Agent processes; the 5- and 10-crane experiments are logical simulations only.
 - The design assumes one trusted Gate and trusted simulated physical observations.
   Gate unavailability, missing quorum or uncertain clearance can prevent progress.
+- Agent-to-agent RPCs use mutual TLS with per-agent identity binding in the
+  integrated Compose and Kubernetes deployments (see the
+  [agent launcher guide](docs/AGENT_LAUNCHER.md)). Standalone launches and the
+  isolated loopback test harnesses may still run peers in plaintext.
 - Agent and Gate state is persistent, but the handoff queue is not replicated.
   Permanent loss of an Agent's local storage does not permit full queue recovery;
   controller reassignment can also leave previously accepted requests unresolved.
