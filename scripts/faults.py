@@ -101,6 +101,7 @@ def lost_updates(new_empty_simulation):
             session_id=state['session_id'], observation_revision=state['observation_revision'],
             sequence=state['observation_sequence']+1, observed_at_ms=round(time.time()*1000),lane_state='CLEAR')
         if not result['allowed']: raise ValueError(result['reason'])
+        reported_lane=client.state()['lane_state']
         record('occupancy_updates_suppressed', timeout_seconds=client.config.observation_timeout_seconds)
         time.sleep(client.config.observation_timeout_seconds+.5)
         state=client.state()
@@ -109,7 +110,8 @@ def lost_updates(new_empty_simulation):
         if result['allowed'] or result['reason'] != 'LANE_UNKNOWN':
             raise ValueError('Lost occupancy did not block new grant')
         record('lost_updates_verified', reason=result['reason'])
-        print('PASS: expired occupancy evidence blocks grants; no physical entry attempted')
+        print(f"PASS: expired occupancy evidence blocks grants; no physical entry attempted "
+              f"(lane status: {reported_lane} -> {state['lane_state']}; {state['holder']} refused: {result['reason']})")
     finally:
         channel.close()
 
