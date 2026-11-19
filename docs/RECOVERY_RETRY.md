@@ -130,7 +130,8 @@ own private signing key. The harness verifies these phases:
 3. Check durable vote payloads, stale-holder fencing and occupancy blocking.
 4. Stop crane 2; the remaining two members cannot install replacement authority.
 5. Restart crane 1 from its persistent volume; the restored majority completes the
-   identical pending proposal and still cannot admit a crane into the occupied lane.
+   identical pending proposal naming crane 3 (the next member after failed holder
+   crane 2) and still cannot admit a crane into the occupied lane.
 
 All agent containers share the gate's network namespace and communicate over loopback
 on separate ports. They are distinct processes/filesystems with persistent volumes;

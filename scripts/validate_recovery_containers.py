@@ -75,7 +75,8 @@ def validate(output, *, prepare_only=False):
 
     # records docker commands without printing generated private keys
     def compose(*arguments, check=True, timeout=120):
-        result = subprocess.run([*prefix, *arguments], capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run([*prefix, *arguments], capture_output=True, text=True,
+                                encoding="utf-8", errors="replace", timeout=timeout)
         if check and result.returncode:
             raise RuntimeError(f"Docker command failed: {' '.join(arguments)}\n{result.stderr}")
         return result.stdout
@@ -137,12 +138,15 @@ def validate(output, *, prepare_only=False):
         time.sleep(4)
         assert client.state()["epoch"] == 1 and client.state()["holder"] == "crane-2"
         record["checks"].append("two remaining agents cannot replace authority")
-        compose("start", "crane-1")
-        wait(lambda: client.state()["epoch"] == 2 and client.state()["holder"] == "crane-1",
+        # `start` would also rerun the one-shot init service, which correctly
+        # refuses the existing database; restart only crane 1.
+        compose("up", "-d", "--no-deps", "--no-build", "crane-1")
+        # The fixed successor of failed holder crane-2 is the next member, crane-3.
+        wait(lambda: client.state()["epoch"] == 2 and client.state()["holder"] == "crane-3",
              "restored majority completes the identical pending proposal")
         current = client.state()
         assert current["lane_state"] in {"OCCUPIED", "UNKNOWN"}
-        assert not client.call("crane-1", "RequestGrant", epoch=2, revision=current["revision"])["allowed"]
+        assert not client.call("crane-3", "RequestGrant", epoch=2, revision=current["revision"])["allowed"]
         record.update(runtime_validated=True, passed=True, final_state=current)
         return record
     except BaseException as error:
