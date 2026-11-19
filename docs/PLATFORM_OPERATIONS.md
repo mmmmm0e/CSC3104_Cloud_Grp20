@@ -10,6 +10,8 @@ mix endpoints between them.
 
 The integrated helper includes deploy/compose.monitoring.yaml automatically.
 Prometheus runs at http://127.0.0.1:9092 and Grafana at http://127.0.0.1:3001.
+For a live demo, `python scripts/integrated.py grafana` opens the CraneLock dashboard
+in a new browser window (user `admin`, password in `demo-data/integrated/grafana-password`).
 The original standalone monitoring ports 9091/3000 are a different project.
 
 Grafana's Prometheus source and the CraneLock Integrated Platform dashboard are

@@ -212,6 +212,33 @@ def endpoints():
     }
 
 
+GRAFANA_URL = "http://127.0.0.1:3001/d/cranelock-integrated"
+
+
+def open_grafana(url=GRAFANA_URL):
+    """Open the provisioned dashboard in a new browser window (for live demos)."""
+    import shutil
+    import webbrowser
+    candidates = []
+    if os.name == "nt":
+        for base in (os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)"),
+                     os.environ.get("LOCALAPPDATA")):
+            if base:
+                candidates += [Path(base) / "Google/Chrome/Application/chrome.exe",
+                               Path(base) / "Microsoft/Edge/Application/msedge.exe"]
+    else:
+        candidates += [shutil.which(name) for name in
+                       ("google-chrome", "chromium", "chromium-browser", "microsoft-edge")]
+    browser = next((Path(c) for c in candidates if c and Path(c).is_file()), None)
+    if browser:
+        # Chromium browsers honour --new-window; the default handler may reuse a tab.
+        subprocess.Popen([str(browser), "--new-window", url])
+    else:
+        webbrowser.open_new(url)
+    print(f"Opened {url} in a new window. Username: admin; password: the single line in "
+          f"{BASE / 'grafana-password'}")
+
+
 def check():
     """Check real host-published endpoints; no workload or physical clearance."""
     import grpc
@@ -287,7 +314,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     for name in ("init", "bootstrap", "up", "status", "state", "check", "endpoints", "logs",
-                 "provision-peer-tls"):
+                 "provision-peer-tls", "grafana"):
         commands.add_parser(name)
     for name in ("provision", "provision-workload"):
         command = commands.add_parser(name)
@@ -341,6 +368,8 @@ def main(argv=None):
                 compose("exec", "-T", service, *state_command(service))
         elif args.command == "endpoints":
             print(json.dumps(endpoints(), indent=2))
+        elif args.command == "grafana":
+            open_grafana()
         elif args.command == "logs":
             output = ROOT / "run/platform-validation"
             output.mkdir(parents=True, exist_ok=True)
