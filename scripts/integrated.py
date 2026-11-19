@@ -111,13 +111,25 @@ def state_command(crane):
 
 
 def monitoring_secret():
+    """Create the Grafana admin password file; return True if an old file was repaired.
+
+    Grafana keeps a trailing carriage return as part of the password, so the
+    file must use LF only. Files written by earlier versions on Windows ended in
+    CRLF; those are rewritten and the caller resets Grafana's stored password.
+    """
     import secrets
     path = BASE / "grafana-password"
     if not (BASE / "config.json").is_file():
         raise ValueError("Provision the experiment first")
     if not path.exists():
-        with path.open("x") as stream:
+        with path.open("x", newline="\n") as stream:
             stream.write(secrets.token_urlsafe(24) + "\n")
+        return False
+    data = path.read_bytes()
+    if b"\r" not in data:
+        return False
+    path.write_bytes(data.replace(b"\r", b""))
+    return True
 
 
 def gate_client():
@@ -304,9 +316,16 @@ def main(argv=None):
         elif args.command == "up":
             require_credentials(BASE)
             require_peer_tls(BASE)
-            monitoring_secret()
+            repaired = monitoring_secret()
             compose("build", "gate", "controller")
             compose("up", "-d", "--wait", "--wait-timeout", "60")
+            if repaired:
+                # Grafana stored the old password (with a stray carriage return)
+                # when its volume was first created; align it with the file.
+                password = (BASE / "grafana-password").read_text().strip()
+                compose("exec", "-T", "grafana", "grafana", "cli", "admin",
+                        "reset-admin-password", password, stdout=subprocess.DEVNULL)
+                print("Grafana admin password file repaired (removed Windows line ending).")
             print("Containers started; run state to verify authority and peer convergence.")
         elif args.command == "status":
             compose("ps", "-a")
