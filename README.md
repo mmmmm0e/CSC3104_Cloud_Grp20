@@ -7,22 +7,10 @@ holder fails, while preventing a change in digital authority from being mistaken
 for physical clearance. The system schedules centrally in **CENTRAL** mode and
 can recover to peer coordination in **LOCAL** mode.
 
-## Final submission
-
-The CSC3104 final submission consists of the following four items. One team
-member submits them through the LMS on behalf of Group 20 by 23:59 on
-Friday, 20 November 2026.
-
-| Item | Group 20 submission |
-| --- | --- |
-| System | [CraneLock source repository](https://github.com/mmmmm0e/CSC3104_Cloud_Grp20), with Docker build files, launch scripts, tests, and seeded experiment runners. |
-| Research article | `GROUP20.pdf` in IEEE or ACM proceedings format, around 3,000 words and at most six pages. The abstract is at most 200 words. |
-| Testing instructions | `GROUP20_INSTRUCTIONS.pdf`, a separate PDF with the steps for installing, running, and testing the system. |
-| Video presentation | A 10–15 minute video covering the implemented functions and the reasons for the design choices. Submit the recording or a link that the assessor can access. |
-
-The article should cover motivation, system design, implementation, quantitative
-evaluation, related work, conclusions, and references. Each member also submits a
-peer evaluation individually.
+This repository is Group 20's source-code submission. It includes the container
+build files, deployment scripts, tests, and seeded experiment runners. The
+research article (`GROUP20.pdf`), detailed testing instructions
+(`GROUP20_INSTRUCTIONS.pdf`), and presentation video are separate submissions.
 
 ## Research contribution
 
@@ -128,30 +116,12 @@ Those fault scenarios stop and restart the affected services and retain their
 volumes; they should be run only on a suitable test deployment. Results are saved
 under `run/deployed-evaluation`.
 
-### Verify recovery and show the demo
+### Recovery tests and dashboards
 
-Run these local scenarios from the repository root. These commands use the local
-simulator and do not need the Docker deployment.
-
-| Scenario | Command after activating the virtual environment | What to verify |
-| --- | --- | --- |
-| Holder failure | `python -m cranelock_sim --mode recovery` | A majority installs replacement authority and the Gate rejects stale permissions. An occupied lane blocks the replacement until clearance. |
-| Partition without a majority | `python -m cranelock_sim --mode partition --scenario no-majority` | Isolated members cannot install replacement authority. |
-| Agent restart | `python -m cranelock_sim --mode restart` | The restarted agent reconciles with Gate authority before it resumes participation. |
-
-For a short dashboard demonstration, generate a recorded controller outage
-comparison. Choose a new output directory if the example path already exists.
-
-```powershell
-.\.venv\Scripts\python.exe -m cranelock_sim --mode benefits --scenario controller-outage --seed 20 --loads 6 --duration 5 --no-plots --output run/evaluation/submission-demo
-.\.venv\Scripts\python.exe -m cranelock_sim.dashboard
-```
-
-Open [the evaluation dashboard](http://127.0.0.1:8765), select the saved test,
-and choose **CraneLock** in **Lane playback**. Click **Jump to controller
-stopping** and step forward to show the switch to `LOCAL` and a later lane
-entry. The browser replays saved events. For live metrics from the running
-Compose stack, use `.\.venv\Scripts\python.exe scripts/integrated.py grafana`.
+The [evaluation guide](docs/EVALUATION.md) documents holder failure, no-majority
+partitions, agent restart, and controller-outage playback. The local dashboard
+replays saved test runs. For live metrics from the running Docker deployment,
+use `.\.venv\Scripts\python.exe scripts/integrated.py grafana`.
 
 ### Logical scalability and dashboard
 
