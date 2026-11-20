@@ -42,17 +42,53 @@ are assumptions of the prototype. Same-snapshot vote conflicts can stall
 recovery, and permanent loss of a sender's storage can leave queued work
 unresolved. See [handoff durability](docs/HANDOFF_DURABILITY_DESIGN.md).
 
+## Before you start
+
+| Tool | Needed for |
+| --- | --- |
+| Python 3.12 or later | Everything: tests, simulator, dashboard, deployment scripts |
+| Docker Desktop (Linux containers) | The integrated deployment and the Docker comparison |
+| kind and kubectl | The Kubernetes deployment only |
+| Microsoft Edge or Google Chrome | The optional dashboard browser test only |
+
+The install, tests, simulator and dashboard below need only Python.
+
 ## Quick start
 
-Use Python 3.12 or later. Run these commands from the repository root in
-PowerShell. On Linux or macOS, use `.venv/bin/python` as the Python executable
-after creating the environment.
+Run these commands from the repository root in PowerShell. On Linux or macOS,
+use `.venv/bin/python` as the Python executable after creating the environment.
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 .\.venv\Scripts\python.exe -m pytest -q
 ```
+
+Two optional tests are skipped with this install: the chart test needs
+matplotlib and the dashboard browser test needs Playwright. To include them,
+install the extras and run the tests again:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[dev,evaluation,ui-test]"
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+## Try the simulator without Docker
+
+This runs CraneLock, central locking and basic token passing side by side as
+local processes, under a healthy run, a controller outage and a holder outage.
+It takes about one minute.
+
+```powershell
+.\.venv\Scripts\python.exe -m cranelock_sim --mode benefits --seeds 7 --loads 6 --no-plots --output run/evaluation/quick-start
+.\.venv\Scripts\python.exe -m cranelock_sim.dashboard
+```
+
+Open `http://127.0.0.1:8765` and select the `quick-start` results. Stop the
+dashboard with Ctrl+C. The output folder must not already exist; choose a new
+name to run it again.
+
+## Integrated deployment
 
 For the integrated deployment, start Docker Desktop in Linux-container mode.
 Use `provision` and `init` for a fresh deployment. For an existing deployment,
@@ -80,11 +116,14 @@ partition, restart, and logical scalability tests. To replay saved results:
 .\.venv\Scripts\python.exe -m cranelock_sim.dashboard
 ```
 
-Open `http://127.0.0.1:8765`. The dashboard reads saved experiments. To open live
+Open `http://127.0.0.1:8765`. The dashboard reads saved experiments from
+`run/evaluation`. Results are not included in the repository, so the dashboard
+is empty until you run an experiment (see the simulator step above). To open live
 metrics for the integrated deployment, run
 `.\.venv\Scripts\python.exe scripts/integrated.py grafana`.
 
-- The recorded 20 November 2026 Python suite result was **459 passed and 2 skipped**.
+- The recorded 20 November 2026 Python suite result was **459 passed and 2 skipped**. The two skipped tests are the
+  optional chart and browser checks; both pass with the optional extras installed.
 - The nine integrated Docker workloads completed **162/162 simulated crossings**
   with zero detected overlap. The **18 logical runs** exercised 3, 5, and 10
   simulated cranes. A separate single-agent kind check observed one container
