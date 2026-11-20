@@ -4,7 +4,6 @@ import base64
 import json
 from pathlib import Path
 import subprocess
-import sys
 import time
 
 from integrated import ROOT, BASE, COMPOSE, monitoring_secret, require_peer_tls, state_command

@@ -9,3 +9,12 @@ tests
 *.sqlite*
 *.lock
 *.jsonl
+run
+project
+.presentation-build
+.claude
+*.egg-info
+build
+dist
+config/private
+.credentials

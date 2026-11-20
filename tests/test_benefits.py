@@ -4,7 +4,6 @@ import json
 import pytest
 
 from cranelock.agent import Agent, Mode
-from cranelock.controller import CentralController
 from cranelock_sim.controller import CONTROLLER_IMPLEMENTATION, CONTROLLER_SOURCE
 from cranelock_sim.benefits import make_workload, paired, run_case, run_benefits
 from cranelock_sim.failures import until

@@ -1,10 +1,8 @@
-import json
 import urllib.request
 
 import grpc
 import pytest
 from grpc_health.v1 import health_pb2, health_pb2_grpc
-from prometheus_client import generate_latest
 
 from cranelock_gate.client import Client, may_enter
 from cranelock_gate.generated import gate_pb2

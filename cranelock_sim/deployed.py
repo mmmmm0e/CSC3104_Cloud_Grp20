@@ -47,7 +47,6 @@ def run_workload(deployment, output, *, scenario="normal", seed=20, requests=18,
         events.append(dict(time=clock()-origin, timestamp=wall_clock(), event=event, **fields))
 
     def stop(service):
-        nonlocal fault_start, fault_end
         started = clock()-origin
         stopped.append(service)  # Restore even if the command response is ambiguous.
         emit("fault_command_started", service=service, action="kill")

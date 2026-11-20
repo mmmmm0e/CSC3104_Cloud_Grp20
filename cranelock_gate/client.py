@@ -2,8 +2,6 @@
 import json
 import uuid
 
-import grpc
-
 from .crypto import COMMAND_DOMAIN, CERTIFICATE_DOMAIN, canonical, encode_signature
 
 

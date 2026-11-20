@@ -1,9 +1,7 @@
 """Telemetry must preserve protocol state and expose failures without granting authority."""
 import asyncio
-import json
 from urllib.request import urlopen
 
-from prometheus_client import generate_latest
 from cranelock.agent import Agent
 from cranelock.telemetry import AgentMetrics
 

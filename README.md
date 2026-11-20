@@ -84,7 +84,7 @@ Open `http://127.0.0.1:8765`. The dashboard reads saved experiments. To open liv
 metrics for the integrated deployment, run
 `.\.venv\Scripts\python.exe scripts/integrated.py grafana`.
 
-- The recorded 17–18 November 2026 Python suite result was **443 passed and 1 skipped**.
+- The recorded 20 November 2026 Python suite result was **459 passed and 2 skipped**.
 - The nine integrated Docker workloads completed **162/162 simulated crossings**
   with zero detected overlap. The **18 logical runs** exercised 3, 5, and 10
   simulated cranes. A separate single-agent kind check observed one container
