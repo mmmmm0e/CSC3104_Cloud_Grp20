@@ -1,10 +1,16 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CraneLock — Evaluation</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CraneLock — Evaluation</title><link rel="stylesheet" href="/views.css"><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
 <body>
+<header class="view-header">
+  <a class="view-brand" href="/"><span aria-hidden="true">CL</span>CraneLock</a>
+  <nav class="view-switch" aria-label="CraneLock views">
+    <a href="/live" data-live-view>Live demo</a>
+    <a href="/" aria-current="page">Evaluation</a>
+  </nav>
+</header>
 <aside class="rail">
-  <a class="brand" href="#overview" aria-label="CraneLock results home"><span class="brand-mark">CL</span><span>CraneLock<small>CSC3104 · Group 20</small></span></a>
-  <div class="rail-label">Evaluation</div>
+  <div class="rail-label">Saved experiments</div>
   <a class="nav active" href="#overview">Overview</a>
   <a class="nav" href="#comparison">Comparisons</a>
   <a id="docker-nav" class="nav hidden" href="#docker-results">Docker results</a>
@@ -13,8 +19,7 @@
   <div class="rail-bottom">Tuas Mega Port simulation<p>Local experiments<br>Saved results, not live control</p></div>
 </aside>
 <main>
-  <header class="topbar"><span>Group 20 <b>/</b> Evaluation</span><span class="environment">Saved experiments</span></header>
-  <section id="overview" class="intro"><div><h1>Crane coordination tests</h1><p>Compare normal operation, controller failure and token recovery.</p></div><button id="refresh" class="button light">Refresh results</button></section>
+  <section id="overview" class="intro"><div><h1>Crane coordination tests</h1><p>Compare saved runs for normal operation, controller loss, and token-holder failure.</p></div><button id="refresh" class="button dark">Refresh results</button></section>
   <div id="message" class="notice hidden" role="status"></div>
   <section id="docker-results" class="panel docker-results hidden" aria-label="Docker deployment results">
     <div class="section-head"><h2>Integrated CraneLock deployment checks</h2><span id="docker-count" class="pill"></span></div>
@@ -36,6 +41,11 @@
   <label class="toggle collection-toggle"><input id="all-collections" type="checkbox"> Show all saved sets, including development and failed attempts</label>
   </details>
   <section class="panel focus-picker"><label>Scenario<select id="focus" aria-label="Comparison situation"></select></label><p id="focus-context"></p></section>
+  <section id="comparison" class="comparison panel">
+    <div class="section-head"><h2 id="comparison-title">Performance comparison</h2></div>
+    <div id="comparison-note" class="scope-note"></div><p id="metric-explanation" class="metric-explanation"></p><div id="charts" class="charts"></div>
+    <div class="chart-legend"><span>Bars show the middle result (median) across repeated request sequences.</span><span>“Did not recover” is never drawn as zero seconds.</span></div>
+  </section>
   <details id="explanation" class="panel explanation" aria-label="Experiment explained"><summary>How this test works and what the terms mean</summary>
     <h2 id="experiment-title">Choose an experiment.</h2>
     <div class="explanation-grid"><article><h3>What are we testing?</h3><p id="test-explanation"></p></article><article><h3>What should happen?</h3><p id="expected-explanation"></p></article><article><h3>What do the results mean?</h3><div id="result-explanation"></div></article></div>
@@ -53,11 +63,6 @@
     <article class="stat"><div>UNFINISHED REQUESTS <span>◷</span></div><strong id="kpi-unfinished">—</strong><p id="kpi-unfinished-note">Within the observation window</p></article>
   </section>
   </details>
-  <section id="comparison" class="comparison panel">
-    <div class="section-head"><h2 id="comparison-title">Performance comparison</h2></div>
-    <div id="comparison-note" class="scope-note"></div><p id="metric-explanation" class="metric-explanation"></p><div id="charts" class="charts"></div>
-    <div class="chart-legend"><span>Bars show the middle result (median) across repeated request sequences.</span><span>“Did not recover” is never drawn as zero seconds.</span></div>
-  </section>
   <section id="progress" class="progress-panel hidden" aria-label="Completed requests over time">
     <div class="progress-heading"><div><h2>Are requests still finishing?</h2><p id="progress-context"></p></div><label>Request sequence<select id="progress-seed" aria-label="Progress chart request sequence"></select></label></div>
     <div id="progress-plot"></div><div id="progress-legend" class="progress-legend"></div><p id="progress-note" class="progress-note"></p>

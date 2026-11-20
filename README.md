@@ -88,6 +88,25 @@ Open `http://127.0.0.1:8765` and select the `quick-start` results. Stop the
 dashboard with Ctrl+C. The output folder must not already exist; choose a new
 name to run it again.
 
+## Interactive demo
+
+```powershell
+.\.venv\Scripts\python.exe -m cranelock_sim.live
+```
+
+Stop the standalone evaluation server first if it is already using port 8765.
+Open [the live yard](http://127.0.0.1:8765/live) and select **Start guided demo**.
+Use **Live demo** and **Evaluation** in the header to switch between the two views.
+One live-yard server provides both views.
+Advance through turn-taking, a no-quorum refusal, LOCAL recovery, stale-grant
+rejection, holder replacement, explicit clearance, and CENTRAL restoration.
+Each step runs live simulator actions and waits for the observed result.
+The manual controls are also available for individual experiments.
+
+The demo starts a fresh local yard with simulated occupancy and writes evidence
+under `run/evaluation/live-*`. Docker is optional for the separate integrated
+deployment below.
+
 ## Integrated deployment
 
 For the integrated deployment, start Docker Desktop in Linux-container mode.

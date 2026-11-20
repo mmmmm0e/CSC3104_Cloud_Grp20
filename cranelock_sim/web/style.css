@@ -1,14 +1,14 @@
 :root {
-  --ink: #182e42;
-  --muted: #586d80;
-  --line: #ccd8e2;
-  --paper: #e9eff4;
+  --ink: var(--view-ink);
+  --muted: var(--view-muted);
+  --line: var(--view-line);
+  --paper: var(--view-paper);
   --green: #237453;
   --red: #b43e35;
   --blue: #087d70;
 }
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; scroll-padding-top: 24px; }
+html { scroll-behavior: smooth; scroll-padding-top: calc(var(--view-header-height) + 20px); }
 body { margin: 0; background: var(--paper); color: var(--ink); font: 13px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 button, input, select { font: inherit; }
 button, summary { cursor: pointer; }
@@ -23,28 +23,22 @@ label { display: block; color: var(--muted); font-size: 11px; font-weight: 500; 
 select { display: block; width: 100%; max-width: 100%; min-width: 110px; margin-top: 6px; padding: 8px 28px 8px 10px; border: 1px solid #d8dce2; border-radius: 5px; background: white; color: var(--ink); font-size: 12px; }
 summary { color: #59616e; font-size: 12px; }
 .hidden { display: none !important; }
-.rail { position: fixed; inset: 0 auto 0 0; width: 208px; padding: 28px 18px 22px; border-right: 1px solid #253b50; background: #112538; color: #e7f0f6; display: flex; flex-direction: column; }
-.brand { display: flex; align-items: center; gap: 10px; margin: 0 5px 43px; text-decoration: none; font-size: 15px; font-weight: 650; }
-.brand-mark { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid #3bbaa6; border-radius: 6px; background: #16a18b; color: #fff; font: 700 12px/1 "Segoe UI", sans-serif; }
-.brand small { display: block; margin-top: 3px; color: #7a808b; font-size: 10px; font-weight: 400; }
-.rail-label { margin: 0 12px 10px; color: #8b909a; font-size: 11px; }
-.nav { margin-bottom: 6px; padding: 11px 12px; border-radius: 5px; color: #adbece; text-decoration: none; font-size: 12px; font-weight: 500; }
-.nav:hover { background: #203b50; color: #fff; }
-.nav.active { background: #214637; color: #9cebd9; box-shadow: inset 3px 0 #42d1b5; }
-.rail-bottom { margin: auto 7px 0; padding-top: 18px; border-top: 1px solid #dfe2e7; color: #636b77; font-size: 11px; }
-.rail-bottom p { margin: 7px 0 0; color: #8a9099; font-size: 10px; line-height: 1.8; }
+.rail { position: fixed; inset: var(--view-header-height) auto 0 0; width: 208px; padding: 24px 18px 22px; border-right: 1px solid var(--line); background: var(--view-surface); display: flex; flex-direction: column; }
+.rail-label { margin: 0 12px 10px; color: var(--muted); font-size: 11px; font-weight: 650; }
+.nav { margin-bottom: 4px; padding: 9px 12px; border-radius: 6px; color: var(--muted); text-decoration: none; font-size: 12px; font-weight: 550; }
+.nav:hover { background: #edf4f6; color: var(--ink); }
+.nav.active { background: #dff1ec; color: #145448; box-shadow: inset 3px 0 var(--view-accent); }
+.rail-bottom { margin: auto 7px 0; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+.rail-bottom p { margin: 7px 0 0; font-size: 10px; line-height: 1.8; }
 main { max-width: 1740px; margin-left: 208px; padding: 0 38px; }
-.topbar { display: flex; align-items: center; justify-content: space-between; height: 58px; border-bottom: 1px solid var(--line); color: #7a818b; font-size: 11px; }
-.topbar b { padding: 0 12px; color: #c1c5cc; font-weight: 400; }
-.environment { color: #9297a0; font-size: 11px; }
-.intro { display: flex; align-items: center; justify-content: space-between; gap: 22px; padding: 29px 26px; margin: 22px 0; border-left: 4px solid #16a18b; border-radius: 7px; background: #dce8ed; }
+.intro { display: flex; align-items: center; justify-content: space-between; gap: 22px; padding: 4px 0; margin: 20px 0 18px; }
 .intro p { margin: 0; color: var(--muted); font-size: 13px; }
 .button { display: inline-block; padding: 8px 12px; border: 1px solid #d9dde3; border-radius: 5px; background: white; color: #343b47; font-size: 11px; font-weight: 500; line-height: 1.5; text-decoration: none; white-space: nowrap; }
 .button:hover { background: #f3f4f6; }
 .button.dark { border-color: #303949; background: #303949; color: #fff; }
 .button.dark:hover { background: #455065; }
 .button:disabled { cursor: default; opacity: .4; }
-.panel { border: 1px solid var(--line); border-radius: 8px; background: #fcfdfe; box-shadow: 0 3px 9px #20364d06; }
+.panel { border: 1px solid var(--line); border-radius: 9px; background: var(--view-surface); box-shadow: 0 3px 9px #20364d06; }
 .docker-results { margin-bottom: 22px; border-top: 3px solid var(--blue); }
 .docker-results > .scope-note { margin-bottom: 16px; }
 .docker-cards { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 14px; padding: 0 22px 12px; }
@@ -212,8 +206,6 @@ pre { max-height: 330px; overflow: auto; padding: 15px; background: #f6f7f9; col
 .empty code { font-size: 11px; }
 footer { display: flex; flex-wrap: wrap; gap: 12px; padding: 10px 0 25px; color: #a0a7b1; font-size: 10px; }
 footer > span:last-child { margin-left: auto; }
-.brand small, .rail-label, .rail-bottom p { color: #8fa8bc; }
-.rail-bottom { border-color: #30485d; color: #b7cbdc; }
 .focus-picker { background: #d4e7e3; border-color: #b3d2ca; }
 #benefits { border-top: 3px solid #16a18b; }
 #benefit-cards > article { padding: 16px; border: 1px solid #d4e2eb; border-radius: 5px; background: #edf4f8; }
@@ -270,13 +262,9 @@ footer > span:last-child { margin-left: auto; }
   .explanation-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
-  .rail { position: static; width: 100%; padding: 16px 18px; border-right: 0; border-bottom: 1px solid var(--line); }
-  .brand { margin: 0; }
-  .rail-label, .nav, .rail-bottom { display: none; }
+  .rail { display: none; }
   main { margin-left: 0; padding-inline: 16px; }
-  .topbar { height: 45px; }
-  .intro { align-items: flex-start; flex-direction: column; gap: 15px; padding-block: 25px; }
-  .intro { padding-inline: 18px; }
+  .intro { align-items: flex-start; flex-wrap: wrap; gap: 10px; }
   .progress-panel { padding: 18px 13px; }
   .progress-heading { flex-direction: column; gap: 12px; }
   #progress-plot svg { min-height: 180px; }

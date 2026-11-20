@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CraneLock · Live yard</title><link rel="stylesheet" href="/views.css"><link rel="stylesheet" href="/live.css"><script src="/live.js" defer></script></head>
+<body>
+<header class="view-header">
+  <a class="view-brand" href="/"><span aria-hidden="true">CL</span>CraneLock</a>
+  <nav class="view-switch" aria-label="CraneLock views">
+    <a href="/live" aria-current="page">Live demo</a>
+    <a href="/">Evaluation</a>
+  </nav>
+</header>
+<main>
+  <div class="intro">
+    <div><h1>Live crane yard</h1><p>Watch cranes take turns, lose coordination, and recover without clearing an occupied lane.</p></div>
+    <span id="connection" class="connection" role="status">Connecting to yard…</span>
+  </div>
+  <div class="metrics" aria-label="Live yard status">
+    <article><span>Gate authority</span><strong id="epoch">—</strong><small id="revision">Reading Gate</small></article>
+    <article><span>Coordination</span><strong id="mode">—</strong><small id="controller-state">Waiting for controller</small></article>
+    <article><span>Lane status</span><strong id="lane-state">—</strong><small id="sensor-state">Waiting for position evidence</small></article>
+    <article><span>Completed crossings</span><strong id="completed">0</strong><small>Accepted entries followed by an exit</small></article>
+  </div>
+  <div class="workspace">
+    <section class="panel yard-panel"><div class="section-head"><h2>Shared access lane</h2><span id="holder" class="pill">No confirmed holder</span></div>
+      <div class="yard" aria-label="Live simulated crane yard"><div class="yard-label">SIMULATED YARD <span>ONE CRANE AT A TIME</span></div><div class="bay-label">PARKING / WAITING AREA</div><div class="parking-lines"></div><div class="road"><div class="road-dashes"></div><span>SHARED LANE</span></div><div id="gate-light" class="gate-light"><i></i><b>GATE</b></div><div id="crane-art"></div></div>
+      <div class="yard-status"><span id="physical-state">Physical lane: empty</span><span id="network-state">Peer network connected</span></div>
+      <div id="decision" class="decision" role="status">Starting real agent and gate services…</div>
+      <div class="lane-controls"><button id="leave" data-action="exit" disabled>Exit lane</button><button id="earlier-grant" data-action="stale_entry" class="secondary" disabled>Try earlier permission</button><button id="clear-lane" data-action="clear" class="danger-light" disabled>Operator clear lane</button></div>
+    </section>
+    <section class="panel guide" aria-labelledby="guide-title">
+      <div class="section-head"><h2 id="guide-title">Guided demo</h2><span id="guide-progress">0 of 7 complete</span></div>
+      <ol id="guide-steps" class="guide-steps" aria-label="Demo stages"></ol>
+      <p id="guide-status" class="guide-status" role="status">Waiting for the live yard.</p>
+      <div class="guide-actions">
+        <button id="guide-next" class="primary" disabled>Start guided demo</button>
+        <button id="guide-exit" class="secondary" hidden>Use manual controls</button>
+      </div>
+      <div class="recovery-strip"><div><strong id="vote-count">0 / 2</strong><span>Recovery votes</span></div><span id="vote-status">Waiting for a recovery attempt</span></div>
+    </section>
+    <section class="panel fleet"><div class="section-head"><h2>Crane fleet</h2><span>3 members</span></div><div id="fleet"></div></section>
+    <section class="panel log-panel"><div class="section-head"><h2>Live event trail</h2><span>Seconds since start</span></div><div id="events" class="event-list" aria-label="Recent events"></div><details><summary>Evidence directory</summary><code id="evidence"></code></details></section>
+  </div>
+  <details class="panel faults"><summary>Manual failure controls</summary>
+    <p class="hint">Stop a service or isolate peers. The agents attempt recovery automatically.</p>
+    <div class="fault-controls"><button id="controller-toggle" data-action="stop_controller">Stop controller</button><button data-action="partition">Split holder from peers</button><button data-action="isolate">Isolate all peers</button><button data-action="heal" class="secondary">Restore peer links</button><button id="sensor-toggle" data-action="sensor">Pause position updates</button><button id="gate-toggle" data-action="gate">Stop gate</button></div>
+  </details>
+</main>
+</body></html>
