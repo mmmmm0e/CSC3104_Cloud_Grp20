@@ -4,7 +4,6 @@ import csv
 import json
 import math
 import mimetypes
-import secrets
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
@@ -226,7 +225,7 @@ def make_server(root, port=8765, deployed_root=None, *, live=None, live_port=Non
                 if live is not None and parsed.path == "/api/live/state":
                     if not self.local_host():
                         return self.send_json(dict(error="Local host required"), 403)
-                    return self.send_json(live.submit(live.yard.state()))
+                    return self.send_json(live.submit(live.state()))
                 if parsed.path == "/api/catalog":
                     return self.send_json(results.catalog())
                 if parsed.path == "/api/deployed":
@@ -278,8 +277,7 @@ def make_server(root, port=8765, deployed_root=None, *, live=None, live_port=Non
                 return self.send_json(dict(error="Not found"), 404)
             origin = "http://" + self.headers.get("Host", "")
             token = self.headers.get("X-CraneLock-Session", "")
-            if (not self.local_host() or self.headers.get("Origin") != origin
-                    or not secrets.compare_digest(token.encode(), live.yard.session_token.encode())):
+            if not self.local_host() or self.headers.get("Origin") != origin:
                 return self.send_json(dict(error="Same-origin session required"), 403)
             try:
                 length = int(self.headers.get("Content-Length", "0"))
@@ -288,7 +286,9 @@ def make_server(root, port=8765, deployed_root=None, *, live=None, live_port=Non
                 payload = json.loads(self.rfile.read(length))
                 if type(payload) is not dict:
                     raise ValueError("Action must be an object")
-                return self.send_json(live.submit(live.yard.action(payload)))
+                return self.send_json(live.submit(live.action(payload, token)))
+            except PermissionError as error:
+                return self.send_json(dict(error=str(error)), 403)
             except (ValueError, TypeError, RuntimeError, OSError) as error:
                 self.send_json(dict(error=str(error)), 400)
 

@@ -75,6 +75,7 @@ def test_live_yard_http_callbacks_are_opt_in(tmp_path):
         with urlopen(base + "/live", timeout=3) as response:
             page = response.read()
             assert b"Live crane yard" in page
+            assert b"Reset demo" in page
             assert b'<a href="/">Evaluation</a>' in page
         with urlopen(base + "/", timeout=3) as response:
             page = response.read()
@@ -96,7 +97,23 @@ def test_live_yard_http_callbacks_are_opt_in(tmp_path):
             "Content-Type": "application/json", "Origin": base, "X-CraneLock-Session": token,
         })
         with urlopen(request, timeout=3) as response:
-            assert json.load(response)["reservation"] == "crane-1"
+            before = json.load(response)
+            assert before["reservation"] == "crane-1"
+        previous_run = runtime.yard.directory
+        headers = {"Content-Type": "application/json", "Origin": base, "X-CraneLock-Session": token}
+        reset = Request(base + "/api/live/action", b'{"action":"reset"}', headers=headers)
+        with urlopen(reset, timeout=10) as response:
+            fresh = json.load(response)
+        assert fresh["gate"]["epoch"] == 0 and fresh["gate"]["mode"] == "CENTRAL"
+        assert fresh["gate"]["lane_state"] == "CLEAR"
+        assert fresh["reservation"] is None and fresh["occupant"] is None
+        assert fresh["completed"] == 0 and fresh["waiting"] == []
+        assert fresh["evidence"] != before["evidence"] and fresh["session_token"] != token
+        assert all((previous_run / file).is_file() for file in
+                   ("summary.json", "requests.csv", "events.jsonl", "gate-events.jsonl"))
+        with pytest.raises(HTTPError) as error:
+            urlopen(request, timeout=3)
+        assert error.value.code == 403
         with make_server(tmp_path, 0, live_port=server.server_port) as evaluation:
             evaluation_thread = threading.Thread(target=evaluation.serve_forever, daemon=True)
             evaluation_thread.start()

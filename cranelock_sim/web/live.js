@@ -275,9 +275,11 @@ function renderGuide() {
   $("guide-next").disabled = busy || guideFailed || !step || (!guideActive && !freshYard());
   $("guide-exit").hidden = !guideActive;
   $("guide-exit").disabled = busy;
+  $("guide-reset").disabled = busy || !state?.can_reset;
+  $("guide-reset").title = state && !state.can_reset ? "Restart this server to load reset support." : "";
   $("guide-status").textContent = guideMessage || (freshYard()
     ? "Show turn-taking, quorum recovery, and a safe return to service. The guide runs real actions in the simulated yard."
-    : "The guide starts from a fresh yard. Restart the live-yard server for another guided run.");
+    : "Select Reset demo to start a fresh guided run.");
   [...$("guide-steps").children].forEach((item, index) => {
     item.classList.toggle("done", index < guideIndex);
     if (index === guideIndex) item.setAttribute("aria-current", "step");
@@ -361,10 +363,24 @@ $("guide-exit").addEventListener("click", () => {
   if (busy) return;
   guideActive = false;
   guideFailed = true;
-  guideMessage = "Manual controls are available. Restart the live-yard server to replay the guide.";
+  guideMessage = "Manual controls are available. Select Reset demo to start a fresh guided run.";
   document.body.classList.remove("guided");
   saveGuide(false);
   renderGuide();
+});
+$("guide-reset").addEventListener("click", async () => {
+  if (busy || !state?.can_reset) return;
+  version++;
+  setBusy(true);
+  $("guide-status").textContent = "Starting a fresh yard…";
+  try {
+    await yardAction("reset");
+    saveGuide(false);
+  } catch (error) {
+    guideMessage = error.message;
+  } finally {
+    setBusy(false);
+  }
 });
 
 for (const button of document.querySelectorAll("button[data-action]")) {

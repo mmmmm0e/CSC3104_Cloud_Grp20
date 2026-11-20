@@ -101,6 +101,7 @@ One live-yard server provides both views.
 Advance through turn-taking, a no-quorum refusal, LOCAL recovery, stale-grant
 rejection, holder replacement, explicit clearance, and CENTRAL restoration.
 Each step runs live simulator actions and waits for the observed result.
+**Reset demo** starts a fresh yard and saves the previous run's evidence.
 The manual controls are also available for individual experiments.
 
 The demo starts a fresh local yard with simulated occupancy and writes evidence

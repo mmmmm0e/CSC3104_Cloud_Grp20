@@ -381,7 +381,8 @@ class LiveYard:
                 vote_status = "Recovery epoch installed at the Gate"
             else:
                 vote_status = "Certificate collected"
-        return dict(session_token=self.session_token, gate=self.cached, gate_online=self.server is not None,
+        return dict(session_token=self.session_token, can_reset=True,
+            gate=self.cached, gate_online=self.server is not None,
             gate_fresh=fresh, controller_online=self.controller_online, observations=self.observations,
             occupant=self.lane.occupant, agents=agents, waiting=[row["crane"] for row in self.waiting],
             reservation=self.reservation["crane"] if self.reservation else None,
@@ -437,6 +438,7 @@ class LiveYard:
 class LiveRuntime:
     def __init__(self, root):
         self.loop = asyncio.new_event_loop()
+        self.lock = asyncio.Lock()
         self.thread = threading.Thread(target=self.loop.run_forever, daemon=True)
         self.thread.start()
         self.yard = LiveYard(root)
@@ -450,10 +452,37 @@ class LiveRuntime:
     def submit(self, coroutine):
         return asyncio.run_coroutine_threadsafe(coroutine, self.loop).result(timeout=15)
 
+    # reads the current run after any active reset finishes
+    async def state(self):
+        async with self.lock:
+            return await self.yard.state()
+
+    # checks the session against the run that will execute the action
+    async def action(self, payload, token):
+        async with self.lock:
+            if not secrets.compare_digest(token.encode(), self.yard.session_token.encode()):
+                raise PermissionError("The live yard session changed. Refresh and try again.")
+            if payload.get("action") != "reset":
+                return await self.yard.action(payload)
+            previous = self.yard
+            fresh = LiveYard(previous.directory.parent)
+            try:
+                await fresh.start()
+            except BaseException:
+                await fresh.close()
+                raise
+            self.yard = fresh
+            await previous.close()
+            return await fresh.state()
+
+    async def close_yard(self):
+        async with self.lock:
+            await self.yard.close()
+
     # releases the yard and its event loop
     def close(self):
         try:
-            self.submit(self.yard.close())
+            self.submit(self.close_yard())
         finally:
             self.loop.call_soon_threadsafe(self.loop.stop)
             self.thread.join()
