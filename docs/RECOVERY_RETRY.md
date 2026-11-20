@@ -153,7 +153,5 @@ evidence.
 ## Validation record
 
 The final branch regression run on 3 November 2026 completed with **239 passed,
-1 skipped** in 98.84 seconds. The optional browser check was skipped. Test XML is
-retained at `run/recovery-review-20261103/tests-final.xml`. The prepared container
-fixtures are under `run/recovery-review-20261103/container-fixtures/`, with runtime
-validation explicitly false. No container execution is claimed by these results.
+1 skipped** in 98.84 seconds. The optional browser check was skipped. No container
+execution is claimed by these results.
